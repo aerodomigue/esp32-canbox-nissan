@@ -1,0 +1,18 @@
+# PlatformIO : Ignore tout le dossier de travail local
+.pio/
+.pioenvs/
+.piolibdeps/
+
+# Build folders
+build/
+bin/
+
+# VS Code : On ignore la config locale mais on peut garder les recommandations
+.vscode/
+!.vscode/extensions.json
+
+# Fichiers système et logs
+.DS_Store
+Thumbs.db
+*.log
+.cache/
