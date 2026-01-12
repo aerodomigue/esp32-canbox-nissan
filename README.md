@@ -1,14 +1,14 @@
 # 🚗 Nissan Juke (F15) to Android Auto CAN Bridge (ESP32-C3)
 
 > [!NOTE]
-> **Available Languages:** [Français 🇫🇷](README.fr.md) | **English 🇬🇧**
+> **Available Languages:** [Français 🇫🇷](https://www.google.com/search?q=README.fr.md) | **English 🇬🇧**
 
 > [!IMPORTANT]
 > ### 🚧 STATUS: WORK IN PROGRESS (WIP) 🚧
 > 
 > 
 > **Awaiting Hardware Validation**
-> * **Code:** 100% implemented (CAN Capture, UART Transmission, Watchdog, Morse LED).
+> * **Code:** 100% implemented (CAN Capture, UART Transmission, Watchdog, LED Status).
 > * **Hardware:** Assembly in progress (ESP32-C3 + SN65HVD230).
 > * **Critical Next Step:** Measure the termination resistance ( vs ) on the original Raise box before the first vehicle connection.
 > * **Last Updated:** January 2026.
@@ -35,8 +35,9 @@ This project is an intelligent gateway designed to integrate telemetry data from
 | **SN65HVD230** | `3.3V` / `GND` | Power Supply | **Do not use 5V!** |
 |  | `GPIO 21` | CAN-TX Pin | Output to bus |
 |  | `GPIO 20` | CAN-RX Pin | Input from bus |
-| **Head Unit** | `GPIO 1` (TX) | RX Wire (Radio harness) | UART 38400 baud |
-| **Status LED** | `GPIO 8` | Internal LED | Morse Diagnostic & Heartbeat |
+| **Head Unit** | `GPIO 5` (TX) | RX Wire (Radio harness) | UART 38400 baud (Data to Radio) |
+|  | `GPIO 6` (RX) | TX Wire (Radio harness) | *Optional (Not used in current code)* |
+| **Status LED** | `GPIO 8` | Internal LED | Visual Status & Errors |
 
 ---
 
@@ -44,21 +45,21 @@ This project is an intelligent gateway designed to integrate telemetry data from
 
 The system is designed to be 100% autonomous and resistant to vehicle electrical interference:
 
-1. **[Capture (docs/CAN_CAPTURE.md)](docs/CAN_CAPTURE.md)**: Analyzes Nissan frames (500kbps) and updates global variables (Speed, RPM, Doors, etc.).
-2. **[Emission (docs/RADIO_SEND.md)](docs/RADIO_SEND.md)**: Formats and sends data to the head unit at two distinct frequencies (Fast Stream 50ms / Slow Stream 800ms).
+1. **[Capture (docs/CAN_CAPTURE.md)](https://www.google.com/search?q=docs/CAN_CAPTURE.md)**: Analyzes Nissan frames (500kbps) and updates global variables (Speed, RPM, Doors, etc.).
+2. **[Emission (docs/RADIO_SEND.md)](https://www.google.com/search?q=docs/RADIO_SEND.md)**: Formats and sends data to the head unit at two distinct frequencies (Fast Stream 50ms / Slow Stream 800ms).
 3. **Hardware Watchdog**: If the program freezes for more than 5s, the ESP32 automatically reboots.
 4. **CAN Watchdog**: If no CAN data is received for 30s while the engine is running (voltage > 11V), the system forces a reboot.
 
 ---
 
-## 🚦 LED Error Codes (Morse)
+## 🚦 LED Status Codes
 
 The LED (GPIO 8) allows for quick diagnostics without connecting a PC:
 
-* **Off**: Power issue (VCC/GND).
-* **Solid On**: ESP32 powered, but no data received on the CAN bus.
-* **Fast Blinking (50ms)**: CAN controller initialization error (Check GPIO 20/21).
-* **Brief Flash**: Power steering frame (0x002) received. Everything is functional.
+* **Stroboscope (50ms)**: ❌ **Critical Hardware Error**. The CAN controller failed to initialize. Check wiring on GPIO 20/21 or the transceiver.
+* **Slow Heartbeat (1s)**: ⚠️ **Idle / Waiting**. The system is running, but the CAN bus is silent. (Vehicle off or CAN High/Low wires swapped).
+* **Nervous Flash / Scintillation**: ✅ **Normal Operation**. Data is being received and processed from the vehicle.
+* **Solid (Fixed On/Off)**: 💀 **System Freeze**. The code has crashed (or power issue if Off).
 
 ---
 
@@ -79,12 +80,14 @@ The CAN bus requires precise impedance matching. The SN65HVD230 module often has
 ## 📚 Sources & References
 
 ### 🚗 Nissan CAN & Manuals
+
 * [NICOclub / Nissan Service Manuals](https://www.nicoclub.com/nissan-service-manuals)
 * [Comma.ai / OpenDBC](https://github.com/commaai/opendbc/tree/master)
 * [jackm / Carhack Nissan](https://github.com/jackm/carhack/blob/master/nissan.md)
 * [balrog-kun / Nissan Qashqai CAN info](https://github.com/balrog-kun/nissan-qashqai-can-info)
 
 ### 📻 Radio Protocols (Raise/RZC)
+
 * [smartgauges / canbox](https://github.com/smartgauges/canbox)
 * [cxsichen / Raise Protocol (睿智诚)](https://github.com/cxsichen/helllo-world/tree/master/%E5%8D%8F%E8%AE%AE/%E7%9D%BF%E5%BF%97%E8%AF%9A)
 * [DUDU-AUTO Forum / Qashqai 2011 CANbus](https://forum.dudu-auto.com/d/1786-nissan-qashqai-2011-canbus/6)
