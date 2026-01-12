@@ -59,14 +59,33 @@ void setup() {
 }
 
 void loop() {
-    // On réinitialise le Watchdog à chaque tour de boucle
     esp_task_wdt_reset();
+    unsigned long now = millis();
 
     // --- PARTIE CAPTURE ---
     CanFrame rxFrame;
     if (ESP32Can.readFrame(rxFrame)) {
         handleCanCapture(rxFrame);
-        lastCanMessageTime = millis(); // On a reçu quelque chose !
+        lastCanMessageTime = now; // Mise à jour du dernier message reçu
+        
+        // --- ETAT LED : FLASHS NERVEUX ---
+        // Signifie : Données reçues (Tout va bien)
+        // On inverse l'état de la LED à chaque trame -> Scintillement
+        digitalWrite(8, !digitalRead(8));
+    } 
+    else {
+        // --- GESTION DU SILENCE ---
+        // Si on n'a rien reçu depuis plus de 200ms...
+        if (now - lastCanMessageTime > 200) {
+             
+             // --- ETAT LED : BATTEMENT DE COEUR (1s) ---
+             // Signifie : "Je cherche..." (Bus silencieux ou Fils inversés)
+             static unsigned long lastHeartbeat = 0;
+             if (now - lastHeartbeat > 1000) {
+                 digitalWrite(8, !digitalRead(8));
+                 lastHeartbeat = now;
+             }
+        }
     }
 
     // --- PARTIE ÉMISSION ---
@@ -74,8 +93,11 @@ void loop() {
 
     // --- SÉCURITÉ : WATCHDOG CAN ---
     // Si on n'a rien reçu du bus CAN depuis 30s alors que le contact est mis
-    // (on vérifie la tension batterie pour ne pas rebooter quand la voiture est garée)
-    if (millis() - lastCanMessageTime > CAN_TIMEOUT && voltBat > 11.0) {
+    // (on vérifie la tension batterie > 11V pour ne pas rebooter quand la voiture est garée)
+    if (now - lastCanMessageTime > CAN_TIMEOUT && voltBat > 11.0) {
+        // Petit message de debug avant reboot
+        Serial.println("TIMEOUT CAN -> REBOOT SECURITE");
+        delay(100);
         ESP.restart(); 
     }
 }
