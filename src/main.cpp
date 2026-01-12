@@ -67,6 +67,10 @@ void loop() {
     if (ESP32Can.readFrame(rxFrame)) {
         handleCanCapture(rxFrame);
         lastCanMessageTime = now; // Mise à jour du dernier message reçu
+
+        if (Serial) {
+             Serial.printf("RX ID: 0x%03X | Data: %02X\n", rxFrame.identifier, rxFrame.data[0]);
+        }
         
         // --- ETAT LED : FLASHS NERVEUX ---
         // Signifie : Données reçues (Tout va bien)
