@@ -1,91 +1,174 @@
-# 🚗 Nissan Juke (F15) to Android Auto CAN Bridge (ESP32-C3)
+# Nissan Juke (F15) vers Autoradio Android - Pont CAN (ESP32)
 
-> [!NOTE]
-> **Langues disponibles :** **Français 🇫🇷** | [English 🇬🇧](README.md)
+> **Langues disponibles :** **Français** | [English](README.md)
 
-> [!IMPORTANT]
-> ### 🚧 STATUS : WORK IN PROGRESS (WIP) 🚧
->
->
-> **En attente de validation Hardware**
-> * **Code :** 100% implémenté (Capture CAN, Émission UART, Watchdog, Morse LED).
-> * **Hardware :** Montage en cours (ESP32-C3 + SN65HVD230).
-> * **Étape critique suivante :** Mesurer la résistance de terminaison ($120\Omega$ vs $\infty$) sur le boîtier Raise d'origine avant le premier branchement sur le véhicule.
-> * **Dernière mise à jour :** Janvier 2026.
+<p align="center">
+  <img src="docs/BUILD_1.png" width="45%" alt="Module assemblé avec connecteur OBD-II"/>
+  <img src="docs/BUILD_2.png" width="45%" alt="Boîtier imprimé 3D"/>
+</p>
 
----
+Ce projet est une passerelle intelligente permettant d'intégrer les données télémétriques d'un Nissan Juke F15 (Plateforme B) sur un autoradio Android. L'ESP32 intercepte les trames du bus **CAN habitacle** via le port OBD-II et **traduit les trames CAN Nissan vers le protocole VW Polo**.
 
+**Pourquoi le protocole VW Polo ?** La plupart des autoradios Android (comme ceux sous DuduOS, FYT, etc.) ont une bien meilleure prise en charge native du protocole CAN VW/Polo que du Nissan. En traduisant les trames, on obtient une meilleure intégration : widgets tableau de bord fonctionnels, état des portes, lignes de guidage caméra de recul, etc.
 
-Ce projet est une passerelle (gateway) intelligente permettant d'intégrer les données télémétriques d'un Nissan Juke (Platform B) sur un autoradio Android. L'ESP32-C3 intercepte les trames du bus **CAN habitacle** et les traduit en temps réel pour le poste via le protocole **Raise (RZC)**.
+> **Important :** Dans les paramètres de votre autoradio, configurez le protocole CAN sur **"VW Polo" (2009-2018)** pour que cela fonctionne.
 
 ---
 
-## 🛠️ Hardware & Connexions
+## Fonctionnalités
 
-### 1. Liste des composants (BOM)
+- **Traduction en temps réel** des données CAN Nissan vers le protocole VW
+- **Angle de braquage** pour les lignes de guidage de la caméra de recul
+- **Données tableau de bord** : RPM, vitesse, tension batterie, température, niveau essence
+- **État des portes** avec mise à jour automatique sur changement
+- **Systèmes de sécurité** : Watchdog matériel, surveillance erreurs CAN, protection timeout
 
-* **Microcontrôleur** : ESP32-C3 (RISC-V). Choisi pour son contrôleur TWAI (CAN) natif.
-* **Transceiver CAN** : SN65HVD230. Indispensable pour l'interface physique 3.3V.
-* **Alimentation** : Régulateur DC-DC Step-Down (12V -> 5V) type MP1584EN.
-* **LED de Statut** : GPIO 8 (Diagnostic & Heartbeat).
+---
 
-### 2. Pinout (Câblage)
+## Matériel Requis
 
-| Composant | Pin ESP32-C3 | Destination | Note |
+### Liste des Composants (BOM)
+
+| Composant | Description | Note |
+| --- | --- | --- |
+| **Microcontrôleur** | ESP32-S3 / ESP32-C3 | Contrôleur TWAI (CAN) natif |
+| **Transceiver CAN** | SN65HVD230 | Interface 3.3V (ne pas utiliser 5V !) |
+| **Alimentation** | Câble USB | Alimenté par le port USB du poste |
+| **Connexion** | Prise OBD-II | CAN-H (pin 6), CAN-L (pin 14) |
+
+### Note sur l'Alimentation
+
+L'ESP32 est alimenté via **USB depuis l'autoradio Android**, et non pas depuis le 12V du véhicule.
+
+**Pourquoi ?** Le 12V disponible sur le connecteur CAN du poste est **permanent** (toujours alimenté, même contact coupé). L'utiliser viderait lentement la batterie en stationnement. En utilisant le port USB du poste, l'ESP32 ne s'allume que lorsque l'autoradio est actif.
+
+### Câblage (Pinout)
+
+| Composant | Pin ESP32 | Destination | Note |
 | --- | --- | --- | --- |
-| **SN65HVD230** | `3.3V` / `GND` | Alimentation | **Ne pas alimenter en 5V !** |
-|  | `GPIO 21` | Pin CAN-TX | Sortie vers bus CAN |
-|  | `GPIO 20` | Pin CAN-RX | Entrée depuis bus CAN |
-| **Autoradio** | `GPIO 1` (TX) | Fil RX (Faisceau Poste) | UART 38400 baud |
-| **Status LED** | `GPIO 8` | LED Interne | Diagnostic Morse & Heartbeat |
+| **SN65HVD230** | `3.3V` / `GND` | Alimentation | **Ne pas utiliser 5V !** |
+| | `GPIO 21` | CAN-TX | Sortie vers bus CAN |
+| | `GPIO 20` | CAN-RX | Entrée depuis bus CAN |
+| **Autoradio** | `GPIO 5` (TX) | Fil RX (Faisceau radio) | UART 38400 baud |
+| | `GPIO 6` (RX) | Fil TX (Faisceau radio) | Réponses handshake |
+| **LED Statut** | `GPIO 8` | LED Interne | Indicateur visuel |
+
+### Connexion OBD-II
+
+Le système se connecte au véhicule via le **port diagnostic OBD-II** :
+
+```
+Connecteur OBD-II (vue face au port)
+┌─────────────────────────────┐
+│  1   2   3   4   5   6   7  8  │
+│                                 │
+│  9  10  11  12  13  14  15  16 │
+└─────────────────────────────┘
+
+Pin 6  = CAN-H (High)
+Pin 14 = CAN-L (Low)
+Pin 16 = +12V Batterie
+Pin 4/5 = Masse
+```
+
+> **Note :** Les ports OBD-II possèdent des résistances de terminaison intégrées, donc aucune résistance supplémentaire n'est nécessaire sur le module SN65HVD230. Si votre module a une résistance 120Ω (R120), vous pouvez la laisser ou la retirer - le bus fonctionnera dans les deux cas.
+
+### À propos du Boîtier CAN d'Origine
+
+Le **boîtier CAN Raise/RZC d'origine** livré avec l'autoradio Android est **conservé en place**. Il fournit l'**alimentation 6V pour la caméra de recul** et reste nécessaire pour cette fonction.
+
+Le boîtier d'origine a probablement accès au signal CAN sur son connecteur, il serait donc possible de récupérer le bus CAN depuis celui-ci au lieu de l'OBD-II. Cependant, cela n'a pas été testé - la connexion OBD-II fonctionne bien et est plus simple à installer.
 
 ---
 
-## ⚙️ Logique Logicielle & Sécurités
+## Architecture Logicielle
 
 Le système est conçu pour être 100% autonome et résistant aux parasites électriques du véhicule :
 
-1. **[Capture (docs/CAN_CAPTURE.md)](docs/CAN_CAPTURE.md)** : Analyse les trames Nissan (500kbps) et met à jour les variables globales (Vitesse, RPM, Portes, etc.).
-2. **[Émission (docs/RADIO_SEND.md)](docs/RADIO_SEND.md)** : Formate et envoie les données au poste à deux fréquences distinctes (Flux Rapide 50ms / Flux Lent 800ms).
-3. **Watchdog Hardware** : Si le programme se fige plus de 5s, l'ESP32 redémarre automatiquement.
-4. **Watchdog CAN** : Si aucune donnée CAN n'est reçue pendant 30s alors que le moteur tourne (tension > 11V), le système force un reboot.
+1. **[Capture CAN](docs/CAN_CAPTURE.md)** : Décode les trames Nissan (500kbps) et met à jour les variables globales (Vitesse, RPM, Portes, etc.)
+2. **[Envoi Radio](docs/RADIO_SEND.md)** : Formate et transmet les données au poste à deux intervalles (100ms pour direction, 400ms pour tableau de bord)
+3. **Watchdog Matériel** : Redémarrage automatique si le programme gèle plus de 5 secondes
+4. **Watchdog CAN** : Force un reboot si aucune donnée CAN reçue pendant 30s alors que batterie > 11V
 
 ---
 
-## 🚦 Codes d'erreur LED (Morse)
+## Codes LED de Statut
 
-La LED (GPIO 8) permet un diagnostic rapide sans brancher de PC :
+La LED (GPIO 8) permet un diagnostic rapide sans connexion PC :
 
-* **Éteinte** : Problème d'alimentation (VCC/GND).
-* **Fixe** : ESP32 alimenté, mais aucune donnée reçue sur le bus CAN.
-* **Clignotement très rapide (50ms)** : Erreur d'initialisation du contrôleur CAN (Vérifier GPIO 20/21).
-* **Flash bref** : Trame de direction assistée (0x002) reçue. Tout est fonctionnel.
-
----
-
-## ⚠️ Précautions : Résistance de Terminaison
-
-Le bus CAN nécessite une adaptation d'impédance précise. Le module SN65HVD230 possède souvent une résistance **R120** intégrée. **Mesurez votre ancien boîtier CAN Raise (entre CAN-H et CAN-L) :**
-
-### CAS A : Le boîtier Raise affiche 120 Ohms
-
-> **Action : GARDEZ LA RÉSISTANCE.** Le boîtier d'origine servait de terminaison de ligne. L'ESP32 doit reprendre ce rôle.
-
-### CAS B : Le boîtier Raise affiche l'Infini (OL / 1)
-
-> **Action : RETIREZ LA RÉSISTANCE (Dessouder R120).** Le poste est en dérivation au milieu du bus. Laisser la résistance perturberait les autres calculateurs.
+| Pattern | Statut | Signification |
+| --- | --- | --- |
+| **Clignotement rapide** | Normal | Données CAN reçues et traitées |
+| **Battement lent (1s)** | Veille | Système actif, mais bus CAN silencieux |
+| **Allumée fixe au boot** | Démarrage | Système en initialisation |
+| **Aucune activité** | Erreur | Système figé ou problème d'alimentation |
 
 ---
 
-## 📚 Sources & Références
+## Photos du Montage
 
-### 🚗 Nissan CAN & Manuels
-* [NICOclub / Manuels d'atelier Nissan](https://www.nicoclub.com/nissan-service-manuals)
-* [Comma.ai / OpenDBC](https://github.com/commaai/opendbc/tree/master)
-* [jackm / Carhack Nissan](https://github.com/jackm/carhack/blob/master/nissan.md)
-* [balrog-kun / Infos CAN Nissan Qashqai](https://github.com/balrog-kun/nissan-qashqai-can-info)
+### Assemblage PCB
 
-### 📻 Protocoles Radio (Raise/RZC)
-* [smartgauges / canbox](https://github.com/smartgauges/canbox)
-* [cxsichen / Protocole Raise (睿智诚)](https://github.com/cxsichen/helllo-world/tree/master/%E5%8D%8F%E8%AE%AE/%E7%9D%BF%E5%BF%97%E8%AF%9A)
-* [Forum DUDU-AUTO / Qashqai 2011 CANbus](https://forum.dudu-auto.com/d/1786-nissan-qashqai-2011-canbus/6)
+<p align="center">
+  <img src="docs/PCB_TOP.png" width="45%" alt="PCB vue dessus - composants soudés"/>
+  <img src="docs/PCB_BOTTOM.png" width="45%" alt="PCB vue dessous"/>
+</p>
+
+*ESP32 avec transceiver CAN SN65HVD230 soudé sur plaque à trous*
+
+---
+
+## Compilation & Flash
+
+Ce projet utilise **PlatformIO**. Pour compiler et flasher :
+
+```bash
+# Cloner le dépôt
+git clone https://github.com/yourusername/Nissan-canbus-headunit.git
+cd Nissan-canbus-headunit
+
+# Compiler
+pio run
+
+# Téléverser sur l'ESP32
+pio run --target upload
+
+# Moniteur série
+pio device monitor
+```
+
+---
+
+## Données Supportées
+
+| Donnée | ID CAN | Fréquence | Notes |
+| --- | --- | --- | --- |
+| Angle Volant | 0x002 | 100ms | Pour lignes caméra |
+| Régime Moteur | 0x180 | 400ms | |
+| Vitesse Véhicule | 0x284 | 400ms | Capteur roue |
+| Niveau Essence | 0x5C5 | 400ms | Échelle réservoir VW 45L |
+| Tension Batterie | 0x6F6 | 400ms | Sortie alternateur |
+| Température | 0x551 | 400ms | LDR (utilisé comme ext.) |
+| État Portes | 0x60D | Sur changement | Toutes portes + coffre |
+| Autonomie | 0x54C | 400ms | Distance estimée |
+
+---
+
+## Références & Crédits
+
+### Documentation CAN Nissan
+- [NICOclub / Manuels Nissan](https://www.nicoclub.com/nissan-service-manuals)
+- [Comma.ai / OpenDBC](https://github.com/commaai/opendbc/tree/master)
+- [jackm / Carhack Nissan](https://github.com/jackm/carhack/blob/master/nissan.md)
+- [balrog-kun / Nissan Qashqai CAN info](https://github.com/balrog-kun/nissan-qashqai-can-info)
+
+### Protocoles Radio (VW/Raise/RZC)
+- [smartgauges / canbox](https://github.com/smartgauges/canbox)
+- [cxsichen / Protocole Raise](https://github.com/cxsichen/helllo-world/tree/master/%E5%8D%8F%E8%AE%AE/%E7%9D%BF%E5%BF%97%E8%AF%9A)
+- [Forum DUDU-AUTO / Qashqai 2011 CANbus](https://forum.dudu-auto.com/d/1786-nissan-qashqai-2011-canbus/6)
+
+---
+
+## Licence
+
+Ce projet est open source. Voir [LICENSE](LICENSE) pour les détails.
