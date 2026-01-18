@@ -29,6 +29,21 @@ This project is an intelligent gateway that integrates telemetry data from a Nis
 - **Door status** with automatic updates on change
 - **Safety systems**: Hardware watchdog, CAN error monitoring, timeout protection
 
+### Feature Status
+
+| Feature | Status | Notes |
+| --- | --- | --- |
+| Engine RPM | ✅ Working | |
+| Vehicle Speed | ⚠️ WIP | Testing in progress |
+| Fuel Tank Level | ✅ Working | Calibrated for Juke F15 (45L tank) |
+| Battery Voltage | ✅ Working | |
+| Steering / Dynamic Guidelines | ✅ Working | Calibrated for Juke F15 |
+| External Temperature | ⚠️ WIP | Currently shows coolant temp (no exterior sensor on CAN) |
+| Door Status | ⚠️ WIP | Mapping may need adjustment |
+| Handbrake | ⚠️ WIP | Signal not yet identified |
+
+> **Note:** Documentation for the Raise/VW-Polo protocol used by Android head units is scarce. Some features are still being reverse-engineered due to lack of official protocol specifications.
+
 ---
 
 ## Hardware Requirements

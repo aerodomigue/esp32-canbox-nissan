@@ -29,6 +29,21 @@ Ce projet est une passerelle intelligente permettant d'intégrer les données t�
 - **État des portes** avec mise à jour automatique sur changement
 - **Systèmes de sécurité** : Watchdog matériel, surveillance erreurs CAN, protection timeout
 
+### État des Fonctionnalités
+
+| Fonctionnalité | Statut | Notes |
+| --- | --- | --- |
+| Régime Moteur (RPM) | ✅ Fonctionnel | |
+| Vitesse Véhicule | ⚠️ WIP | Tests en cours |
+| Niveau Essence | ✅ Fonctionnel | Calibré pour Juke F15 (réservoir 45L) |
+| Tension Batterie | ✅ Fonctionnel | |
+| Direction / Lignes Dynamiques | ✅ Fonctionnel | Calibré pour Juke F15 |
+| Température Extérieure | ⚠️ WIP | Affiche actuellement la temp moteur (pas de sonde ext. sur CAN) |
+| État des Portes | ⚠️ WIP | Mapping peut nécessiter ajustement |
+| Frein à Main | ⚠️ WIP | Signal pas encore identifié |
+
+> **Note :** La documentation du protocole Raise/VW-Polo utilisé par les autoradios Android est rare. Certaines fonctionnalités sont encore en cours de reverse-engineering par manque de spécifications officielles du protocole.
+
 ---
 
 ## Matériel Requis
