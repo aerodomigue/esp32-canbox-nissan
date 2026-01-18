@@ -79,88 +79,88 @@ void loop() {
     //                   ESP32Can.canState());
     // }
 
-// =========================================================================
-    // --- PARTIE FAKE DATA COMPLETE (SIMULATION TOTALE) ---
-    // =========================================================================
-    static unsigned long lastFakeUpdate = 0;
-    static unsigned long lastDoorChange = 0;
-    static uint8_t doorTestStep = 0;
+// // =========================================================================
+//     // --- PARTIE FAKE DATA COMPLETE (SIMULATION TOTALE) ---
+//     // =========================================================================
+//     static unsigned long lastFakeUpdate = 0;
+//     static unsigned long lastDoorChange = 0;
+//     static uint8_t doorTestStep = 0;
     
-    // Variables de direction pour l'animation (Ping-Pong)
-    static int dirSteer = 1;
-    static int dirRpm = 1;
-    static int dirSpeed = 1;
+//     // Variables de direction pour l'animation (Ping-Pong)
+//     static int dirSteer = 1;
+//     static int dirRpm = 1;
+//     static int dirSpeed = 1;
 
-    // Mise à jour rapide (50ms) pour fluidité des aiguilles
-    if (now - lastFakeUpdate > 50) {
+//     // Mise à jour rapide (50ms) pour fluidité des aiguilles
+//     if (now - lastFakeUpdate > 50) {
 
-        // 1. VOLANT (Simulation valeurs brutes Nissan : -7000 à +7000)
-        // Cela permet de tester si ton map_float dans RadioSend fonctionne bien
-        currentSteer = 6000;
+//         // 1. VOLANT (Simulation valeurs brutes Nissan : -7000 à +7000)
+//         // Cela permet de tester si ton map_float dans RadioSend fonctionne bien
+//         currentSteer = 6000;
 
-        // 2. RPM (800 à 6000 tr/min)
-        engineRPM = 5500;
+//         // 2. RPM (800 à 6000 tr/min)
+//         engineRPM = 5500;
 
-        // 3. VITESSE (0 à 180 km/h) - On la fait varier doucement
-        // On utilise un compteur séparé pour ne pas qu'elle bouge trop vite
-        static uint8_t speedCounter = 130;
+//         // 3. VITESSE (0 à 180 km/h) - On la fait varier doucement
+//         // On utilise un compteur séparé pour ne pas qu'elle bouge trop vite
+//         static uint8_t speedCounter = 130;
 
-        // 4. AUTRES DONNÉES (Valeurs fixes ou lentes pour validation)
-        fuelLevel = 75;         // 75% (Jauge fixe pour vérifier l'affichage)
-        voltBat = 14.2;         // 14.2V (Alternateur OK)
-        tempExt = 19;           // 19°C
-        dteValue = 420;         // 420 km d'autonomie restante
-        fuelConsoMoy = 6.5;     // 6.5 L/100km
+//         // 4. AUTRES DONNÉES (Valeurs fixes ou lentes pour validation)
+//         fuelLevel = 75;         // 75% (Jauge fixe pour vérifier l'affichage)
+//         voltBat = 14.2;         // 14.2V (Alternateur OK)
+//         tempExt = 19;           // 19°C
+//         dteValue = 420;         // 420 km d'autonomie restante
+//         fuelConsoMoy = 6.5;     // 6.5 L/100km
 
-        // 5. PORTES (Cycle séquentiel toutes les 500ms)
-        if (now - lastDoorChange > 500) {
-            doorTestStep++;
-            if (doorTestStep > 5) doorTestStep = 0;
+//         // 5. PORTES (Cycle séquentiel toutes les 500ms)
+//         if (now - lastDoorChange > 500) {
+//             doorTestStep++;
+//             if (doorTestStep > 5) doorTestStep = 0;
 
-            switch (doorTestStep) {
-                case 0: currentDoors = 0x00; break;
-                case 1: currentDoors = 0x80; break; // Nissan Conducteur
-                case 2: currentDoors = 0x40; break; // Nissan Passager
-                case 3: currentDoors = 0x20; break; // Nissan AR Gauche
-                case 4: currentDoors = 0x10; break; // Nissan AR Droite
-                case 5: currentDoors = 0x08; break; // Nissan Coffre
-            }
-            lastDoorChange = now;
-        }
-        // currentDoors = 0x81;
+//             switch (doorTestStep) {
+//                 case 0: currentDoors = 0x00; break;
+//                 case 1: currentDoors = 0x80; break; // Nissan Conducteur
+//                 case 2: currentDoors = 0x40; break; // Nissan Passager
+//                 case 3: currentDoors = 0x20; break; // Nissan AR Gauche
+//                 case 4: currentDoors = 0x10; break; // Nissan AR Droite
+//                 case 5: currentDoors = 0x08; break; // Nissan Coffre
+//             }
+//             lastDoorChange = now;
+//         }
+//         // currentDoors = 0x81;
         
-        lastFakeUpdate = now;
-    }
+//         lastFakeUpdate = now;
+//     }
     // =========================================================================
 
-    // // --- PARTIE CAPTURE ---
-    // if (ESP32Can.readFrame(rxFrame)) {
-    //     handleCanCapture(rxFrame);
-    //     lastCanMessageTime = now; // Mise à jour du dernier message reçu
+    // --- PARTIE CAPTURE ---
+    if (ESP32Can.readFrame(rxFrame)) {
+        handleCanCapture(rxFrame);
+        lastCanMessageTime = now; // Mise à jour du dernier message reçu
 
-    //     // if (Serial) {
-    //     //      Serial.printf("RX ID: 0x%03X | Data: %02X\n", rxFrame.identifier, rxFrame.data[0]);
-    //     // }
+        // if (Serial) {
+        //      Serial.printf("RX ID: 0x%03X | Data: %02X\n", rxFrame.identifier, rxFrame.data[0]);
+        // }
         
-    //     // --- ETAT LED : FLASHS NERVEUX ---
-    //     // Signifie : Données reçues (Tout va bien)
-    //     // On inverse l'état de la LED à chaque trame -> Scintillement
-    //     digitalWrite(8, !digitalRead(8));
-    // } 
-    // else {
-    //     // --- GESTION DU SILENCE ---
-    //     // Si on n'a rien reçu depuis plus de 200ms...
-    //     if (now - lastCanMessageTime > 200) {
+        // --- ETAT LED : FLASHS NERVEUX ---
+        // Signifie : Données reçues (Tout va bien)
+        // On inverse l'état de la LED à chaque trame -> Scintillement
+        digitalWrite(8, !digitalRead(8));
+    } 
+    else {
+        // --- GESTION DU SILENCE ---
+        // Si on n'a rien reçu depuis plus de 200ms...
+        if (now - lastCanMessageTime > 200) {
              
-    //          // --- ETAT LED : BATTEMENT DE COEUR (1s) ---
-    //          // Signifie : "Je cherche..." (Bus silencieux ou Fils inversés)
-    //          static unsigned long lastHeartbeat = 0;
-    //          if (now - lastHeartbeat > 1000) {
-    //              digitalWrite(8, !digitalRead(8));
-    //              lastHeartbeat = now;
-    //          }
-    //     }
-    // }
+             // --- ETAT LED : BATTEMENT DE COEUR (1s) ---
+             // Signifie : "Je cherche..." (Bus silencieux ou Fils inversés)
+             static unsigned long lastHeartbeat = 0;
+             if (now - lastHeartbeat > 1000) {
+                 digitalWrite(8, !digitalRead(8));
+                 lastHeartbeat = now;
+             }
+        }
+    }
 
     // --- PARTIE ÉMISSION ---
     processRadioUpdates();

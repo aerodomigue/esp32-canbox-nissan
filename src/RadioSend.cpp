@@ -77,26 +77,6 @@ void processRadioUpdates() {
     }
 
     // --- 3. PORTES UNIQUEMENT (ID 0x41, Sub 0x01) ---
-    // static uint8_t lastSentDoors = 0xFF;
-    
-    // // On compare avec un masque pour ignorer les changements du bit 0 (Frein à main)
-    // if ((currentDoors & 0xFE) != (lastSentDoors & 0xFE)) {
-        
-    //     uint8_t payloadDoors[13] = {0};
-    //     payloadDoors[0] = 0x01;         // Sous-commande Portes
-        
-    //     // On envoie currentDoors MAIS on force le bit 0 à 0 (Masque 0xFE)
-    //     // Nissan 0x60D : 0x80, 0x40, 0x20, 0x10, 0x08 (Portes/Coffre)
-    //     // Le bit 0x01 (Frein) est ainsi supprimé du signal envoyé au poste.
-    //     payloadDoors[1] = currentDoors & 0xFE; 
-        
-    //     transmettreVersPoste(0x41, payloadDoors, 13);
-        
-    //     // On met à jour l'état précédent (en gardant le bit 0 pour la comparaison future)
-    //     lastSentDoors = currentDoors;
-    // }
-
-    // --- 3. TEST COFFRE (ID 0x41, Sub 0x01) ---
     static uint8_t lastSentDoors = 0xFF;
     if (currentDoors != lastSentDoors) {
         uint8_t payload[13] = {0};
