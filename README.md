@@ -29,12 +29,16 @@ This project is an intelligent gateway that integrates telemetry data from a Nis
 
 ### Bill of Materials (BOM)
 
-| Component | Description | Note |
+| Component | Description | Link |
 | --- | --- | --- |
-| **Microcontroller** | ESP32-S3 / ESP32-C3 | Native TWAI (CAN) controller |
-| **CAN Transceiver** | SN65HVD230 | 3.3V interface (do not use 5V!) |
-| **Power Supply** | USB cable | Powered from head unit USB port |
-| **Connection** | OBD-II plug | CAN-H (pin 6), CAN-L (pin 14) |
+| **ESP32-C3 SuperMini** | Microcontroller with native TWAI (CAN) | [AliExpress](https://fr.aliexpress.com/item/1005007479144456.html) |
+| **SN65HVD230** | CAN Transceiver (3.3V) | [AliExpress](https://fr.aliexpress.com/item/1005009371955871.html) |
+| **L7805CV** | 5V Voltage Regulator | [AliExpress](https://fr.aliexpress.com/item/1005005961287271.html) |
+| **PCB Prototype Board** | 4x6cm perfboard | [AliExpress](https://fr.aliexpress.com/item/1005008880680070.html) |
+| **Capacitor 25V 470µF** | Filtering capacitor | [AliExpress](https://fr.aliexpress.com/item/1005002075527957.html) |
+| **PCB Terminal Block** | Screw terminals for wiring | [AliExpress](https://fr.aliexpress.com/item/1005006642865467.html) |
+| **Fuse 1A** | Protection fuse | [AliExpress](https://fr.aliexpress.com/item/1005001756852562.html) |
+| **OBD-II Plug** | CAN-H (pin 6), CAN-L (pin 14) | - |
 
 ### Power Supply Note
 

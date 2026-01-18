@@ -29,12 +29,16 @@ Ce projet est une passerelle intelligente permettant d'intégrer les données t�
 
 ### Liste des Composants (BOM)
 
-| Composant | Description | Note |
+| Composant | Description | Lien |
 | --- | --- | --- |
-| **Microcontrôleur** | ESP32-S3 / ESP32-C3 | Contrôleur TWAI (CAN) natif |
-| **Transceiver CAN** | SN65HVD230 | Interface 3.3V (ne pas utiliser 5V !) |
-| **Alimentation** | Câble USB | Alimenté par le port USB du poste |
-| **Connexion** | Prise OBD-II | CAN-H (pin 6), CAN-L (pin 14) |
+| **ESP32-C3 SuperMini** | Microcontrôleur avec TWAI (CAN) natif | [AliExpress](https://fr.aliexpress.com/item/1005007479144456.html) |
+| **SN65HVD230** | Transceiver CAN (3.3V) | [AliExpress](https://fr.aliexpress.com/item/1005009371955871.html) |
+| **L7805CV** | Régulateur de tension 5V | [AliExpress](https://fr.aliexpress.com/item/1005005961287271.html) |
+| **Carte prototype PCB** | Plaque à trous 4x6cm | [AliExpress](https://fr.aliexpress.com/item/1005008880680070.html) |
+| **Condensateur 25V 470µF** | Condensateur de filtrage | [AliExpress](https://fr.aliexpress.com/item/1005002075527957.html) |
+| **Bornier PCB** | Borniers à vis pour câblage | [AliExpress](https://fr.aliexpress.com/item/1005006642865467.html) |
+| **Fusible 1A** | Fusible de protection | [AliExpress](https://fr.aliexpress.com/item/1005001756852562.html) |
+| **Prise OBD-II** | CAN-H (pin 6), CAN-L (pin 14) | - |
 
 ### Note sur l'Alimentation
 
