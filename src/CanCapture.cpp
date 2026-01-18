@@ -33,10 +33,9 @@ void handleCanCapture(CanFrame &rxFrame) {
         // ======================================================================
         // 1. STEERING WHEEL ANGLE (CAN ID 0x002)
         // ======================================================================
-        // Format: Big Endian signed 16-bit value
-        // Unit: 0.1 degrees per LSB
-        // Range: -7200 to +7200 (±720 degrees, ~2 full turns)
-        // Note: Sign inversion for VW protocol is handled in RadioSend
+        // Format: Big Endian signed 16-bit value in bytes [1-2]
+        // Center value: ~2912 (not zero when wheels straight)
+        // Scaling and sign inversion handled in RadioSend
         case 0x002: 
             digitalWrite(LED_HEARTBEAT, !digitalRead(LED_HEARTBEAT)); 
             currentSteer = (int16_t)((rxFrame.data[1] << 8) | rxFrame.data[2]);
@@ -46,8 +45,8 @@ void handleCanCapture(CanFrame &rxFrame) {
         // 2. ENGINE RPM (CAN ID 0x180)
         // ======================================================================
         // Format: Big Endian unsigned 16-bit value
-        // Bytes: [0-1] Raw RPM * 4
-        // Scale factor: 0.25 (divide by 8/7 for head unit sync)
+        // Bytes: [0-1] Raw RPM value
+        // Scale factor: /7 (calibrated to match head unit display)
         case 0x180: 
             engineRPM = (uint16_t)((rxFrame.data[0] << 8) | rxFrame.data[1]) / 7;
             break;
@@ -68,8 +67,9 @@ void handleCanCapture(CanFrame &rxFrame) {
         // Contains fuel level and odometer reading
         case 0x5C5: 
             {
-                // Byte [0]: Fuel level as percentage (0-100%)
-                // Fixed: Inverted scale for Juke (255=empty, 0=full) mapped to 45L
+                // Byte [0]: Fuel level raw value
+                // Inverted scale for Juke (255=empty, 0=full)
+                // Mapped to 0-45L (Nissan Juke F15 tank capacity)
                 uint8_t rawFuel = rxFrame.data[0];
                 fuelLevel = map(rawFuel, 255, 0, 0, 45);
 
@@ -104,12 +104,13 @@ void handleCanCapture(CanFrame &rxFrame) {
         // ======================================================================
         // 7. BODY CONTROL - Door Status (CAN ID 0x60D)
         // ======================================================================
-        // Byte [0] bit mapping (Nissan):
-        //   Bit 0: Driver door
-        //   Bit 1: Passenger door
-        //   Bit 2: Rear left door
-        //   Bit 3: Rear right door
-        //   Bit 4: Trunk/hatch
+        // Byte [0] bit mapping (Nissan Juke/Qashqai):
+        //   Bit 3 (0x08): Driver door
+        //   Bit 4 (0x10): Passenger door
+        //   Bit 5 (0x20): Rear left door
+        //   Bit 6 (0x40): Rear right door
+        // Byte [3] bit mapping:
+        //   Bit 1 or 6 (0x42): Trunk/hatch
         // Remapped to generic bitmask for VW protocol compatibility
         case 0x60D: 
                 // Save Handbrake state (Bit 0)

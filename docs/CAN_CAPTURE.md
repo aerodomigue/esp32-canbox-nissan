@@ -23,15 +23,15 @@ The `CanCapture.cpp` module processes frames in real-time using the following id
 
 | CAN ID | Signal | Bytes | Formula | Unit | Notes |
 | --- | --- | --- | --- | --- | --- |
-| **0x002** | Steering Angle | [0-1] | `(int16)(Data[0]<<8 \| Data[1])` | 0.1° | Signed, Big Endian. Center = 0 |
-| **0x180** | Engine RPM | [0-1] | `(uint16)(Data[0]<<8 \| Data[1]) / 4` | RPM | Scale factor 0.25 |
+| **0x002** | Steering Angle | [1-2] | `(int16)(Data[1]<<8 \| Data[2])` | 0.1° | Signed, Big Endian. Center ≈ 2912 |
+| **0x180** | Engine RPM | [0-1] | `(uint16)(Data[0]<<8 \| Data[1]) / 7` | RPM | Scale factor ~0.14 (calibrated) |
 | **0x284** | Vehicle Speed | [0-1] | `(uint16)(Data[0]<<8 \| Data[1]) / 100` | km/h | Wheel speed sensor |
 
 ### 2. Instrument Cluster (CAN ID 0x5C5)
 
 | Byte | Signal | Formula | Notes |
 | --- | --- | --- | --- |
-| **[0]** | Fuel Level | Direct (0-100%) | Mapped to 0-45L for VW display |
+| **[0]** | Fuel Level | `map(Data[0], 255, 0, 0, 45)` | Inverted scale (255=empty, 0=full) mapped to 0-45L (Juke F15 tank capacity) |
 | **[1-3]** | Odometer | `(Data[1]<<16 \| Data[2]<<8 \| Data[3])` | Total km (24-bit) |
 
 ### 3. Power Management
@@ -45,20 +45,20 @@ The `CanCapture.cpp` module processes frames in real-time using the following id
 
 **Byte [0] - Door Status** (Bitmask):
 
-| Bit | Door |
-| --- | --- |
-| 0 | Driver (Front Left) |
-| 1 | Passenger (Front Right) |
-| 2 | Rear Left |
-| 3 | Rear Right |
-| 4 | Trunk / Hatch |
+| Byte | Bit | Door |
+| --- | --- | --- |
+| [0] | 3 (0x08) | Driver (Front Left) |
+| [0] | 4 (0x10) | Passenger (Front Right) |
+| [0] | 5 (0x20) | Rear Left |
+| [0] | 6 (0x40) | Rear Right |
+| [3] | 1 or 6 (0x42) | Trunk / Hatch |
 
 The raw Nissan bits are remapped to a generic format for VW protocol compatibility:
-- Nissan bit 0 → Internal bit 7 (Driver)
-- Nissan bit 1 → Internal bit 6 (Passenger)
-- Nissan bit 2 → Internal bit 5 (Rear Left)
-- Nissan bit 3 → Internal bit 4 (Rear Right)
-- Nissan bit 4 → Internal bit 3 (Trunk)
+- Nissan byte 0 bit 3 → Internal bit 7 (Driver)
+- Nissan byte 0 bit 4 → Internal bit 6 (Passenger)
+- Nissan byte 0 bit 5 → Internal bit 5 (Rear Left)
+- Nissan byte 0 bit 6 → Internal bit 4 (Rear Right)
+- Nissan byte 3 bit 1/6 → Internal bit 3 (Trunk)
 
 ### 5. Trip Computer (CAN ID 0x54C)
 

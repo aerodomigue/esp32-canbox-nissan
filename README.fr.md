@@ -164,7 +164,7 @@ pio device monitor
 | Angle Volant | 0x002 | 100ms | Pour lignes caméra |
 | Régime Moteur | 0x180 | 400ms | |
 | Vitesse Véhicule | 0x284 | 400ms | Capteur roue |
-| Niveau Essence | 0x5C5 | 400ms | Échelle réservoir VW 45L |
+| Niveau Essence | 0x5C5 | 400ms | Mappé sur 45L (capacité réservoir Juke F15) |
 | Tension Batterie | 0x6F6 | 400ms | Sortie alternateur |
 | Température | 0x551 | 400ms | LDR (utilisé comme ext.) |
 | État Portes | 0x60D | Sur changement | Toutes portes + coffre |

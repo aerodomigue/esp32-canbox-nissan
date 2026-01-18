@@ -164,7 +164,7 @@ pio device monitor
 | Steering Angle | 0x002 | 100ms | For camera guidelines |
 | Engine RPM | 0x180 | 400ms | |
 | Vehicle Speed | 0x284 | 400ms | Wheel speed sensor |
-| Fuel Level | 0x5C5 | 400ms | Scaled to VW 45L tank |
+| Fuel Level | 0x5C5 | 400ms | Mapped to 45L (Juke F15 tank capacity) |
 | Battery Voltage | 0x6F6 | 400ms | Alternator output |
 | Temperature | 0x551 | 400ms | Coolant (used as exterior) |
 | Door Status | 0x60D | On change | All doors + trunk |

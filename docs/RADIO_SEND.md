@@ -29,8 +29,10 @@ All frames follow this structure:
 ### Checksum Calculation
 
 ```
-Checksum = (Command + Length + Sum(Payload bytes)) XOR 0xFF
+Checksum = 0xFF - (Command + Length + Sum(Payload bytes))
 ```
+
+> Based on Junsun/Raise PSA documentation.
 
 ---
 
