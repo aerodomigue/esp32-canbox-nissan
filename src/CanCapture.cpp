@@ -112,14 +112,24 @@ void handleCanCapture(CanFrame &rxFrame) {
         //   Bit 4: Trunk/hatch
         // Remapped to generic bitmask for VW protocol compatibility
         case 0x60D: 
-            currentDoors = 0; 
-            // Nissan Juke/370Z uses bits 4-7 for doors in Byte 0
-            if (rxFrame.data[0] & 0x10) currentDoors |= 0x80; // Driver
-            if (rxFrame.data[0] & 0x20) currentDoors |= 0x40; // Passenger
-            if (rxFrame.data[0] & 0x40) currentDoors |= 0x20; // Rear Left
-            if (rxFrame.data[0] & 0x80) currentDoors |= 0x10; // Rear Right
-            // Trunk is often in data[0] bit 3 or data[1] bit 4
-            if (rxFrame.data[1] & 0x10) currentDoors |= 0x08; 
+                // Save Handbrake state (Bit 0)
+                uint8_t savedHandbrake = currentDoors & 0x01;
+                currentDoors = savedHandbrake; 
+
+                // NEW MAPPING (Based on Qashqai J10 Doc)
+                // Byte 0, Bit 3 (0x08) -> Driver
+                // Byte 0, Bit 4 (0x10) -> Passenger
+                // Byte 0, Bit 5 (0x20) -> Rear Left
+                // Byte 0, Bit 6 (0x40) -> Rear Right
+                // Byte 3, Bit 1/5 (0x02/0x20) -> Trunk (Doc: D.2 or D.6)
+
+                if (rxFrame.data[0] & 0x08) currentDoors |= 0x80; // Driver
+                if (rxFrame.data[0] & 0x10) currentDoors |= 0x40; // Passenger
+                if (rxFrame.data[0] & 0x20) currentDoors |= 0x20; // Rear Left
+                if (rxFrame.data[0] & 0x40) currentDoors |= 0x10; // Rear Right
+                
+                // Test Trunk on Byte 3 (Mask 0x42 to catch bit 1 or 6)
+                if (rxFrame.data[3] & 0x42) currentDoors |= 0x08; // Trunk
             break;
 
         // ======================================================================
