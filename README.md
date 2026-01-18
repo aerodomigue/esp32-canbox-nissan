@@ -7,6 +7,12 @@
   <img src="docs/BUILD_2.png" width="45%" alt="3D printed enclosure"/>
 </p>
 
+<p align="center">
+  <img src="docs/IMG_3356.gif" width="60%" alt="Dynamic guidelines in action"/>
+  <br>
+  <em>Dynamic reverse camera guidelines working with the CAN bridge</em>
+</p>
+
 This project is an intelligent gateway that integrates telemetry data from a Nissan Juke F15 (Platform B) into an Android head unit. The ESP32 intercepts **Cabin CAN bus** frames via the OBD-II port and **translates Nissan CAN frames to VW Polo protocol**.
 
 **Why VW Polo protocol?** Most Android head units (like those running DuduOS, FYT, etc.) have much better native support for VW/Polo CAN protocol than for Nissan. By translating the frames, we get better integration: working dashboard widgets, door status, reverse camera guidelines, and more.

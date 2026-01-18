@@ -7,6 +7,12 @@
   <img src="docs/BUILD_2.png" width="45%" alt="Boîtier imprimé 3D"/>
 </p>
 
+<p align="center">
+  <img src="docs/IMG_3356.gif" width="60%" alt="Lignes dynamiques en action"/>
+  <br>
+  <em>Lignes de guidage dynamiques de la caméra de recul en fonctionnement</em>
+</p>
+
 Ce projet est une passerelle intelligente permettant d'intégrer les données télémétriques d'un Nissan Juke F15 (Plateforme B) sur un autoradio Android. L'ESP32 intercepte les trames du bus **CAN habitacle** via le port OBD-II et **traduit les trames CAN Nissan vers le protocole VW Polo**.
 
 **Pourquoi le protocole VW Polo ?** La plupart des autoradios Android (comme ceux sous DuduOS, FYT, etc.) ont une bien meilleure prise en charge native du protocole CAN VW/Polo que du Nissan. En traduisant les trames, on obtient une meilleure intégration : widgets tableau de bord fonctionnels, état des portes, lignes de guidage caméra de recul, etc.
