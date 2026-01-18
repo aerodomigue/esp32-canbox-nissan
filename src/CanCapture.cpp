@@ -39,7 +39,7 @@ void handleCanCapture(CanFrame &rxFrame) {
         // Note: Sign inversion for VW protocol is handled in RadioSend
         case 0x002: 
             digitalWrite(LED_HEARTBEAT, !digitalRead(LED_HEARTBEAT)); 
-            currentSteer = (int16_t)((rxFrame.data[0] << 8) | rxFrame.data[1]);
+            currentSteer = (int16_t)((rxFrame.data[1] << 8) | rxFrame.data[2]);
             break;
 
         // ======================================================================
@@ -47,9 +47,9 @@ void handleCanCapture(CanFrame &rxFrame) {
         // ======================================================================
         // Format: Big Endian unsigned 16-bit value
         // Bytes: [0-1] Raw RPM * 4
-        // Scale factor: 0.25 (divide by 4 to get actual RPM)
+        // Scale factor: 0.25 (divide by 8/7 for head unit sync)
         case 0x180: 
-            engineRPM = (uint16_t)((rxFrame.data[0] << 8) | rxFrame.data[1]) / 4;
+            engineRPM = (uint16_t)((rxFrame.data[0] << 8) | rxFrame.data[1]) / 7;
             break;
 
         // ======================================================================
@@ -69,11 +69,9 @@ void handleCanCapture(CanFrame &rxFrame) {
         case 0x5C5: 
             {
                 // Byte [0]: Fuel level as percentage (0-100%)
-                // Example: 0x44 = 68%
-                // Mapped to 0-45 liters (VW Polo tank capacity for head unit display)
+                // Fixed: Inverted scale for Juke (255=empty, 0=full) mapped to 45L
                 uint8_t rawFuel = rxFrame.data[0];
-                if (rawFuel > 100) rawFuel = 100; // Clamp to valid range
-                fuelLevel = map(rawFuel, 0, 100, 0, 45);
+                fuelLevel = map(rawFuel, 255, 0, 0, 45);
 
                 // Bytes [1-3]: Odometer reading in km (24-bit, for logging only)
                 uint32_t odo = ((uint32_t)rxFrame.data[1] << 16) | 
@@ -99,7 +97,6 @@ void handleCanCapture(CanFrame &rxFrame) {
         // Used as external temperature substitute (no dedicated exterior sensor)
         // Format: Unsigned 8-bit with -40°C offset
         // Byte [0]: Raw value, subtract 40 to get Celsius
-        // Example: 0x50 (80) - 40 = 40°C
         case 0x551:
             tempExt = (int8_t)(rxFrame.data[0] - 40);
             break;
@@ -115,13 +112,14 @@ void handleCanCapture(CanFrame &rxFrame) {
         //   Bit 4: Trunk/hatch
         // Remapped to generic bitmask for VW protocol compatibility
         case 0x60D: 
-            currentDoors = 0;
-            // Remap Nissan door bits to VW-compatible bitmask
-            if (rxFrame.data[0] & 0x01) currentDoors |= 0x80; // Driver -> bit 7
-            if (rxFrame.data[0] & 0x02) currentDoors |= 0x40; // Passenger -> bit 6
-            if (rxFrame.data[0] & 0x04) currentDoors |= 0x20; // Rear Left -> bit 5
-            if (rxFrame.data[0] & 0x08) currentDoors |= 0x10; // Rear Right -> bit 4
-            if (rxFrame.data[0] & 0x10) currentDoors |= 0x08; // Trunk -> bit 3
+            currentDoors = 0; 
+            // Nissan Juke/370Z uses bits 4-7 for doors in Byte 0
+            if (rxFrame.data[0] & 0x10) currentDoors |= 0x80; // Driver
+            if (rxFrame.data[0] & 0x20) currentDoors |= 0x40; // Passenger
+            if (rxFrame.data[0] & 0x40) currentDoors |= 0x20; // Rear Left
+            if (rxFrame.data[0] & 0x80) currentDoors |= 0x10; // Rear Right
+            // Trunk is often in data[0] bit 3 or data[1] bit 4
+            if (rxFrame.data[1] & 0x10) currentDoors |= 0x08; 
             break;
 
         // ======================================================================

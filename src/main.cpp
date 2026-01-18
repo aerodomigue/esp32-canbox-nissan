@@ -73,7 +73,7 @@ void setup() {
 
     // E. CAN Bus Initialization - TWAI controller setup
     ESP32Can.setPins(CAN_TX, CAN_RX);
-    ESP32Can.setSpeed(ESP32Can.convertSpeed(TWAI_SPEED_500KBPS)); // 500kbps (Nissan Juke standard)
+    ESP32Can.setSpeed(ESP32Can.convertSpeed(500000)); // 500kbps (Nissan Juke standard)
     
     // Attempt CAN startup with immediate error handling
     if (!ESP32Can.begin()) {
@@ -115,6 +115,21 @@ void loop() {
     // - RX error counter exceeds threshold (approaching Error Passive state)
     // - Bus error counter exceeds threshold
     // - Controller has entered Bus Off state (disconnected from bus)
+
+    if (Serial && (ESP32Can.rxErrorCounter() > 0 || ESP32Can.busErrCounter() > 0)) {
+        Serial.printf("Erreurs RX: %d | Erreurs Bus: %d | State: %d\n", 
+                      ESP32Can.rxErrorCounter(), 
+                      ESP32Can.busErrCounter(),
+                      ESP32Can.canState());
+    }
+
+    if (Serial) {
+        Serial.printf("RX ID: 0x%03X | DLC: %d | Data: ", rxFrame.identifier, rxFrame.data_length_code);
+        for (int i = 0; i < rxFrame.data_length_code; i++) {
+            Serial.printf("%02X ", rxFrame.data[i]);
+        }
+        Serial.println();
+    }
     if (rxErr > MAX_CAN_ERRORS || busErr > MAX_CAN_ERRORS || ESP32Can.canState() == TWAI_STATE_BUS_OFF) {
         
         Serial.printf("\n!!! CAN BUS CRASH DETECTED !!!\n");
@@ -130,6 +145,7 @@ void loop() {
         delay(100); 
         ESP.restart();
     }
+        
 
     // ==========================================================================
     // 2. CAN BUS READING

@@ -40,14 +40,19 @@ static uint32_t lastLogRadio = 0;
  */
 void transmettreVersPoste(uint8_t commande, uint8_t* donnees, uint8_t longueur) {
     uint8_t sum = commande + longueur;
-    for (int i = 0; i < longueur; i++) { sum += donnees[i]; }
-    uint8_t checksum = sum ^ 0xFF;
+    for (int i = 0; i < longueur; i++) { 
+        sum += donnees[i]; 
+    }
+    
+    // Exact checksum calculation according to Junsun/Raise PSA doc:
+    // 0xFF - sum of (command + length + data)
+    uint8_t checksum = (uint8_t)(0xFF - sum);
 
-    RadioSerial.write(0x2E);      // Frame header (magic byte)
-    RadioSerial.write(commande);  // Command ID
+    RadioSerial.write(0x2E);      // Header
+    RadioSerial.write(commande);  // Function ID
     RadioSerial.write(longueur);  // Payload length
-    RadioSerial.write(donnees, longueur);  // Payload data
-    RadioSerial.write(checksum);  // XOR checksum
+    RadioSerial.write(donnees, longueur);  // Payload
+    RadioSerial.write(checksum);  // Corrected Checksum
 }
 
 /**
@@ -101,17 +106,38 @@ void processRadioUpdates() {
     // ==========================================================================
     // 1. STEERING WHEEL ANGLE (Command 0x26) - 100ms interval
     // ==========================================================================
-    // Nissan Juke F15: 0.1 degree per unit (same as VW)
-    // Sign is inverted (-) because Nissan and VW use opposite rotation conventions
-    // If camera guidelines rotate the wrong way on screen, remove the minus sign
-    int16_t angleVW = -currentSteer; 
+    /**
+     * WHY THIS CALCULATION IS NECESSARY:
+     * 1. NISSAN OFFSET: The Juke F15 sensor does not start at 0. Our logs show 
+     * roughly 2912 (0x0B60) when wheels are straight. We must subtract this 
+     * to "zero" the steering.
+     * 2. SCALE DIFFERENCE: Nissan raw units are smaller. VW protocol expects 
+     * a range up to +/- 5400 for a full lock (approx 540 degrees). 
+     * A multiplier of 2.7x maps the Nissan movement to the VW visual scale.
+     * 3. SIGN CONVENTION: If the camera lines rotate the opposite way of the 
+     * physical wheel, we invert the final value.
+     */
+
+    // Step 1: Remove Nissan center offset (2912 found in logs)
+    int32_t centeredSteer = (int32_t)currentSteer - 2912;
+
+    // Step 2: Scale to VW protocol (-5400 to +5400 range)
+    // Multiplier 2.7 ensures the lines reach the screen edges at full lock
+    int16_t angleVW = (int16_t)(centeredSteer * 2.7f);
+
+    // Step 3: Invert sign to match VW direction (Right = Positive)
+    // Switch to 'angleVW = angleVW;' if lines move backwards
+    angleVW = -angleVW; 
 
     if (now - lastFastTime >= 100) {
-        // Send as Little Endian (VW protocol standard)
-        uint8_t payloadSteer[2] = { (uint8_t)(angleVW & 0xFF), (uint8_t)(angleVW >> 8) };
+        // VW Protocol 0x26 expects 2 bytes in Little Endian format
+        uint8_t payloadSteer[2];
+        payloadSteer[0] = (uint8_t)(angleVW & 0xFF);         // LSB
+        payloadSteer[1] = (uint8_t)((angleVW >> 8) & 0xFF);  // MSB
+        
         transmettreVersPoste(0x26, payloadSteer, 2); 
         lastFastTime = now;
-    }
+    }   
 
     // ==========================================================================
     // 2. DASHBOARD DATA (Command 0x41, Sub-command 0x02) - 400ms interval
@@ -168,13 +194,12 @@ void processRadioUpdates() {
     static uint8_t lastSentDoors = 0xFF;  // Init to invalid value to force first send
     uint8_t vw = 0;
     
-    // Remap door bits from internal format to VW Polo standard
-    // Internal format (from CanCapture) -> VW format
-    if (currentDoors & 0x80) vw |= 0x01;  // Driver (bit 7) -> VW Front Left (bit 0)
-    if (currentDoors & 0x40) vw |= 0x02;  // Passenger (bit 6) -> VW Front Right (bit 1)
-    if (currentDoors & 0x20) vw |= 0x04;  // Rear Left (bit 5) -> VW Rear Left (bit 2)
-    if (currentDoors & 0x10) vw |= 0x08;  // Rear Right (bit 4) -> VW Rear Right (bit 3)
-    if (currentDoors & 0x08) vw |= 0x10;  // Trunk (bit 3) -> VW Trunk (bit 4)
+    // Internal format (currentDoors) -> VW format (vw)
+    if (currentDoors & 0x80) vw |= 0x01;  // VW Front Left (Driver)
+    if (currentDoors & 0x40) vw |= 0x02;  // VW Front Right (Passenger)
+    if (currentDoors & 0x20) vw |= 0x04;  // VW Rear Left
+    if (currentDoors & 0x10) vw |= 0x08;  // VW Rear Right
+    if (currentDoors & 0x08) vw |= 0x10;  // VW Trunk
 
     // Only send when door status changes (reduces unnecessary traffic)
     if (currentDoors != lastSentDoors) {
