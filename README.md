@@ -52,7 +52,15 @@ The ESP32 is powered via **USB from the Android head unit**, not from the vehicl
 
 **Why?** The 12V available on the head unit's CAN connector is **permanent** (always on, even with ignition off). Using it would slowly drain the car battery when parked. By using the head unit's USB port, the ESP32 only powers on when the head unit is active.
 
-### Pinout (Wiring)
+### Wiring Diagram
+
+<p align="center">
+  <img src="docs/SCHEMATIC.png" width="90%" alt="Wiring schematic"/>
+  <br>
+  <em>Schematic by Polihedron</em>
+</p>
+
+### Pinout
 
 | Component | ESP32 Pin | Destination | Note |
 | --- | --- | --- | --- |

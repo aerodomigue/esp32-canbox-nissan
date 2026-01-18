@@ -52,6 +52,14 @@ L'ESP32 est alimenté via **USB depuis l'autoradio Android**, et non pas depuis 
 
 **Pourquoi ?** Le 12V disponible sur le connecteur CAN du poste est **permanent** (toujours alimenté, même contact coupé). L'utiliser viderait lentement la batterie en stationnement. En utilisant le port USB du poste, l'ESP32 ne s'allume que lorsque l'autoradio est actif.
 
+### Schéma de Câblage
+
+<p align="center">
+  <img src="docs/SCHEMATIC.png" width="90%" alt="Schéma de câblage"/>
+  <br>
+  <em>Schéma réalisé par Polihedron</em>
+</p>
+
 ### Câblage (Pinout)
 
 | Composant | Pin ESP32 | Destination | Note |
