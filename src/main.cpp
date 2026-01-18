@@ -1,3 +1,16 @@
+/**
+ * @file main.cpp
+ * @brief ESP32 CAN Gateway for Nissan Juke F15 to VW-protocol head unit
+ * 
+ * This firmware acts as a bridge between the Nissan Juke F15 CAN bus and an
+ * aftermarket Android head unit using VW/Polo protocol. It reads vehicle data
+ * from the OBD-II CAN bus and translates it to the format expected by the radio.
+ * 
+ * Hardware: ESP32-S3 (or compatible) with TWAI CAN controller
+ * CAN Speed: 500 kbps (Nissan standard)
+ * Radio Protocol: VW Polo UART @ 38400 baud
+ */
+
 #include <Arduino.h>
 #include <ESP32-TWAI-CAN.hpp>
 #include <esp_task_wdt.h>
@@ -5,28 +18,46 @@
 #include "CanCapture.h"
 #include "RadioSend.h"
 
-// --- CONFIGURATION SECURITE ---
-#define WDT_TIMEOUT 5       // Watchdog système (plantage CPU)
-#define CAN_TIMEOUT 30000   // 30s sans message CAN = Reboot (si contact mis)
-#define MAX_CAN_ERRORS 100  // Nombre d'erreurs max avant Reset d'urgence (Seuil CAN Passif ~127)
+// ==============================================================================
+// SAFETY CONFIGURATION
+// ==============================================================================
+#define WDT_TIMEOUT 5       // Hardware watchdog timeout in seconds (triggers panic on CPU hang)
+#define CAN_TIMEOUT 30000   // 30s without CAN messages triggers reboot (if ignition is on)
+#define MAX_CAN_ERRORS 100  // Max error count before emergency reset (CAN passive threshold ~127)
 
+// ==============================================================================
+// HARDWARE PIN CONFIGURATION
+// ==============================================================================
 #define CAN_TX 21
 #define CAN_RX 20
 
+// ==============================================================================
+// GLOBAL VARIABLES
+// ==============================================================================
 uint32_t lastCanMessageTime = 0;
 HardwareSerial RadioSerial(1);
 
+/**
+ * @brief System initialization
+ * 
+ * Initializes all hardware peripherals in the following order:
+ * A. Status LED
+ * B. Debug Serial
+ * C. Hardware Watchdog
+ * D. Radio UART
+ * E. CAN Controller
+ */
 void setup() {
-    // A. LED Statut
+    // A. Status LED - Used for boot indication and heartbeat
     pinMode(8, OUTPUT);
-    digitalWrite(8, HIGH); // Allumée = Boot
+    digitalWrite(8, HIGH); // LED ON = Boot in progress
 
-    // B. Serial Debug
+    // B. Debug Serial - For monitoring via USB
     Serial.begin(115200);
     delay(2000); 
-    Serial.println("--- BOOT ESP32 (F15 Gateway) ---");
+    Serial.println("--- ESP32 BOOT (F15 Gateway) ---");
 
-    // C. Watchdog Hardware
+    // C. Hardware Watchdog - Automatic reboot on system hang
     esp_task_wdt_deinit();
     esp_task_wdt_config_t twdt_config = {
         .timeout_ms = WDT_TIMEOUT * 1000,
@@ -36,16 +67,17 @@ void setup() {
     esp_task_wdt_init(&twdt_config);
     esp_task_wdt_add(NULL); 
 
-    // D. Radio UART
+    // D. Radio UART - Communication with Android head unit
+    // TX=GPIO5, RX=GPIO6, 38400 baud, 8N1 (VW Polo protocol standard)
     RadioSerial.begin(38400, SERIAL_8N1, 6, 5); 
 
-    // E. Initialisation CAN
+    // E. CAN Bus Initialization - TWAI controller setup
     ESP32Can.setPins(CAN_TX, CAN_RX);
-    ESP32Can.setSpeed(ESP32Can.convertSpeed(TWAI_SPEED_500KBPS)); // 500kbps Juke
+    ESP32Can.setSpeed(ESP32Can.convertSpeed(TWAI_SPEED_500KBPS)); // 500kbps (Nissan Juke standard)
     
-    // Essai de démarrage CAN avec gestion d'erreur immédiate
+    // Attempt CAN startup with immediate error handling
     if (!ESP32Can.begin()) {
-        Serial.println("ERREUR CRITIQUE : CAN INIT FAIL -> Reboot dans 3s");
+        Serial.println("CRITICAL ERROR: CAN INIT FAILED -> Reboot in 3s");
         delay(3000);
         ESP.restart();
     } else {
@@ -53,50 +85,64 @@ void setup() {
     }
 
     lastCanMessageTime = millis();
-    digitalWrite(8, LOW); 
+    digitalWrite(8, LOW); // LED OFF = Boot complete
 }
 
+/**
+ * @brief Main loop - Runs continuously after setup()
+ * 
+ * Execution flow:
+ * 1. Feed the watchdog
+ * 2. Check CAN bus health and error counters
+ * 3. Read and process incoming CAN frames
+ * 4. Send updates to the radio
+ * 5. Monitor for communication timeout
+ */
 void loop() {
     CanFrame rxFrame;
     unsigned long now = millis();
-    esp_task_wdt_reset(); // On nourrit le watchdog
+    esp_task_wdt_reset(); // Feed the watchdog to prevent system reset
 
-    // ============================================================
-    // 1. SECURITE : GESTION DES ERREURS CAN (AJOUT DEMANDE)
-    // ============================================================
-    // On vérifie les compteurs internes du contrôleur CAN (TWAI)
+    // ==========================================================================
+    // 1. SAFETY: CAN BUS ERROR MONITORING
+    // ==========================================================================
+    // Check the internal error counters of the TWAI (CAN) controller
+    // These counters increment on transmission/reception errors
     uint32_t rxErr = ESP32Can.rxErrorCounter();
     uint32_t busErr = ESP32Can.busErrCounter();
     
-    // Si trop d'erreurs ou si le bus s'est coupé (Bus Off)
+    // Trigger emergency reset if:
+    // - RX error counter exceeds threshold (approaching Error Passive state)
+    // - Bus error counter exceeds threshold
+    // - Controller has entered Bus Off state (disconnected from bus)
     if (rxErr > MAX_CAN_ERRORS || busErr > MAX_CAN_ERRORS || ESP32Can.canState() == TWAI_STATE_BUS_OFF) {
         
-        Serial.printf("\n!!! CRASH CAN BUS DETECTE !!!\n");
+        Serial.printf("\n!!! CAN BUS CRASH DETECTED !!!\n");
         Serial.printf("RX Err: %d | Bus Err: %d | State: %d\n", rxErr, busErr, ESP32Can.canState());
-        Serial.println("-> RESET D'URGENCE DU CONTROLEUR...");
+        Serial.println("-> EMERGENCY CONTROLLER RESET...");
         
-        // Option douce : Tenter de relancer le driver CAN sans rebooter tout l'ESP
+        // Soft option: Try to restart CAN driver without full ESP reboot
         // ESP32Can.end();
         // delay(100);
         // ESP32Can.begin(); 
         
-        // Option radicale (plus sûre lors d'un démarrage voiture) : Reboot complet
+        // Hard option (safer during vehicle startup): Full system reboot
         delay(100); 
         ESP.restart();
     }
 
-    // ============================================================
-    // 2. LECTURE CAN BUS
-    // ============================================================
+    // ==========================================================================
+    // 2. CAN BUS READING
+    // ==========================================================================
     if (ESP32Can.readFrame(rxFrame)) {
         handleCanCapture(rxFrame);
         lastCanMessageTime = now;
         
-        // Flash LED à chaque réception (Indicateur de vie)
+        // Toggle LED on each received frame (activity indicator)
         digitalWrite(8, !digitalRead(8)); 
     } 
     else {
-        // Heartbeat lent si pas de message (Bus silencieux)
+        // Slow heartbeat when no messages (indicates silent bus)
         static unsigned long lastHeartbeat = 0;
         if (now - lastCanMessageTime > 200 && now - lastHeartbeat > 1000) {
              digitalWrite(8, !digitalRead(8));
@@ -104,17 +150,18 @@ void loop() {
         }
     }
 
-    // ============================================================
-    // 3. ENVOI VERS RADIO
-    // ============================================================
+    // ==========================================================================
+    // 3. RADIO TRANSMISSION
+    // ==========================================================================
     processRadioUpdates();
 
-    // ============================================================
-    // 4. SECURITE : TIMEOUT GLOBAL (Si moteur coupé ou fil coupé)
-    // ============================================================
-    // Si silence total > 30s ET que la batterie est > 11V (donc voiture non garée, juste plantée)
+    // ==========================================================================
+    // 4. SAFETY: GLOBAL TIMEOUT (Engine off or wire disconnected)
+    // ==========================================================================
+    // If total silence > 30s AND battery voltage > 11V (car not parked, just frozen)
+    // This prevents infinite hang when CAN communication is lost but power remains
     if (now - lastCanMessageTime > CAN_TIMEOUT && voltBat > 11.0) {
-        Serial.println("TIMEOUT SILENCE CAN -> REBOOT SECURITE");
+        Serial.println("CAN SILENCE TIMEOUT -> SAFETY REBOOT");
         delay(100);
         ESP.restart(); 
     }
