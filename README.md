@@ -44,6 +44,8 @@ This project is an intelligent gateway that integrates telemetry data from a Nis
 
 > **Note:** Documentation for the Raise/VW-Polo protocol used by Android head units is scarce. Some features are still being reverse-engineered due to lack of official protocol specifications.
 
+See the **[Roadmap](ROADMAP.md)** for planned features including USB configuration app and OTA updates.
+
 ---
 
 ## Hardware Requirements

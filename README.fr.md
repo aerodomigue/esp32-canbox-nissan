@@ -44,6 +44,8 @@ Ce projet est une passerelle intelligente permettant d'intégrer les données t�
 
 > **Note :** La documentation du protocole Raise/VW-Polo utilisé par les autoradios Android est rare. Certaines fonctionnalités sont encore en cours de reverse-engineering par manque de spécifications officielles du protocole.
 
+Voir la **[Roadmap](ROADMAP.md)** pour les fonctionnalités prévues, incluant l'application de configuration USB et les mises à jour OTA.
+
 ---
 
 ## Matériel Requis
