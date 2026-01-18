@@ -107,23 +107,24 @@ void processRadioUpdates() {
     // 1. STEERING WHEEL ANGLE (Command 0x26) - 100ms interval
     // ==========================================================================
     /**
-     * WHY THIS CALCULATION IS NECESSARY:
-     * 1. NISSAN OFFSET: The Juke F15 sensor does not start at 0. Our logs show 
-     * roughly 2912 (0x0B60) when wheels are straight. We must subtract this 
-     * to "zero" the steering.
-     * 2. SCALE DIFFERENCE: Nissan raw units are smaller. VW protocol expects 
-     * a range up to +/- 5400 for a full lock (approx 540 degrees). 
-     * A multiplier of 2.7x maps the Nissan movement to the VW visual scale.
-     * 3. SIGN CONVENTION: If the camera lines rotate the opposite way of the 
-     * physical wheel, we invert the final value.
+     * DYNAMIC GUIDELINES CALIBRATION (IPAS):
+     * 1. NISSAN OFFSET: The Juke F15 sensor is not at 0 when wheels are straight.
+     * Logs show ~2912 (0x0B60). We center it by adding a +100 fine-tuning adjustment.
+     * * 2. SCALING: 
+     * For the dynamic lines to behave correctly in reverse on this Android head unit, 
+     * we must NOT send the actual steering angle (540°).
+     * TARGET: +/- 200 degrees (Value 2000) at mechanical full lock.
+     * * Calculation: Nissan Max ~5400 * 0.04 = 216 (represents 21.6° displayed, 216° interpreted).
+     * The 0.04 factor is validated to achieve this +/- 200° range.
+     * * 3. DIRECTION: Sign inversion (-) required to match VW orientation.
      */
 
     // Step 1: Remove Nissan center offset (2912 found in logs)
-    int32_t centeredSteer = (int32_t)currentSteer - 2912;
+    int32_t centeredSteer = (int32_t)currentSteer + 100;
 
     // Step 2: Scale to VW protocol (-5400 to +5400 range)
     // Multiplier 2.7 ensures the lines reach the screen edges at full lock
-    int16_t angleVW = (int16_t)(centeredSteer * 2.7f);
+    int16_t angleVW = (int16_t)(centeredSteer * 0.04f);
 
     // Step 3: Invert sign to match VW direction (Right = Positive)
     // Switch to 'angleVW = angleVW;' if lines move backwards
