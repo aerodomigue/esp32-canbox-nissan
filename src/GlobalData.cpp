@@ -1,16 +1,3 @@
-/**
- * @file GlobalData.cpp
- * @brief Shared vehicle data definitions
- * 
- * This file defines (allocates memory for) all global variables declared
- * in GlobalData.h. Variables are initialized to safe default values to
- * prevent undefined behavior at startup.
- * 
- * Data flow:
- * - Written by: CanCapture.cpp (from decoded CAN frames)
- * - Read by: RadioSend.cpp (for transmission to head unit)
- */
-
 #include "GlobalData.h"
 
 // =============================================================================
@@ -43,3 +30,6 @@ float fuelConsoMoy = 0.0;
 
 /** Temperature in °C (from coolant sensor) - 0 = unknown */
 int8_t tempExt = 0;
+
+/** Odometer (Total Mileage) in km - 0 = unknown */
+uint32_t currentOdo = 0;

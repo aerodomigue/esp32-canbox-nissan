@@ -46,4 +46,7 @@ extern float fuelConsoMoy;
 /** External temperature in °C (actually coolant temp, used as substitute) */
 extern int8_t tempExt;
 
+/** Odometer (Total Mileage) in km - 0 = unknown */
+extern uint32_t currentOdo;
+
 #endif

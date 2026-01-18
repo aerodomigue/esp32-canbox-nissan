@@ -74,10 +74,9 @@ void handleCanCapture(CanFrame &rxFrame) {
                 fuelLevel = map(rawFuel, 255, 0, 0, 45);
 
                 // Bytes [1-3]: Odometer reading in km (24-bit, for logging only)
-                uint32_t odo = ((uint32_t)rxFrame.data[1] << 16) | 
+                currentOdo = ((uint32_t)rxFrame.data[1] << 16) | 
                                ((uint32_t)rxFrame.data[2] << 8) | 
                                rxFrame.data[3];
-                (void)odo; // Suppress unused variable warning
             }
             break;
 
@@ -113,24 +112,19 @@ void handleCanCapture(CanFrame &rxFrame) {
         //   Bit 1 or 6 (0x42): Trunk/hatch
         // Remapped to generic bitmask for VW protocol compatibility
         case 0x60D: 
+            {
                 // Save Handbrake state (Bit 0)
                 uint8_t savedHandbrake = currentDoors & 0x01;
                 currentDoors = savedHandbrake; 
 
-                // NEW MAPPING (Based on Qashqai J10 Doc)
-                // Byte 0, Bit 3 (0x08) -> Driver
-                // Byte 0, Bit 4 (0x10) -> Passenger
-                // Byte 0, Bit 5 (0x20) -> Rear Left
-                // Byte 0, Bit 6 (0x40) -> Rear Right
-                // Byte 3, Bit 1/5 (0x02/0x20) -> Trunk (Doc: D.2 or D.6)
-
-                if (rxFrame.data[0] & 0x08) currentDoors |= 0x80; // Driver
-                if (rxFrame.data[0] & 0x10) currentDoors |= 0x40; // Passenger
+                if (rxFrame.data[0] & 0x10) currentDoors |= 0x80; // Front Left (Driver)
+                if (rxFrame.data[0] & 0x08) currentDoors |= 0x40; // Front Right (Passenger)
                 if (rxFrame.data[0] & 0x20) currentDoors |= 0x20; // Rear Left
                 if (rxFrame.data[0] & 0x40) currentDoors |= 0x10; // Rear Right
                 
-                // Test Trunk on Byte 3 (Mask 0x42 to catch bit 1 or 6)
-                if (rxFrame.data[3] & 0x42) currentDoors |= 0x08; // Trunk
+                // Trunk - Byte 3, Bits D.2 (0x02) or D.6 (0x40)
+                if (rxFrame.data[3] & 0x42) currentDoors |= 0x08;
+            }
             break;
 
         // ======================================================================
