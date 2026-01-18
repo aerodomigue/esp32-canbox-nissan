@@ -4,11 +4,14 @@
 #define LED_HEARTBEAT 8
 
 void handleCanCapture(CanFrame &rxFrame) {
+    // --- TIMER POUR LES LOGS (1 seconde) ---
+    static uint32_t lastLogTime = 0;
+    uint32_t now = millis();
+
     switch (rxFrame.identifier) {
         
         case 0x002: // --- DIRECTION (Angle Volant) ---
             digitalWrite(LED_HEARTBEAT, !digitalRead(LED_HEARTBEAT)); 
-            // On garde la valeur brute signée, on la traitera dans RadioSend
             currentSteer = (int16_t)((rxFrame.data[0] << 8) | rxFrame.data[1]);
             break;
 
@@ -17,7 +20,6 @@ void handleCanCapture(CanFrame &rxFrame) {
             break;
 
         case 0x284: // --- ROUES (Vitesse véhicule) ---
-            // On stocke la vitesse en km/h
             vehicleSpeed = ((rxFrame.data[0] << 8) | rxFrame.data[1]) / 100;
             break;
 
@@ -29,10 +31,10 @@ void handleCanCapture(CanFrame &rxFrame) {
             if (rxFrame.data[0] & 0x08) currentDoors |= 0x10; // AR Droite
             if (rxFrame.data[0] & 0x10) currentDoors |= 0x08; // Coffre
             
-            // CONVERSION NISSAN (0-255) -> VW (0-100%)
             fuelLevel = map(rxFrame.data[1], 0, 255, 0, 100);
 
-            if (rxFrame.data[2] & 0x01) currentDoors |= 0x01; // Frein à main
+            // On garde le bit 0x01 ici, mais RadioSend le filtrera pour le poste
+            if (rxFrame.data[2] & 0x01) currentDoors |= 0x01; 
             break;
 
         case 0x54C: // --- ORDINATEUR DE BORD ---
@@ -41,13 +43,22 @@ void handleCanCapture(CanFrame &rxFrame) {
             break;
 
         case 0x5E5: // --- ÉLECTRIQUE (Batterie) ---
-            // Capture précise : 142 pour 14.2V
             voltBat = rxFrame.data[0] * 0.1f;
             break;
 
-        case 0x510: // --- CLIMATISATION (Température) ---
-            // Format Nissan standard : Celsius + 40
-            tempExt = (float)rxFrame.data[0] - 40.0f;
+        case 0x510: // --- CLIMATISATION (Température ext) ---
+            tempExt = (int8_t)rxFrame.data[0] - 40;
             break;
+    }
+
+    // --- AFFICHAGE DES LOGS (Seulement si Serial est connecté) ---
+    if (Serial && (now - lastLogTime >= 1000)) {
+        Serial.println("--- NISSAN DATA DECODED ---");
+        Serial.printf("RPM: %u tr/min | Speed: %u km/h | Volt: %.1fV\n", engineRPM, vehicleSpeed, voltBat);
+        Serial.printf("Temp: %d°C | Fuel: %u%% | DTE: %d km\n", tempExt, fuelLevel, dteValue);
+        Serial.printf("Steer: %d | Doors Hex: 0x%02X | Handbrake: %s\n", 
+                      currentSteer, currentDoors & 0xFE, (currentDoors & 0x01) ? "ON" : "OFF");
+        Serial.println("---------------------------");
+        lastLogTime = now;
     }
 }

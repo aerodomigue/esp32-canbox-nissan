@@ -46,21 +46,22 @@ void setup() {
     
     // Si l'initialisation échoue (problème hardware interne/pins)
     // Configuration des pins natives de l'ESP32-C3/S3
-    // ESP32Can.setPins(CAN_TX, CAN_RX);
-    // // Vitesse 500kbps pour Nissan Juke
-    // ESP32Can.setSpeed(ESP32Can.convertSpeed(500000));
-    // if (!ESP32Can.begin()) {
-    //     Serial.println("ERREUR CRITIQUE : CAN HARDWARE FAIL");
+    ESP32Can.setPins(CAN_TX, CAN_RX);
+    // Vitesse 500kbps pour Nissan Juke
+    ESP32Can.setSpeed(ESP32Can.convertSpeed(500000));
+    if (!ESP32Can.begin()) {
+        Serial.println("ERREUR CRITIQUE : CAN HARDWARE FAIL");
         
-    //     // --- ETAT LED : STROBOSCOPE (50ms) ---
-    //     // Signifie : Erreur d'initialisation CAN (Pins ou Puce HS)
-    //     while(1) {
-    //         digitalWrite(8, !digitalRead(8));
-    //         delay(50); 
-    //         esp_task_wdt_reset(); // On nourrit le chien pour ne pas rebooter
-    //     }
-    // }
-    Serial.println("CAN OK ! Pret a recevoir.");
+        // --- ETAT LED : STROBOSCOPE (50ms) ---
+        // Signifie : Erreur d'initialisation CAN (Pins ou Puce HS)
+        while(1) {
+            digitalWrite(8, !digitalRead(8));
+            delay(50); 
+            esp_task_wdt_reset(); // On nourrit le chien pour ne pas rebooter
+        }
+    } else {
+        Serial.println("CAN OK ! Pret a recevoir.");
+    }
 
     lastCanMessageTime = millis();
     digitalWrite(8, LOW); // On éteint avant de commencer la boucle
@@ -72,12 +73,12 @@ void loop() {
     unsigned long now = millis();
     esp_task_wdt_reset();
 
-    // if (Serial && (ESP32Can.rxErrorCounter() > 0 || ESP32Can.busErrCounter() > 0)) {
-    //     Serial.printf("Erreurs RX: %d | Erreurs Bus: %d | State: %d\n", 
-    //                   ESP32Can.rxErrorCounter(), 
-    //                   ESP32Can.busErrCounter(),
-    //                   ESP32Can.canState());
-    // }
+    if (Serial && (ESP32Can.rxErrorCounter() > 0 || ESP32Can.busErrCounter() > 0)) {
+        Serial.printf("Erreurs RX: %d | Erreurs Bus: %d | State: %d\n", 
+                      ESP32Can.rxErrorCounter(), 
+                      ESP32Can.busErrCounter(),
+                      ESP32Can.canState());
+    }
 
 // // =========================================================================
 //     // --- PARTIE FAKE DATA COMPLETE (SIMULATION TOTALE) ---
