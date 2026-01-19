@@ -198,6 +198,8 @@ pio device monitor
 - [balrog-kun / Nissan Qashqai CAN info](https://github.com/balrog-kun/nissan-qashqai-can-info)
 
 ### Radio Protocols (VW/Raise/RZC)
+- **[VW Polo Protocol Documentation](docs/protocols/raise-vw-polo/raise%20VW%20-%20polo%20protocole.en.md)** - Complete protocol specification (English)
+- **[Documentation Protocole VW Polo](docs/protocols/raise-vw-polo/raise%20VW%20-%20polo%20protocole.fr.md)** - Spécification complète du protocole (Français)
 - [smartgauges / canbox](https://github.com/smartgauges/canbox)
 - [cxsichen / Raise Protocol](https://github.com/cxsichen/helllo-world/tree/master/%E5%8D%8F%E8%AE%AE/%E7%9D%BF%E5%BF%97%E8%AF%9A)
 - [DUDU-AUTO Forum / Qashqai 2011 CANbus](https://forum.dudu-auto.com/d/1786-nissan-qashqai-2011-canbus/6)
