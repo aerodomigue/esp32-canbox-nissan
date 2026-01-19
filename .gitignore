@@ -3,9 +3,9 @@
 .pioenvs/
 .piolibdeps/
 
-# Build folders
-build/
-bin/
+# Build folders (only at root level)
+/build/
+/bin/
 
 # VS Code : On ignore la config locale mais on peut garder les recommandations
 .vscode/

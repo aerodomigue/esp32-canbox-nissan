@@ -3,12 +3,12 @@
 > **Available Languages:** [Français](README.fr.md) | **English**
 
 <p align="center">
-  <img src="docs/BUILD_1.png" width="45%" alt="Assembled unit with OBD-II connector"/>
-  <img src="docs/BUILD_2.png" width="45%" alt="3D printed enclosure"/>
+  <img src="docs/images/hardware/build/BUILD_1.png" width="45%" alt="Assembled unit with OBD-II connector"/>
+  <img src="docs/images/hardware/build/BUILD_2.png" width="45%" alt="3D printed enclosure"/>
 </p>
 
 <p align="center">
-  <img src="docs/IMG_3356.gif" width="60%" alt="Dynamic guidelines in action"/>
+  <img src="docs/images/demo/IMG_3356.gif" width="60%" alt="Dynamic guidelines in action"/>
   <br>
   <em>Dynamic reverse camera guidelines working with the CAN bridge</em>
 </p>
@@ -72,7 +72,7 @@ The ESP32 is powered via **USB from the Android head unit**, not from the vehicl
 ### Wiring Diagram
 
 <p align="center">
-  <img src="docs/SCHEMATIC.png" width="90%" alt="Wiring schematic"/>
+  <img src="docs/images/hardware/schematic/SCHEMATIC.png" width="90%" alt="Wiring schematic"/>
   <br>
   <em>Schematic by Polihedron</em>
 </p>
@@ -120,8 +120,8 @@ The original box likely has CAN signal access on its connector, so it might be p
 
 The system is designed to be 100% autonomous and resilient to vehicle electrical interference:
 
-1. **[CAN Capture](docs/CAN_CAPTURE.md)**: Decodes Nissan frames (500kbps) and updates global variables (Speed, RPM, Doors, etc.)
-2. **[Radio Send](docs/RADIO_SEND.md)**: Formats and transmits data to the head unit at two intervals (100ms for steering, 400ms for dashboard)
+1. **[CAN Capture](docs/technical/CAN_CAPTURE.md)**: Decodes Nissan frames (500kbps) and updates global variables (Speed, RPM, Doors, etc.)
+2. **[Radio Send](docs/technical/RADIO_SEND.md)**: Formats and transmits data to the head unit at two intervals (100ms for steering, 400ms for dashboard)
 3. **Hardware Watchdog**: Automatic reboot if the program freezes for more than 5 seconds
 4. **CAN Watchdog**: Forces reboot if no CAN data received for 30s while battery > 11V
 
@@ -145,8 +145,8 @@ The LED (GPIO 8) provides quick diagnostics without requiring a PC connection:
 ### PCB Assembly
 
 <p align="center">
-  <img src="docs/PCB_TOP.png" width="45%" alt="PCB top view - components soldered"/>
-  <img src="docs/PCB_BOTTOM.png" width="45%" alt="PCB bottom view"/>
+  <img src="docs/images/hardware/pcb/PCB_TOP.png" width="45%" alt="PCB top view - components soldered"/>
+  <img src="docs/images/hardware/pcb/PCB_BOTTOM.png" width="45%" alt="PCB bottom view"/>
 </p>
 
 *ESP32 with SN65HVD230 CAN transceiver soldered on perfboard*

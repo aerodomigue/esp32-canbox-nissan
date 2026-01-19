@@ -3,12 +3,12 @@
 > **Langues disponibles :** **Français** | [English](README.md)
 
 <p align="center">
-  <img src="docs/BUILD_1.png" width="45%" alt="Module assemblé avec connecteur OBD-II"/>
-  <img src="docs/BUILD_2.png" width="45%" alt="Boîtier imprimé 3D"/>
+  <img src="docs/images/hardware/build/BUILD_1.png" width="45%" alt="Module assemblé avec connecteur OBD-II"/>
+  <img src="docs/images/hardware/build/BUILD_2.png" width="45%" alt="Boîtier imprimé 3D"/>
 </p>
 
 <p align="center">
-  <img src="docs/IMG_3356.gif" width="60%" alt="Lignes dynamiques en action"/>
+  <img src="docs/images/demo/IMG_3356.gif" width="60%" alt="Lignes dynamiques en action"/>
   <br>
   <em>Lignes de guidage dynamiques de la caméra de recul en fonctionnement</em>
 </p>
@@ -72,7 +72,7 @@ L'ESP32 est alimenté via **USB depuis l'autoradio Android**, et non pas depuis 
 ### Schéma de Câblage
 
 <p align="center">
-  <img src="docs/SCHEMATIC.png" width="90%" alt="Schéma de câblage"/>
+  <img src="docs/images/hardware/schematic/SCHEMATIC.png" width="90%" alt="Schéma de câblage"/>
   <br>
   <em>Schéma réalisé par Polihedron</em>
 </p>
@@ -120,8 +120,8 @@ Le boîtier d'origine a probablement accès au signal CAN sur son connecteur, il
 
 Le système est conçu pour être 100% autonome et résistant aux parasites électriques du véhicule :
 
-1. **[Capture CAN](docs/CAN_CAPTURE.md)** : Décode les trames Nissan (500kbps) et met à jour les variables globales (Vitesse, RPM, Portes, etc.)
-2. **[Envoi Radio](docs/RADIO_SEND.md)** : Formate et transmet les données au poste à deux intervalles (100ms pour direction, 400ms pour tableau de bord)
+1. **[Capture CAN](docs/technical/CAN_CAPTURE.md)** : Décode les trames Nissan (500kbps) et met à jour les variables globales (Vitesse, RPM, Portes, etc.)
+2. **[Envoi Radio](docs/technical/RADIO_SEND.md)** : Formate et transmet les données au poste à deux intervalles (100ms pour direction, 400ms pour tableau de bord)
 3. **Watchdog Matériel** : Redémarrage automatique si le programme gèle plus de 5 secondes
 4. **Watchdog CAN** : Force un reboot si aucune donnée CAN reçue pendant 30s alors que batterie > 11V
 
@@ -145,8 +145,8 @@ La LED (GPIO 8) permet un diagnostic rapide sans connexion PC :
 ### Assemblage PCB
 
 <p align="center">
-  <img src="docs/PCB_TOP.png" width="45%" alt="PCB vue dessus - composants soudés"/>
-  <img src="docs/PCB_BOTTOM.png" width="45%" alt="PCB vue dessous"/>
+  <img src="docs/images/hardware/pcb/PCB_TOP.png" width="45%" alt="PCB vue dessus - composants soudés"/>
+  <img src="docs/images/hardware/pcb/PCB_BOTTOM.png" width="45%" alt="PCB vue dessous"/>
 </p>
 
 *ESP32 avec transceiver CAN SN65HVD230 soudé sur plaque à trous*
