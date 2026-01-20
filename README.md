@@ -65,9 +65,17 @@ See the **[Roadmap](ROADMAP.md)** for planned features including USB configurati
 
 ### Power Supply Note
 
-The ESP32 is powered via **USB from the Android head unit**, not from the vehicle's 12V.
+The ESP32 is powered via **USB from the Android head unit**.
 
-**Why?** The 12V available on the head unit's CAN connector is **permanent** (always on, even with ignition off). Using it would slowly drain the car battery when parked. By using the head unit's USB port, the ESP32 only powers on when the head unit is active.
+**IMPORTANT - If using 12V power instead of USB:**
+- ⚠️ **NEVER use permanent 12V** - it will drain your car battery when parked
+- ✅ **Use ACC (accessory) 12V only** - it turns off with the ignition
+- You'll need a voltage regulator (like the L7805CV in the BOM) to convert 12V to 5V
+- ⚠️ **The current 12V circuit needs improvements**: It lacks reverse polarity protection (risk of damage if wired incorrectly) and proper noise filtering for alternator-generated electrical interference. Additional components (diode, capacitors, TVS diode) would be recommended for a robust 12V power supply.
+
+**Why USB is recommended:**
+1. **Automatic power management**: USB power from the head unit is only active when the head unit is on (ACC-controlled), preventing battery drain.
+2. **Voltage stability**: Automotive 12V is unstable - it varies significantly during engine start (voltage drops), alternator charging (spikes up to 14.5V), and contains electrical noise. USB provides clean, regulated 5V power.
 
 ### Wiring Diagram
 
