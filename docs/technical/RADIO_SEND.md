@@ -29,10 +29,10 @@ All frames follow this structure:
 ### Checksum Calculation
 
 ```
-Checksum = 0xFF - (Command + Length + Sum(Payload bytes))
+Checksum = (Command + Length + Sum(Payload bytes)) XOR 0xFF
 ```
 
-> Based on Junsun/Raise PSA documentation.
+> Based on official Raise VW Polo Protocol v1.4 specification.
 
 ---
 
@@ -73,19 +73,12 @@ Byte 1: Angle MSB
 | Byte | Content | Format | Notes |
 | --- | --- | --- | --- |
 | 0 | Sub-command | 0x02 | Dashboard mode |
-| 1-2 | Engine RPM | Big Endian uint16 | Direct RPM value |
-| 3-4 | Vehicle Speed | Little Endian uint16 | km/h × 100 |
-| 5-6 | Battery Voltage | Big Endian uint16 | Volts × 100 |
-| 7-8 | Temperature | Big Endian int16 | °C × 10 |
-| 9-10 | Reserved | 0x00 | |
-| 11 | Status Flags | Bitmask | See below |
-| 12 | Fuel Level | uint8 | Liters (0-45 VW scale) |
-
-**Status Flags (Byte 11):**
-| Bit | Meaning |
-| --- | --- |
-| 0 | Handbrake engaged |
-| 2 | Engine running / Ignition on |
+| 1-2 | Engine RPM | Big Endian uint16 | RPM = Data1 × 256 + Data2 |
+| 3-4 | Vehicle Speed | Big Endian uint16 | Speed (km/h) = (Data3 × 256 + Data4) × 0.01 |
+| 5-6 | Battery Voltage | Big Endian uint16 | Voltage (V) = (Data5 × 256 + Data6) × 0.01 |
+| 7-8 | Temperature | Big Endian int16 | Temp (°C) = (Data7 × 256 + Data8) × 0.1 |
+| 9-11 | Odometer | Big Endian uint24 | Distance (km) = Data9 × 65536 + Data10 × 256 + Data11 |
+| 12 | Fuel Level | uint8 | Remaining fuel in liters |
 
 ---
 
@@ -94,39 +87,49 @@ Byte 1: Angle MSB
 | Field | Value |
 | --- | --- |
 | **Update Rate** | On change only |
-| **Payload Length** | 13 bytes |
-| **Sub-command** | 0x01 (Door status) |
+| **Payload Length** | 2 bytes |
+| **Sub-command** | 0x01 (Door/safety status) |
 
 **Payload Structure:**
 
 | Byte | Content | Format | Notes |
 | --- | --- | --- | --- |
 | 0 | Sub-command | 0x01 | Door mode |
-| 1 | Door Bitmask | See below | VW format |
-| 2-12 | Reserved | 0x00 | |
+| 1 | Status Bitmask | See below | VW format |
 
-**Door Bitmask (Byte 1) - VW Format:**
-| Bit | Door |
-| --- | --- |
-| 0 | Front Left (Driver) |
-| 1 | Front Right (Passenger) |
-| 2 | Rear Left |
-| 3 | Rear Right |
-| 4 | Trunk |
+**Status Bitmask (Byte 1) - VW Format:**
+| Bit | Meaning | Values |
+| --- | --- | --- |
+| 0 | Front Left door (Driver) | 0=closed, 1=open |
+| 1 | Front Right door (Passenger) | 0=closed, 1=open |
+| 2 | Rear Left door | 0=closed, 1=open |
+| 3 | Rear Right door (if present) | 0=closed, 1=open |
+| 4 | Trunk | 0=closed, 1=open |
+| 5 | Handbrake | 0=released, 1=applied |
+| 6 | Washer fluid level | 0=normal, 1=low (not available from CAN) |
+| 7 | Driver seat belt | 0=fastened, 1=not fastened (not available from CAN) |
 
 ---
 
-### 4. Handshake Responses
+### 4. Handshake (HOST → SLAVE)
 
-The head unit periodically sends initialization requests. The ESP32 must respond to maintain the communication link.
+The head unit (HOST) sends commands to establish/maintain the communication link. The ESP32 (SLAVE) must respond appropriately.
 
-**Version Query (0xC0 or 0x08):**
-- Response Command: 0xF1
-- Payload: `{0x02, 0x08, 0x10}` (Firmware version identifier)
+**Start/End Connection (0x81):**
+| Data0 | Meaning | Response |
+| --- | --- | --- |
+| 0x01 | Start connection | ACK (0xFF) |
+| 0x00 | End connection | ACK (0xFF) |
 
-**Status Query (0x90):**
-- Response Command: 0x91
-- Payload: `{0x41, 0x02}` (Status OK)
+**Request Control Information (0x90):**
+- Data0 specifies which data type to send (0x14, 0x16, 0x21, 0x24, 0x25, 0x26, 0x30, 0x41)
+- SLAVE responds by sending the requested data type proactively
+
+**ACK/NACK Response:**
+| Value | Meaning |
+| --- | --- |
+| 0xFF | ACK (frame OK) |
+| 0xF0 | NACK (checksum error) |
 
 ---
 

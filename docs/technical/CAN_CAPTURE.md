@@ -47,15 +47,15 @@ The `CanCapture.cpp` module processes frames in real-time using the following id
 
 | Byte | Bit | Door |
 | --- | --- | --- |
-| [0] | 3 (0x08) | Driver (Front Left) |
-| [0] | 4 (0x10) | Passenger (Front Right) |
+| [0] | 4 (0x10) | Driver (Front Left) |
+| [0] | 3 (0x08) | Passenger (Front Right) |
 | [0] | 5 (0x20) | Rear Left |
 | [0] | 6 (0x40) | Rear Right |
 | [3] | 1 or 6 (0x42) | Trunk / Hatch |
 
 The raw Nissan bits are remapped to a generic format for VW protocol compatibility:
-- Nissan byte 0 bit 3 → Internal bit 7 (Driver)
-- Nissan byte 0 bit 4 → Internal bit 6 (Passenger)
+- Nissan byte 0 bit 4 → Internal bit 7 (Driver / Front Left)
+- Nissan byte 0 bit 3 → Internal bit 6 (Passenger / Front Right)
 - Nissan byte 0 bit 5 → Internal bit 5 (Rear Left)
 - Nissan byte 0 bit 6 → Internal bit 4 (Rear Right)
 - Nissan byte 3 bit 1/6 → Internal bit 3 (Trunk)
