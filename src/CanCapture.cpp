@@ -74,10 +74,9 @@ void handleCanCapture(CanFrame &rxFrame) {
                 fuelLevel = map(rawFuel, 255, 0, 0, 45);
 
                 // Bytes [1-3]: Odometer reading in km (24-bit, for logging only)
-                uint32_t odo = ((uint32_t)rxFrame.data[1] << 16) | 
+                currentOdo = ((uint32_t)rxFrame.data[1] << 16) | 
                                ((uint32_t)rxFrame.data[2] << 8) | 
                                rxFrame.data[3];
-                (void)odo; // Suppress unused variable warning
             }
             break;
 
@@ -102,55 +101,96 @@ void handleCanCapture(CanFrame &rxFrame) {
             break;
 
         // ======================================================================
-        // 7. BODY CONTROL - Door Status (CAN ID 0x60D)
+        // 7. BODY CONTROL - Doors, Lights, Indicators (CAN ID 0x60D)
         // ======================================================================
-        // Byte [0] bit mapping (Nissan Juke/Qashqai):
-        //   Bit 3 (0x08): Driver door
-        //   Bit 4 (0x10): Passenger door
-        //   Bit 5 (0x20): Rear left door
-        //   Bit 6 (0x40): Rear right door
-        // Byte [3] bit mapping:
-        //   Bit 1 or 6 (0x42): Trunk/hatch
-        // Remapped to generic bitmask for VW protocol compatibility
-        case 0x60D: 
-                // Save Handbrake state (Bit 0)
+        // Bytes [0-2] form a 24-bit status word (Nissan Juke/Qashqai B-platform)
+        // Bit mapping:
+        //   Bit 11: High beams
+        //   Bit 13: Left indicator signal
+        //   Bit 14: Right indicator signal
+        //   Bit 17: Headlights (low beam)
+        //   Bit 18: Parking lights
+        //   Bit 19: Passenger door
+        //   Bit 20: Driver door
+        //   Bit 21: Rear left door
+        //   Bit 22: Rear right door
+        //   Bit 23: Boot/trunk
+        case 0x60D:
+            {
+                // Build 24-bit status word from bytes 0-2
+                uint32_t status = (uint32_t(rxFrame.data[0]) << 16) |
+                                  (uint32_t(rxFrame.data[1]) << 8) |
+                                  uint32_t(rxFrame.data[2]);
+
+                // === LIGHTS ===
+                highBeamOn = (status & (1UL << 11)) != 0;
+                headlightsOn = (status & (1UL << 17)) != 0;
+                parkingLightsOn = (status & (1UL << 18)) != 0;
+
+                // === INDICATORS ===
+                // Record timestamp when signal is active (for blink detection)
+                if (status & (1UL << 13)) lastLeftIndicatorTime = now;
+                if (status & (1UL << 14)) lastRightIndicatorTime = now;
+
+                // === DOORS ===
+                // Save Handbrake state (Bit 0) - preserved from other source
                 uint8_t savedHandbrake = currentDoors & 0x01;
-                currentDoors = savedHandbrake; 
+                currentDoors = savedHandbrake;
 
-                // NEW MAPPING (Based on Qashqai J10 Doc)
-                // Byte 0, Bit 3 (0x08) -> Driver
-                // Byte 0, Bit 4 (0x10) -> Passenger
-                // Byte 0, Bit 5 (0x20) -> Rear Left
-                // Byte 0, Bit 6 (0x40) -> Rear Right
-                // Byte 3, Bit 1/5 (0x02/0x20) -> Trunk (Doc: D.2 or D.6)
-
-                if (rxFrame.data[0] & 0x08) currentDoors |= 0x80; // Driver
-                if (rxFrame.data[0] & 0x10) currentDoors |= 0x40; // Passenger
-                if (rxFrame.data[0] & 0x20) currentDoors |= 0x20; // Rear Left
-                if (rxFrame.data[0] & 0x40) currentDoors |= 0x10; // Rear Right
-                
-                // Test Trunk on Byte 3 (Mask 0x42 to catch bit 1 or 6)
-                if (rxFrame.data[3] & 0x42) currentDoors |= 0x08; // Trunk
+                if (status & (1UL << 20)) currentDoors |= 0x80; // Driver door (Front Left)
+                if (status & (1UL << 19)) currentDoors |= 0x40; // Passenger door (Front Right)
+                if (status & (1UL << 21)) currentDoors |= 0x20; // Rear Left
+                if (status & (1UL << 22)) currentDoors |= 0x10; // Rear Right
+                if (status & (1UL << 23)) currentDoors |= 0x08; // Boot/trunk
+            }
             break;
 
         // ======================================================================
         // 8. TRIP COMPUTER - Distance to Empty (CAN ID 0x54C)
         // ======================================================================
-        // Bytes [4-5]: Estimated remaining range in km
-        case 0x54C: 
-            dteValue = (rxFrame.data[4] << 8) | rxFrame.data[5]; 
+        // Frame: 00 00 00 00 00 80 04 08
+        // Bytes [6-7] big-endian: raw value, divide by ~2.83 to get km
+        // Example: 0x0408 = 1032 / 2.83 ≈ 365 km
+        case 0x54C:
+            {
+                uint16_t rawDte = (rxFrame.data[6] << 8) | rxFrame.data[7];
+                dteValue = (rawDte * 100) / 283;  // Approx divide by 2.83
+            }
             break;
+
+        // ======================================================================
+        // 9. FUEL CONSUMPTION (CAN ID 0x580)
+        // ======================================================================
+        // Frame: 00 00 81 00 3D 00 00 19
+        // Byte [2]: Instantaneous consumption (0.1 L/100km, bit 7 may be flag)
+        // Byte [4]: Average consumption (0.1 L/100km)
+        // Note: At idle (speed=0), instant consumption is undefined
+        case 0x580:
+            // Mask off bit 7 in case it's a validity flag
+            fuelConsumptionInst = rxFrame.data[2] & 0x7F;  // e.g., 0x81 → 1 (0.1 L/100km)
+            fuelConsumptionAvg = rxFrame.data[4];          // e.g., 0x3D = 61 → 6.1 L/100km
+            break;
+
+        // ======================================================================
+        // ALTERNATIVE: FUEL CONSUMPTION (CAN ID 0x358) - COMMENTED
+        // ======================================================================
+        // Frame: 00 4A 80 00 00 00 00 00
+        // Byte [1]: 0x4A = 74, possibly consumption × 10 = 7.4 L/100km
+        // Uncomment and adjust if 0x580 doesn't work correctly
+        // case 0x358:
+        //     fuelConsumptionInst = rxFrame.data[1] * 10;
+        //     break;
     }
 
     // ==========================================================================
     // DEBUG LOGGING (Every 1 second when Serial is connected)
     // ==========================================================================
-    if (Serial && (now - lastLogTime >= 1000)) {
-        Serial.println("--- NISSAN DATA DECODED ---");
-        Serial.printf("RPM: %u | Speed: %u | Volt: %.1fV | Temp: %d C\n", engineRPM, vehicleSpeed, voltBat, tempExt);
-        Serial.printf("Fuel: %u L (VW scale) | Steer: %d\n", fuelLevel, currentSteer);
-        Serial.printf("Doors Raw: 0x%02X\n", currentDoors);
-        Serial.println("---------------------------");
-        lastLogTime = now;
-    }
+    // if (Serial && (now - lastLogTime >= 1000)) {
+    //     Serial.println("--- NISSAN DATA DECODED ---");
+    //     Serial.printf("RPM: %u | Speed: %u | Volt: %.1fV | Temp: %d C\n", engineRPM, vehicleSpeed, voltBat, tempExt);
+    //     Serial.printf("Fuel: %u L (VW scale) | Steer: %d\n", fuelLevel, currentSteer);
+    //     Serial.printf("Doors Raw: 0x%02X\n", currentDoors);
+    //     Serial.println("---------------------------");
+    //     lastLogTime = now;
+    // }
 }

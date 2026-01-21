@@ -13,11 +13,11 @@
   <em>Lignes de guidage dynamiques de la caméra de recul en fonctionnement</em>
 </p>
 
-Ce projet est une passerelle intelligente permettant d'intégrer les données télémétriques d'un Nissan Juke F15 (Plateforme B) sur un autoradio Android. L'ESP32 intercepte les trames du bus **CAN habitacle** via le port OBD-II et **traduit les trames CAN Nissan vers le protocole VW Polo**.
+Ce projet est une passerelle intelligente permettant d'intégrer les données télémétriques d'un Nissan Juke F15 (Plateforme B) sur un autoradio Android. L'ESP32 intercepte les trames du bus **CAN habitacle** via le port OBD-II et **traduit les trames CAN Nissan vers le protocole Toyota RAV4**.
 
-**Pourquoi le protocole VW Polo ?** La plupart des autoradios Android (comme ceux sous DuduOS, FYT, etc.) ont une bien meilleure prise en charge native du protocole CAN VW/Polo que du Nissan. En traduisant les trames, on obtient une meilleure intégration : widgets tableau de bord fonctionnels, état des portes, lignes de guidage caméra de recul, etc.
+**Pourquoi le protocole Toyota RAV4 ?** La plupart des autoradios Android (comme ceux sous DuduOS, FYT, etc.) ont une bien meilleure prise en charge native du protocole CAN Toyota/RAV4 que du Nissan. En traduisant les trames, on obtient une meilleure intégration : widgets tableau de bord fonctionnels, état des portes, lignes de guidage caméra de recul, etc.
 
-> **Important :** Dans les paramètres de votre autoradio, configurez le protocole CAN sur **"VW Polo" (2009-2018)** pour que cela fonctionne.
+> **Important :** Dans les paramètres de votre autoradio, configurez le protocole CAN sur **"Toyota RAV4"** pour que cela fonctionne.
 
 ---
 
@@ -34,15 +34,19 @@ Ce projet est une passerelle intelligente permettant d'intégrer les données t�
 | Fonctionnalité | Statut | Notes |
 | --- | --- | --- |
 | Régime Moteur (RPM) | ✅ Fonctionnel | |
-| Vitesse Véhicule | ⚠️ WIP | Tests en cours |
+| Vitesse Véhicule | ✅ Fonctionnel | |
 | Niveau Essence | ✅ Fonctionnel | Calibré pour Juke F15 (réservoir 45L) |
 | Tension Batterie | ✅ Fonctionnel | |
 | Direction / Lignes Dynamiques | ✅ Fonctionnel | Calibré pour Juke F15 |
+| État des Portes | ✅ Fonctionnel | 4 portes + coffre |
+| Clignotants | ✅ Fonctionnel | Gauche/droite |
+| Feux | ✅ Fonctionnel | Phares, feux de route, veilleuses |
 | Température Extérieure | ⚠️ WIP | Affiche actuellement la temp moteur (pas de sonde ext. sur CAN) |
-| État des Portes | ⚠️ WIP | Mapping peut nécessiter ajustement |
-| Frein à Main | ⚠️ WIP | Signal pas encore identifié |
+| Frein à Main | ✅ Fonctionnel | |
+| Conso. Instantanée | ❌ Non fonctionnel | Décodé mais non affiché sur l'autoradio |
+| Autonomie Restante | ❌ Non fonctionnel | Décodé mais non affiché sur l'autoradio |
 
-> **Note :** La documentation du protocole Raise/VW-Polo utilisé par les autoradios Android est rare. Certaines fonctionnalités sont encore en cours de reverse-engineering par manque de spécifications officielles du protocole.
+> **Note :** La documentation du protocole Raise/Toyota RAV4 utilisé par les autoradios Android est rare. Certaines fonctionnalités sont encore en cours de reverse-engineering par manque de spécifications officielles du protocole.
 
 Voir la **[Roadmap](ROADMAP.md)** pour les fonctionnalités prévues, incluant l'application de configuration USB et les mises à jour OTA.
 
@@ -197,9 +201,8 @@ pio device monitor
 - [jackm / Carhack Nissan](https://github.com/jackm/carhack/blob/master/nissan.md)
 - [balrog-kun / Nissan Qashqai CAN info](https://github.com/balrog-kun/nissan-qashqai-can-info)
 
-### Protocoles Radio (VW/Raise/RZC)
-- **[Documentation Protocole VW Polo](docs/protocols/raise-vw-polo/raise%20VW%20-%20polo%20protocole.fr.md)** - Spécification complète du protocole (Français)
-- **[VW Polo Protocol Documentation](docs/protocols/raise-vw-polo/raise%20VW%20-%20polo%20protocole.en.md)** - Complete protocol specification (English)
+### Protocoles Radio (Toyota/Raise/RZC)
+- **[Spécification Protocole Toyota RAV4](docs/protocols/raise-toyota-rav4/)** - Documentation officielle du protocole Raise (PDF)
 - [smartgauges / canbox](https://github.com/smartgauges/canbox)
 - [cxsichen / Protocole Raise](https://github.com/cxsichen/helllo-world/tree/master/%E5%8D%8F%E8%AE%AE/%E7%9D%BF%E5%BF%97%E8%AF%9A)
 - [Forum DUDU-AUTO / Qashqai 2011 CANbus](https://forum.dudu-auto.com/d/1786-nissan-qashqai-2011-canbus/6)

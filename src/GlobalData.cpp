@@ -1,16 +1,3 @@
-/**
- * @file GlobalData.cpp
- * @brief Shared vehicle data definitions
- * 
- * This file defines (allocates memory for) all global variables declared
- * in GlobalData.h. Variables are initialized to safe default values to
- * prevent undefined behavior at startup.
- * 
- * Data flow:
- * - Written by: CanCapture.cpp (from decoded CAN frames)
- * - Read by: RadioSend.cpp (for transmission to head unit)
- */
-
 #include "GlobalData.h"
 
 // =============================================================================
@@ -43,3 +30,51 @@ float fuelConsoMoy = 0.0;
 
 /** Temperature in °C (from coolant sensor) - 0 = unknown */
 int8_t tempExt = 0;
+
+/** Odometer (Total Mileage) in km - 0 = unknown */
+uint32_t currentOdo = 0;
+
+// =============================================================================
+// LIGHTS & INDICATORS
+// =============================================================================
+
+/** Left indicator - false = off */
+bool indicatorLeft = false;
+
+/** Right indicator - false = off */
+bool indicatorRight = false;
+
+/** Headlights (low beam) - false = off */
+bool headlightsOn = false;
+
+/** High beam - false = off */
+bool highBeamOn = false;
+
+/** Parking lights - false = off */
+bool parkingLightsOn = false;
+
+/** Last left indicator signal timestamp */
+unsigned long lastLeftIndicatorTime = 0;
+
+/** Last right indicator signal timestamp */
+unsigned long lastRightIndicatorTime = 0;
+
+// =============================================================================
+// FUEL CONSUMPTION
+// =============================================================================
+
+/** Instantaneous fuel consumption (0.1 L/100km units) - 0 = unknown */
+uint16_t fuelConsumptionInst = 0;
+
+/** Average fuel consumption (0.1 L/100km units) - 0 = unknown */
+uint16_t fuelConsumptionAvg = 0;
+
+// =============================================================================
+// TRIP COMPUTER DATA
+// =============================================================================
+
+/** Average speed in 0.1 km/h units - 0 = unknown */
+uint16_t averageSpeed = 0;
+
+/** Elapsed driving time in seconds - 0 = unknown */
+uint16_t elapsedTime = 0;

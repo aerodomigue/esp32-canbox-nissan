@@ -16,3 +16,7 @@
 Thumbs.db
 *.log
 .cache/
+
+
+#python
+.venv
