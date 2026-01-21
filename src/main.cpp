@@ -32,122 +32,10 @@
 #define CAN_RX 20
 
 // ==============================================================================
-// SERIAL INJECTION CONFIG
-// ==============================================================================
-#define SERIAL_CMD_CHAR '>'     // Trigger character for CAN injection (e.g., ">355 00 FF...")
-#define SERIAL_BUFFER_SIZE 64   // Max command length
-
-// ==============================================================================
 // GLOBAL VARIABLES
 // ==============================================================================
 uint32_t lastCanMessageTime = 0;
 HardwareSerial RadioSerial(1);
-char serialBuffer[SERIAL_BUFFER_SIZE];
-uint8_t serialBufferIndex = 0;
-
-/**
- * @brief Parse and inject a CAN frame from serial command
- *
- * Format: >ID DATA...
- * - ID can be hex (0x355 or 355) or decimal (853)
- * - DATA bytes in hex, spaces optional (00 FF 00 or 00FF00)
- *
- * Examples:
- *   >0x355 00 00 FF FF 00 00 40
- *   >355 00FF00FF000040
- *   >853 00 00 FF FF 00 00 40
- *
- * @param cmd Command string (without the '>' prefix)
- */
-void processSerialCanInjection(const char* cmd) {
-    CanFrame injectedFrame;
-    memset(&injectedFrame, 0, sizeof(injectedFrame));
-
-    // Skip leading spaces
-    while (*cmd == ' ') cmd++;
-
-    // Parse CAN ID (hex with 0x prefix, or decimal, or hex without prefix)
-    char* endPtr;
-    uint32_t canId;
-
-    if (cmd[0] == '0' && (cmd[1] == 'x' || cmd[1] == 'X')) {
-        // Explicit hex: 0x355
-        canId = strtoul(cmd + 2, &endPtr, 16);
-    } else {
-        // Try hex first (CAN IDs are typically displayed in hex)
-        canId = strtoul(cmd, &endPtr, 16);
-    }
-
-    if (endPtr == cmd || canId > 0x7FF) {
-        Serial.println("[INJ] ERROR: Invalid CAN ID");
-        return;
-    }
-
-    injectedFrame.identifier = canId;
-    injectedFrame.extd = 0;  // Standard 11-bit ID
-
-    // Parse data bytes (hex, skip spaces)
-    const char* dataPtr = endPtr;
-    uint8_t dataIndex = 0;
-
-    while (*dataPtr && dataIndex < 8) {
-        // Skip spaces
-        while (*dataPtr == ' ') dataPtr++;
-        if (!*dataPtr) break;
-
-        // Need at least 2 hex chars
-        if (!isxdigit(dataPtr[0]) || !isxdigit(dataPtr[1])) {
-            Serial.printf("[INJ] ERROR: Invalid hex at position %d\n", (int)(dataPtr - cmd));
-            return;
-        }
-
-        // Parse 2 hex chars as one byte
-        char hexByte[3] = { dataPtr[0], dataPtr[1], '\0' };
-        injectedFrame.data[dataIndex++] = (uint8_t)strtoul(hexByte, NULL, 16);
-        dataPtr += 2;
-    }
-
-    injectedFrame.data_length_code = dataIndex;
-
-    // Log and process the injected frame
-    Serial.printf("[INJ] ID: 0x%03X | DLC: %d | Data: ", injectedFrame.identifier, injectedFrame.data_length_code);
-    for (int i = 0; i < injectedFrame.data_length_code; i++) {
-        Serial.printf("%02X ", injectedFrame.data[i]);
-    }
-    Serial.println();
-
-    // Process as if it came from the CAN bus
-    handleCanCapture(injectedFrame);
-    lastCanMessageTime = millis();  // Reset timeout
-    digitalWrite(8, !digitalRead(8));  // Toggle LED
-}
-
-/**
- * @brief Check for serial commands and process them
- */
-void handleSerialInput() {
-    while (Serial.available()) {
-        char c = Serial.read();
-
-        // End of command (newline or carriage return)
-        if (c == '\n' || c == '\r') {
-            if (serialBufferIndex > 0) {
-                serialBuffer[serialBufferIndex] = '\0';
-
-                // Check for injection command (starts with '>')
-                if (serialBuffer[0] == SERIAL_CMD_CHAR) {
-                    processSerialCanInjection(serialBuffer + 1);
-                }
-
-                serialBufferIndex = 0;
-            }
-        }
-        // Buffer the character
-        else if (serialBufferIndex < SERIAL_BUFFER_SIZE - 1) {
-            serialBuffer[serialBufferIndex++] = c;
-        }
-    }
-}
 
 /**
  * @brief System initialization
@@ -214,11 +102,6 @@ void loop() {
     CanFrame rxFrame;
     unsigned long now = millis();
     esp_task_wdt_reset(); // Feed the watchdog to prevent system reset
-
-    // ==========================================================================
-    // 0. SERIAL INPUT (CAN injection for testing)
-    // ==========================================================================
-    handleSerialInput();
 
     // ==========================================================================
     // 1. SAFETY: CAN BUS ERROR MONITORING

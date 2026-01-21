@@ -49,4 +49,49 @@ extern int8_t tempExt;
 /** Odometer (Total Mileage) in km - 0 = unknown */
 extern uint32_t currentOdo;
 
+// =============================================================================
+// LIGHTS & INDICATORS (from CAN 0x60D)
+// =============================================================================
+
+/** Left indicator active (blinker) */
+extern bool indicatorLeft;
+
+/** Right indicator active (blinker) */
+extern bool indicatorRight;
+
+/** Headlights on (low beam) */
+extern bool headlightsOn;
+
+/** High beam on (full beam) */
+extern bool highBeamOn;
+
+/** Parking lights on (position lights) */
+extern bool parkingLightsOn;
+
+/** Timestamp of last left indicator signal (for timeout detection) */
+extern unsigned long lastLeftIndicatorTime;
+
+/** Timestamp of last right indicator signal (for timeout detection) */
+extern unsigned long lastRightIndicatorTime;
+
+// =============================================================================
+// FUEL CONSUMPTION (from CAN 0x580)
+// =============================================================================
+
+/** Instantaneous fuel consumption in 0.1 L/100km units (e.g., 75 = 7.5 L/100km) */
+extern uint16_t fuelConsumptionInst;
+
+/** Average fuel consumption in 0.1 L/100km units */
+extern uint16_t fuelConsumptionAvg;
+
+// =============================================================================
+// TRIP COMPUTER DATA
+// =============================================================================
+
+/** Average speed in 0.1 km/h units (e.g., 450 = 45.0 km/h) - for trip display */
+extern uint16_t averageSpeed;
+
+/** Elapsed driving time in seconds - for trip display */
+extern uint16_t elapsedTime;
+
 #endif

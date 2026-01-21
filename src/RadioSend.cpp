@@ -1,266 +1,443 @@
 /**
  * @file RadioSend.cpp
- * @brief VW Polo / Raise protocol communication for Android head unit
- * 
- * This module translates decoded Nissan CAN data into the VW Polo protocol
+ * @brief Toyota RAV4 protocol communication for Android head unit
+ *
+ * This module translates decoded Nissan CAN data into the Toyota RAV4 protocol
  * format expected by aftermarket Android head units. Communication occurs
  * over UART at 38400 baud, 8N1 format.
- * 
- * Protocol specification: Raise VW Polo Protocol v1.4
- * Documentation: docs/protocols/raise-vw-polo/
- * 
- * VW Protocol Frame Format:
+ *
+ * Protocol: Raise Toyota RAV4 2019-2020
+ * Reference: RAV4_BODY_ENGINE_2018_2020.pdf
+ *
+ * Frame Format:
  * ┌──────┬─────────┬────────┬──────────────┬──────────┐
- * │ 0x2E │ DataType│ Length │ Payload[n]   │ Checksum │
+ * │ 0x2E │ Command │ Length │ Payload[n]   │ Checksum │
  * │ HEAD │  (1B)   │  (1B)  │ (Length B)   │   (1B)   │
  * └──────┴─────────┴────────┴──────────────┴──────────┘
- * 
- * Checksum calculation (official spec):
- * Checksum = (DataType + Length + Data0 + ... + DataN) XOR 0xFF
- * 
- * Key DataTypes (SLAVE → HOST):
- * - 0x26: Steering wheel angle
- * - 0x41: Body information (sub-commands: 0x01=doors/safety, 0x02=gauges)
- * 
- * Handshake (HOST → SLAVE):
- * - 0x81: Start/End connection (respond with ACK 0xFF)
- * - 0x90: Request control information (respond with requested data)
+ *
+ * Checksum = (Command + Length + Data0 + ... + DataN) XOR 0xFF
+ *
+ * Commands (SLAVE → HOST):
+ * - 0x21: Remaining range / Distance to empty
+ * - 0x24: Door status (1 byte bitmask)
+ * - 0x28: Outside temperature (12 bytes, temp at [5])
+ * - 0x29: Steering wheel angle (2 bytes LE, 0.1° units)
+ * - 0x7D: Multi-function (sub-commands: 0x03=speed, 0x04=odo, 0x0A=rpm)
  */
 
 #include <Arduino.h>
 #include "GlobalData.h"
+#include "Config.h"
 
 extern HardwareSerial RadioSerial;
 
-// Timer for debug logging
-static uint32_t lastLogRadio = 0;
+// =============================================================================
+// TOYOTA RAV4 PROTOCOL COMMANDS
+// =============================================================================
+const uint8_t CMD_REMAINING_RANGE    = 0x21;
+const uint8_t CMD_FUEL_CONSUMPTION   = 0x22;  // Instantaneous
+const uint8_t CMD_FUEL_CONS_AVG      = 0x23;  // Average/History
+const uint8_t CMD_DOOR_STATUS        = 0x24;
+const uint8_t CMD_OUTSIDE_TEMP       = 0x28;
+const uint8_t CMD_STEERING_WHEEL     = 0x29;
+const uint8_t CMD_MULTI_FUNCTION     = 0x7D;
+
+// Fuel consumption unit
+const uint8_t FUEL_UNIT_L100KM = 0x02;
+
+// Multi-function sub-commands
+const uint8_t SUBCMD_LIGHTS   = 0x01;
+const uint8_t SUBCMD_SPEED    = 0x03;
+const uint8_t SUBCMD_ODOMETER = 0x04;
+const uint8_t SUBCMD_RPM      = 0x0A;
+
+// Lights bitmask (Toyota RAV4 format)
+const uint8_t MASK_LIGHT_RIGHT_IND   = 0x08;  // Right indicator
+const uint8_t MASK_LIGHT_LEFT_IND    = 0x10;  // Left indicator
+const uint8_t MASK_LIGHT_HIGH_BEAM   = 0x20;  // High beam
+const uint8_t MASK_LIGHT_HEADLIGHTS  = 0x40;  // Headlights (low beam)
+const uint8_t MASK_LIGHT_PARKING     = 0x80;  // Parking lights
+
+// Indicator timeout uses Config.h value
+
+// =============================================================================
+// SEND INTERVALS (milliseconds)
+// =============================================================================
+const unsigned long STEERING_INTERVAL_MS  = 200;   // Fast for camera guidelines
+const unsigned long LIGHTS_INTERVAL_MS    = 200;   // Lights/indicators (fast for blink)
+const unsigned long DOOR_INTERVAL_MS      = 250;   // Door/status updates
+const unsigned long RPM_INTERVAL_MS       = 333;   // ~3 Hz for smooth gauge
+const unsigned long SPEED_INTERVAL_MS     = 500;   // Speed updates
+const unsigned long FUEL_CONS_INTERVAL_MS     = 1000;  // Instantaneous fuel consumption (1s)
+const unsigned long FUEL_CONS_AVG_INTERVAL_MS = 5000;  // Average fuel consumption (5s)
+const unsigned long TEMP_INTERVAL_MS          = 5000;  // Temperature (slow)
+const unsigned long RANGE_INTERVAL_MS         = 5000;  // Trip info / remaining range (slow)
+const unsigned long ODOMETER_INTERVAL_MS      = 10000; // Odometer (very slow)
+
+// =============================================================================
+// DOOR BITMASK (Toyota RAV4 format)
+// =============================================================================
+const uint8_t MASK_DOOR_DRIVER     = 0x80;  // Bit 7
+const uint8_t MASK_DOOR_PASSENGER  = 0x40;  // Bit 6
+const uint8_t MASK_DOOR_REAR_LEFT  = 0x10;  // Bit 4
+const uint8_t MASK_DOOR_REAR_RIGHT = 0x20;  // Bit 5
+const uint8_t MASK_DOOR_BOOT       = 0x08;  // Bit 3
+
+// Timer variables
+static unsigned long lastSteeringTime = 0;
+static unsigned long lastLightsTime = 0;
+static unsigned long lastDoorTime = 0;
+static unsigned long lastRpmTime = 0;
+static unsigned long lastSpeedTime = 0;
+static unsigned long lastFuelConsTime = 0;
+static unsigned long lastFuelConsAvgTime = 0;
+static unsigned long lastTempTime = 0;
+static unsigned long lastRangeTime = 0;
+static unsigned long lastOdometerTime = 0;
+static uint8_t lastSentDoors = 0xFF;
+static uint8_t lastSentLights = 0xFF;
 
 /**
  * @brief Transmit a data frame to the head unit
- * @param command Command byte (determines data type)
+ * @param cmd Command byte
  * @param data Pointer to payload data array
- * @param length Number of bytes in payload
- * 
- * Builds and sends a complete VW protocol frame with header, command,
- * length, payload, and checksum.
+ * @param len Number of bytes in payload
  */
-void transmettreVersPoste(uint8_t commande, uint8_t* donnees, uint8_t longueur) {
-    // Calculate checksum according to official Raise VW Polo protocol v1.4:
-    // Checksum = (DataType + Length + Data0 + ... + DataN) XOR 0xFF
-    uint8_t sum = commande + longueur;
-    for (int i = 0; i < longueur; i++) { 
-        sum += donnees[i]; 
+void sendCanboxMessage(uint8_t cmd, const uint8_t* data, uint8_t len) {
+    // Calculate checksum: (cmd + len + sum(data)) XOR 0xFF
+    uint8_t sum = cmd + len;
+    for (uint8_t i = 0; i < len; i++) {
+        sum += data[i];
     }
     uint8_t checksum = sum ^ 0xFF;
 
-    RadioSerial.write(0x2E);      // Header (fixed 0x2E)
-    RadioSerial.write(commande);  // DataType
-    RadioSerial.write(longueur);  // Length
-    RadioSerial.write(donnees, longueur);  // Payload
-    RadioSerial.write(checksum);   // Checksum
+    RadioSerial.write(0x2E);      // Header
+    RadioSerial.write(cmd);       // Command
+    RadioSerial.write(len);       // Length
+    RadioSerial.write(data, len); // Payload
+    RadioSerial.write(checksum);  // Checksum
 }
 
 /**
- * @brief Handle protocol handshake with the head unit
- * 
- * Responds to commands from the Android head unit (HOST) according to
- * official Raise VW Polo protocol v1.4:
- * 
- * - 0x81: Start/End connection
- *   - Data0 = 0x01: Start -> Respond with ACK (0xFF)
- *   - Data0 = 0x00: End -> Respond with ACK (0xFF)
- * 
- * - 0x90: Request control information
- *   - Data0 specifies which data type to send (0x14, 0x16, 0x21, 0x24, 0x25, 0x26, 0x30, 0x41)
- *   - Respond by sending the requested data type
- * 
- * Must be called regularly to maintain communication link.
+ * @brief Send door status
+ * @param doorMask Bitmask of open doors
+ */
+void sendDoorCommand(uint8_t doorMask) {
+    sendCanboxMessage(CMD_DOOR_STATUS, &doorMask, 1);
+}
+
+/**
+ * @brief Send steering wheel angle
+ * @param angle Signed 16-bit angle in 0.1° units, Little Endian
+ *
+ * Range: -5400 to +5400 (±540.0° at full lock)
+ * Per PDF: "Steering wheel angle is -540 to 540"
+ */
+void sendSteeringAngleMessage(int16_t angle) {
+    uint8_t payload[2] = {
+        (uint8_t)(angle & 0xFF),        // LSB
+        (uint8_t)((angle >> 8) & 0xFF)  // MSB
+    };
+    sendCanboxMessage(CMD_STEERING_WHEEL, payload, 2);
+}
+
+/**
+ * @brief Send engine RPM via multi-function command
+ * @param rpm Engine RPM value
+ *
+ * Encoding: RPM × 4, Little Endian
+ */
+void sendRpmMessage(uint16_t rpm) {
+    uint16_t encoded = rpm * 4;
+    uint8_t payload[3] = {
+        SUBCMD_RPM,
+        (uint8_t)(encoded & 0xFF),        // LSB
+        (uint8_t)((encoded >> 8) & 0xFF)  // MSB
+    };
+    sendCanboxMessage(CMD_MULTI_FUNCTION, payload, 3);
+}
+
+/**
+ * @brief Send vehicle speed via multi-function command
+ * @param speed Speed in km/h
+ *
+ * Encoding: Speed × 100, Little Endian (0.01 km/h resolution)
+ */
+void sendSpeedMessage(uint16_t speed) {
+    uint16_t encoded = speed * 100;
+    uint8_t payload[5] = {
+        SUBCMD_SPEED,
+        (uint8_t)(encoded & 0xFF),        // Speed LSB
+        (uint8_t)((encoded >> 8) & 0xFF), // Speed MSB
+        0x00,  // Average speed LSB (not available)
+        0x00   // Average speed MSB (not available)
+    };
+    sendCanboxMessage(CMD_MULTI_FUNCTION, payload, 5);
+}
+
+/**
+ * @brief Send odometer value via multi-function command
+ * @param odo Odometer in km (24-bit)
+ *
+ * Encoding: Little Endian 24-bit value
+ * Per PDF: includes Trip 1/2 but we only have odometer
+ */
+void sendOdometerMessage(uint32_t odo) {
+    uint8_t payload[12] = {
+        SUBCMD_ODOMETER,
+        (uint8_t)(odo & 0xFF),          // Odo LSB
+        (uint8_t)((odo >> 8) & 0xFF),   // Odo Mid
+        (uint8_t)((odo >> 16) & 0xFF),  // Odo MSB
+        0xF2, 0x08,                     // Unknown/reserved (per PDF)
+        0x00, 0x00, 0x00,               // Trip 1 (not available)
+        0x00, 0x00, 0x00                // Trip 2 (not available)
+    };
+    sendCanboxMessage(CMD_MULTI_FUNCTION, payload, 12);
+}
+
+/**
+ * @brief Send outside temperature
+ * @param temp Temperature in °C
+ *
+ * Encoding: (temp + 40) × 2 at byte [5]
+ * Per PDF: 12-byte payload, all zeros except byte 5
+ */
+void sendOutsideTempMessage(int8_t temp) {
+    uint8_t encoded = (uint8_t)((temp + 40) * 2);
+    uint8_t payload[12] = {0};
+    payload[5] = encoded;
+    sendCanboxMessage(CMD_OUTSIDE_TEMP, payload, 12);
+}
+
+/**
+ * @brief Send trip info with remaining range, average speed, and elapsed time
+ * @param range_km Remaining range in km
+ * @param avg_speed_01 Average speed in 0.1 km/h units (e.g., 450 = 45.0 km/h)
+ * @param elapsed_sec Elapsed driving time in seconds
+ *
+ * Per Chinese protocol document (Toyota RAV4):
+ * - Cmd = 0x21, Len = 0x07
+ * - Data0-1: Average Speed (Big Endian, 0.1 km/h units)
+ * - Data2-3: Elapsed Time (Big Endian, seconds)
+ * - Data4-5: Cruising Range (Big Endian, km)
+ * - Data6: Unit (0x02 = km)
+ */
+void sendTripInfoMessage(uint16_t range_km, uint16_t avg_speed_01, uint16_t elapsed_sec) {
+    uint8_t payload[7] = {
+        (uint8_t)((avg_speed_01 >> 8) & 0xFF),  // Average Speed MSB
+        (uint8_t)(avg_speed_01 & 0xFF),          // Average Speed LSB
+        (uint8_t)((elapsed_sec >> 8) & 0xFF),    // Elapsed Time MSB
+        (uint8_t)(elapsed_sec & 0xFF),           // Elapsed Time LSB
+        (uint8_t)((range_km >> 8) & 0xFF),       // Range MSB
+        (uint8_t)(range_km & 0xFF),              // Range LSB
+        0x02                                      // Unit: km
+    };
+    sendCanboxMessage(CMD_REMAINING_RANGE, payload, 7);
+}
+
+/**
+ * @brief Send instantaneous fuel consumption
+ * @param consumption_01 Consumption in 0.1 L/100km units (e.g., 75 = 7.5 L/100km)
+ *
+ * Per Chinese protocol document (Toyota RAV4):
+ * - Cmd = 0x22, Len = 0x03
+ * - Data0: Unit (0x02 = L/100km)
+ * - Data1-2: Value (Big Endian), divide by 10 to get L/100km
+ */
+void sendFuelConsumptionMessage(uint16_t consumption_01) {
+    uint8_t payload[3] = {
+        FUEL_UNIT_L100KM,                        // Unit: L/100km
+        (uint8_t)((consumption_01 >> 8) & 0xFF), // Value MSB
+        (uint8_t)(consumption_01 & 0xFF)         // Value LSB
+    };
+    sendCanboxMessage(CMD_FUEL_CONSUMPTION, payload, 3);
+}
+
+/**
+ * @brief Send average/history fuel consumption
+ * @param consumption_01 Average consumption in 0.1 L/100km units
+ *
+ * Per Chinese protocol document (Toyota RAV4):
+ * - Cmd = 0x23, Len = 0x03
+ * - Data0: Unit (0x02 = L/100km)
+ * - Data1-2: Value (Big Endian), divide by 10 to get L/100km
+ */
+void sendFuelConsumptionAvgMessage(uint16_t consumption_01) {
+    uint8_t payload[3] = {
+        FUEL_UNIT_L100KM,                        // Unit: L/100km
+        (uint8_t)((consumption_01 >> 8) & 0xFF), // Value MSB
+        (uint8_t)(consumption_01 & 0xFF)         // Value LSB
+    };
+    sendCanboxMessage(CMD_FUEL_CONS_AVG, payload, 3);
+}
+
+/**
+ * @brief Send lights and indicators status via multi-function command
+ * @param lightMask Bitmask of active lights
+ *
+ * Per PDF Section 3:
+ * - Cmd = 0x7D, Sub = 0x01, Len = 0x02
+ * - Bitmask: 0x08=Right, 0x10=Left, 0x20=HighBeam, 0x40=Headlights, 0x80=Parking
+ */
+void sendLightsMessage(uint8_t lightMask) {
+    uint8_t payload[2] = {
+        SUBCMD_LIGHTS,
+        lightMask
+    };
+    sendCanboxMessage(CMD_MULTI_FUNCTION, payload, 2);
+}
+
+/**
+ * @brief Handle protocol handshake with the head unit (if needed)
+ *
+ * Toyota RAV4 protocol doesn't require explicit handshake,
+ * but we still consume any incoming data.
  */
 void handshake() {
     while (RadioSerial.available() > 0) {
-        uint8_t head = RadioSerial.read();
-        if (head == 0x2E) {  // Valid frame header detected
-            delay(5);  // Wait for complete frame reception
-            uint8_t dataType = RadioSerial.read();
-            uint8_t len = RadioSerial.read();
-            
-            // Read payload
-            uint8_t payload[16] = {0};
-            for (int i = 0; i < len && i < 16; i++) {
-                payload[i] = RadioSerial.read();
-            }
-            // Consume checksum
-            RadioSerial.read();
-            
-            // Handle Start/End (0x81)
-            if (dataType == 0x81 && len >= 1) {
-                // Data0: 0x01 = Start, 0x00 = End
-                // Respond with ACK (0xFF) as per protocol
-                RadioSerial.write(0xFF);
-            }
-            
-            // Handle Request Control Information (0x90)
-            if (dataType == 0x90 && len >= 1) {
-                uint8_t requestedType = payload[0];
-                // Data0 specifies which data type to send
-                // For now, we send data proactively, so we can ignore most requests
-                // But we could implement specific responses here if needed
-                // Example: if (requestedType == 0x26) { send steering angle }
-            }
-        }
+        RadioSerial.read(); // Discard incoming data
     }
 }
 
 /**
  * @brief Main update function - sends all vehicle data to the radio
- * 
+ *
  * Update intervals:
- * - Steering angle: 100ms (fast update for smooth camera guidelines)
- * - Dashboard gauges: 400ms (RPM, speed, battery, temperature, fuel)
- * - Door status: On change only (reduces bus traffic)
+ * - Steering angle: 200ms (fast for camera guidelines)
+ * - Door status: 250ms (or on change)
+ * - Lights/indicators: 200ms (or on change)
+ * - RPM: 333ms (~3 Hz)
+ * - Speed: 500ms
+ * - Fuel consumption: 1s
+ * - Temperature: 5s
+ * - Remaining range: 5s
+ * - Odometer: 10s
  */
 void processRadioUpdates() {
-    static unsigned long lastFastTime = 0;
-    static unsigned long lastSlowTime = 0;
     unsigned long now = millis();
 
     handshake();
 
-    // ======================================================================
-    // 1. STEERING WHEEL ANGLE (DataType 0x26) - 100ms interval
-    // ======================================================================
-    // Format: Signed 16-bit value, Little Endian
-    // Bytes: [0] = ESP1 (low byte), [1] = ESP2 (high byte)
-    // Protocol: ESP = 0 → centered, ESP > 0 → left, ESP < 0 → right
-    // 
-    // DYNAMIC GUIDELINES CALIBRATION (IPAS):
-    // 1. NISSAN OFFSET: Juke F15 sensor is not at 0 when wheels straight
-    //    Center value: ~2912 (0x0B60) from logs, fine-tuned with +100 adjustment
-    // 2. SCALING: Must NOT send actual steering angle (540° full lock)
-    //    Target: +/- 200 degrees (value 2000) at mechanical full lock
-    //    Calculation: Nissan Max ~5400 * 0.04 = 216 (21.6° displayed, 216° interpreted)
-    //    Scale factor 0.04 validated to achieve +/- 200° range
-    // 3. DIRECTION: Sign inversion required to match VW orientation (Right = Positive)
-    if (now - lastFastTime >= 100) {
-        // Step 1: Remove Nissan center offset (2912 found in logs)
-        int32_t centeredSteer = (int32_t)currentSteer + 100;
+    // =========================================================================
+    // 1. STEERING WHEEL ANGLE (CMD 0x29) - 200ms interval
+    // =========================================================================
+    // Per PDF: Angle in 0.1° units, range -540 to +540 (so -5400 to +5400 raw)
+    // Calibration values in Config.h: STEER_CENTER_OFFSET, STEER_INVERT_DIRECTION
+    if (now - lastSteeringTime >= STEERING_INTERVAL_MS) {
+        // Step 1: Apply center offset from Config.h
+        int32_t centered = (int32_t)currentSteer + STEER_CENTER_OFFSET;
 
-        // Step 2: Scale to VW protocol range (-5400 to +5400)
-        int16_t angleVW = (int16_t)(centeredSteer * 0.04f);
+        // Step 2: Apply scale factor from Config.h (percent, 100 = 1.0x)
+        int32_t angleRAV4 = (centered * STEER_SCALE_PERCENT) / 100;
 
-        // Step 3: Invert sign to match VW direction
-        angleVW = -angleVW; 
+        // Step 4: Invert direction if configured
+        #if STEER_INVERT_DIRECTION
+        angleRAV4 = -angleRAV4;
+        #endif
 
-        // Format payload: Data0 = ESP1 (LSB), Data1 = ESP2 (MSB)
-        uint8_t payloadSteer[2];
-        payloadSteer[0] = (uint8_t)(angleVW & 0xFF);         // Data0: ESP1 (low byte)
-        payloadSteer[1] = (uint8_t)((angleVW >> 8) & 0xFF);  // Data1: ESP2 (high byte)
-        
-        transmettreVersPoste(0x26, payloadSteer, 2); 
-        lastFastTime = now;
-    }   
-
-    // ======================================================================
-    // 2. DASHBOARD DATA (DataType 0x41, Command 0x02) - 400ms interval
-    // ======================================================================
-    // Format: 13 bytes total, Big Endian for multi-byte values
-    // Protocol specification: Raise VW Polo Protocol v1.4
-    if (now - lastSlowTime >= 400) {
-        uint8_t payload41[13] = {0};
-        payload41[0] = 0x02;  // Command: Dashboard gauges
-        
-        // Bytes [1-2]: Engine RPM
-        // Format: Big Endian unsigned 16-bit
-        // Formula: RPM = Data1 * 256 + Data2
-        payload41[1] = (uint8_t)(engineRPM >> 8);   // Data1: MSB
-        payload41[2] = (uint8_t)(engineRPM & 0xFF);  // Data2: LSB
-        
-        // Bytes [3-4]: Vehicle speed
-        // Format: Big Endian unsigned 16-bit
-        // Formula: Speed (km/h) = (Data3 * 256 + Data4) * 0.01
-        // Note: vehicleSpeed is already in protocol format (km/h)
-        uint16_t speedRaw = (uint16_t)vehicleSpeed;
-        payload41[3] = (uint8_t)(speedRaw >> 8);   // Data3: MSB
-        payload41[4] = (uint8_t)(speedRaw & 0xFF); // Data4: LSB
-        
-        // Bytes [5-6]: Battery voltage
-        // Format: Big Endian unsigned 16-bit
-        // Formula: Voltage (V) = (Data5 * 256 + Data6) * 0.01
-        // Note: voltBat is already in protocol format (V)
-        uint16_t vBatRaw = (uint16_t)voltBat;
-        payload41[5] = (uint8_t)(vBatRaw >> 8);   // Data5: MSB
-        payload41[6] = (uint8_t)(vBatRaw & 0xFF); // Data6: LSB
-        
-        // Bytes [7-8]: Outside temperature
-        // Format: Big Endian signed 16-bit
-        // Formula: Temperature (°C) = (Data7 * 256 + Data8) * 0.1
-        // Note: tempExt is already in protocol format (°C)
-        // Note: Using coolant temp as substitute (no dedicated exterior sensor)
-        int16_t tRaw = (int16_t)tempExt;
-        payload41[7] = (uint8_t)((tRaw >> 8) & 0xFF); // Data7: MSB (signed)
-        payload41[8] = (uint8_t)(tRaw & 0xFF);        // Data8: LSB
-        
-        // Bytes [9-11]: Odometer
-        // Format: Big Endian 24-bit unsigned
-        // Formula: Odometer (km) = Data9 * 65536 + Data10 * 256 + Data11
-        payload41[9]  = (uint8_t)((currentOdo >> 16) & 0xFF); // Data9: High byte
-        payload41[10] = (uint8_t)((currentOdo >> 8) & 0xFF);   // Data10: Mid byte
-        payload41[11] = (uint8_t)(currentOdo & 0xFF);          // Data11: Low byte
-        
-        // Byte [12]: Fuel level
-        // Format: Unsigned 8-bit
-        // Formula: Fuel (L) = Data12
-        // Scale: Already mapped to 0-45L (Juke F15 tank capacity)
-        payload41[12] = (uint8_t)fuelLevel;
-
-        transmettreVersPoste(0x41, payload41, 13);
-        lastSlowTime = now;
+        sendSteeringAngleMessage(angleRAV4);
+        lastSteeringTime = now;
     }
 
-    // ======================================================================
-    // 3. DOOR STATUS (DataType 0x41, Command 0x01) - On change only
-    // ======================================================================
-    // Format: 2 bytes total
-    // Protocol specification: Raise VW Polo Protocol v1.4
-    // Byte [0]: Command = 0x01 (Doors/safety/trunk/washer)
-    // Byte [1]: Status bitmask
-    //   Bit 0: Left front door (0=closed, 1=open)
-    //   Bit 1: Right front door (0=closed, 1=open)
-    //   Bit 2: Left rear door (0=closed, 1=open)
-    //   Bit 3: Rear door if present (0=closed, 1=open)
-    //   Bit 4: Trunk status (0=closed, 1=open)
-    //   Bit 5: Handbrake (0=normal/released, 1=applied)
-    //   Bit 6: Washer fluid level (0=normal, 1=low) - not available from CAN
-    //   Bit 7: Driver seat belt (0=normal/fastened, 1=not fastened) - not available from CAN
-    static uint8_t lastSentDoors = 0xFF; 
+    // =========================================================================
+    // 2. DOOR STATUS (CMD 0x24) - 250ms interval or on change
+    // =========================================================================
     uint8_t doorStatus = 0;
-    
-    // Map internal format (currentDoors) to VW protocol format
-    if (currentDoors & 0x80) doorStatus |= 0x01;  // Bit0: Front Left (Driver)
-    if (currentDoors & 0x40) doorStatus |= 0x02;  // Bit1: Front Right
-    if (currentDoors & 0x20) doorStatus |= 0x04;  // Bit2: Rear Left
-    if (currentDoors & 0x10) doorStatus |= 0x08;  // Bit3: Rear Right (or rear door)
-    if (currentDoors & 0x08) doorStatus |= 0x10;  // Bit4: Trunk
-    if (currentDoors & 0x01) doorStatus |= 0x20;  // Bit5: Handbrake
-    // Bit6: Washer fluid (not available from CAN, leave at 0)
-    // Bit7: Seat belt (not available from CAN, leave at 0)
 
-    // Only send when door or handbrake status changes
-    if (doorStatus != lastSentDoors) {
-        uint8_t payload[2] = {0x01, doorStatus};
-        transmettreVersPoste(0x41, payload, 2);
+    if (currentDoors & 0x80) doorStatus |= MASK_DOOR_DRIVER;     // Front Left
+    if (currentDoors & 0x40) doorStatus |= MASK_DOOR_PASSENGER;  // Front Right
+    if (currentDoors & 0x20) doorStatus |= MASK_DOOR_REAR_LEFT;  // Rear Left
+    if (currentDoors & 0x10) doorStatus |= MASK_DOOR_REAR_RIGHT; // Rear Right
+    if (currentDoors & 0x08) doorStatus |= MASK_DOOR_BOOT;       // Trunk
+
+    if (doorStatus != lastSentDoors || (now - lastDoorTime >= DOOR_INTERVAL_MS)) {
+        sendDoorCommand(doorStatus);
         lastSentDoors = doorStatus;
+        lastDoorTime = now;
     }
 
-    // ======================================================================
-    // 4. DEBUG LOGGING (Every 1 second when Serial is connected)
-    // ======================================================================
-    if (Serial && (now - lastLogRadio >= 1000)) {
-        Serial.println(">>> RADIO TX STATUS >>>");
-        Serial.printf("RPM: %u | Fuel: %u L | Odo: %u km\n", engineRPM, fuelLevel, currentOdo);
-        Serial.printf("VW Steer (IPAS Target): %d | Door+HB Byte: 0x%02X\n", angleVW, doorStatus);
-        Serial.printf("VW Bat Raw: %u | VW Temp Raw: %d\n", (uint16_t)voltBat, (int16_t)tempExt);
-        Serial.println("-----------------------");
-        lastLogRadio = now;
+    // =========================================================================
+    // 3. LIGHTS & INDICATORS (CMD 0x7D, SUB 0x01) - 200ms interval or on change
+    // =========================================================================
+    // Build lights bitmask from global state
+    // Indicators use timeout detection (500ms) since CAN only signals when active
+    uint8_t lightStatus = 0;
+
+    // Check if indicators are active (received signal within timeout)
+    bool leftActive = (now - lastLeftIndicatorTime) < INDICATOR_TIMEOUT_MS;
+    bool rightActive = (now - lastRightIndicatorTime) < INDICATOR_TIMEOUT_MS;
+
+    if (rightActive)      lightStatus |= MASK_LIGHT_RIGHT_IND;
+    if (leftActive)       lightStatus |= MASK_LIGHT_LEFT_IND;
+    if (highBeamOn)       lightStatus |= MASK_LIGHT_HIGH_BEAM;
+    if (headlightsOn)     lightStatus |= MASK_LIGHT_HEADLIGHTS;
+    if (parkingLightsOn)  lightStatus |= MASK_LIGHT_PARKING;
+
+    if (lightStatus != lastSentLights || (now - lastLightsTime >= LIGHTS_INTERVAL_MS)) {
+        sendLightsMessage(lightStatus);
+        lastSentLights = lightStatus;
+        lastLightsTime = now;
+    }
+
+    // =========================================================================
+    // 4. ENGINE RPM (CMD 0x7D, SUB 0x0A) - 333ms interval
+    // =========================================================================
+    if (now - lastRpmTime >= RPM_INTERVAL_MS) {
+        sendRpmMessage(engineRPM);
+        lastRpmTime = now;
+    }
+
+    // =========================================================================
+    // 5. VEHICLE SPEED (CMD 0x7D, SUB 0x03) - 500ms interval
+    // =========================================================================
+    if (now - lastSpeedTime >= SPEED_INTERVAL_MS) {
+        sendSpeedMessage(vehicleSpeed);
+        lastSpeedTime = now;
+    }
+
+    // =========================================================================
+    // 6. INSTANTANEOUS FUEL CONSUMPTION (CMD 0x22) - 1s interval
+    // =========================================================================
+    // Instantaneous consumption from Nissan CAN 0x580 byte[1]
+    if (now - lastFuelConsTime >= FUEL_CONS_INTERVAL_MS) {
+        sendFuelConsumptionMessage(fuelConsumptionInst);
+        lastFuelConsTime = now;
+    }
+
+    // =========================================================================
+    // 6b. AVERAGE FUEL CONSUMPTION (CMD 0x23) - 5s interval
+    // =========================================================================
+    // Average consumption from Nissan CAN 0x580 byte[4]
+    if (now - lastFuelConsAvgTime >= FUEL_CONS_AVG_INTERVAL_MS) {
+        sendFuelConsumptionAvgMessage(fuelConsumptionAvg);
+        lastFuelConsAvgTime = now;
+    }
+
+    // =========================================================================
+    // 7. OUTSIDE TEMPERATURE (CMD 0x28) - 5s interval
+    // =========================================================================
+    // Note: Using coolant temp as substitute (no exterior sensor on Juke CAN)
+    if (now - lastTempTime >= TEMP_INTERVAL_MS) {
+        sendOutsideTempMessage(tempExt);
+        lastTempTime = now;
+    }
+
+    // =========================================================================
+    // 8. TRIP INFO / REMAINING RANGE (CMD 0x21) - 5s interval
+    // =========================================================================
+    // Contains: Average Speed, Elapsed Time, Distance to Empty
+    // Average speed/elapsed time from trip computer (if available on CAN)
+    // Distance to Empty from Nissan CAN 0x54C
+    if (now - lastRangeTime >= RANGE_INTERVAL_MS) {
+        sendTripInfoMessage(dteValue, averageSpeed, elapsedTime);
+        lastRangeTime = now;
+    }
+
+    // =========================================================================
+    // 9. ODOMETER (CMD 0x7D, SUB 0x04) - 10s interval
+    // =========================================================================
+    if (now - lastOdometerTime >= ODOMETER_INTERVAL_MS) {
+        sendOdometerMessage(currentOdo);
+        lastOdometerTime = now;
     }
 }

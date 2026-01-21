@@ -43,28 +43,59 @@ The `CanCapture.cpp` module processes frames in real-time using the following id
 
 ### 4. Body Control Module (CAN ID 0x60D)
 
-**Byte [0] - Door Status** (Bitmask):
+Bytes [0-2] form a **24-bit status word** containing doors, lights, and indicators:
 
-| Byte | Bit | Door |
+```cpp
+uint32_t status = (Data[0] << 16) | (Data[1] << 8) | Data[2];
+```
+
+**Status Word Bit Mapping:**
+
+| Bit | Signal | Notes |
 | --- | --- | --- |
-| [0] | 4 (0x10) | Driver (Front Left) |
-| [0] | 3 (0x08) | Passenger (Front Right) |
-| [0] | 5 (0x20) | Rear Left |
-| [0] | 6 (0x40) | Rear Right |
-| [3] | 1 or 6 (0x42) | Trunk / Hatch |
+| 11 | High Beam | 1 = on |
+| 13 | Left Indicator | Pulse when active |
+| 14 | Right Indicator | Pulse when active |
+| 17 | Headlights (low beam) | 1 = on |
+| 18 | Parking Lights | 1 = on |
+| 19 | Passenger Door | 1 = open |
+| 20 | Driver Door | 1 = open |
+| 21 | Rear Left Door | 1 = open |
+| 22 | Rear Right Door | 1 = open |
+| 23 | Boot/Trunk | 1 = open |
 
-The raw Nissan bits are remapped to a generic format for VW protocol compatibility:
-- Nissan byte 0 bit 4 → Internal bit 7 (Driver / Front Left)
-- Nissan byte 0 bit 3 → Internal bit 6 (Passenger / Front Right)
-- Nissan byte 0 bit 5 → Internal bit 5 (Rear Left)
-- Nissan byte 0 bit 6 → Internal bit 4 (Rear Right)
-- Nissan byte 3 bit 1/6 → Internal bit 3 (Trunk)
+**Indicator Detection:**
+- Indicators pulse on CAN only when the blinker relay is active
+- A 500ms timeout is used to detect if indicator is currently blinking
+- Timestamps are recorded for each pulse to track indicator state
+
+**Output Remapping (for Toyota RAV4 protocol):**
+
+*Doors* → `currentDoors` bitmask:
+- Bit 20 → 0x80 (Driver)
+- Bit 19 → 0x40 (Passenger)
+- Bit 21 → 0x20 (Rear Left)
+- Bit 22 → 0x10 (Rear Right)
+- Bit 23 → 0x08 (Boot)
+
+*Lights* → Individual boolean variables:
+- `headlightsOn`, `highBeamOn`, `parkingLightsOn`
+- `lastLeftIndicatorTime`, `lastRightIndicatorTime` (timestamps)
 
 ### 5. Trip Computer (CAN ID 0x54C)
 
 | Byte | Signal | Formula | Notes |
 | --- | --- | --- | --- |
 | **[4-5]** | Distance to Empty | `(Data[4]<<8 \| Data[5])` | Estimated range in km |
+
+### 6. Fuel Consumption (CAN ID 0x580)
+
+| Byte | Signal | Formula | Notes |
+| --- | --- | --- | --- |
+| **[1]** | Instant. Consumption | `Data[1] * 10` | 0.1 L/100km units (needs calibration) |
+| **[4]** | Average Consumption | `Data[4] * 10` | 0.1 L/100km units (needs calibration) |
+
+**Note:** Alternative ID 0x358 byte[1] may also contain consumption data. See CanCapture.cpp comments.
 
 ---
 
@@ -102,14 +133,16 @@ Doors Raw: 0x00
 │  Nissan     │ CAN  │  ESP32       │ Vars │  RadioSend  │
 │  ECUs       │ ───► │  CanCapture  │ ───► │  Module     │
 └─────────────┘      └──────────────┘      └─────────────┘
-     0x002                                     
-     0x180           Decodes frames           Reads global
-     0x284           Stores in globals        variables
-     0x5C5                                    Sends to radio
-     0x551
-     0x60D
-     0x6F6
-     0x54C
+     0x002            currentSteer
+     0x180            engineRPM              Reads global
+     0x284            vehicleSpeed           variables
+     0x5C5            fuelLevel, currentOdo  Sends to radio
+     0x551            tempExt
+     0x60D            currentDoors
+     0x6F6            headlightsOn, highBeamOn
+     0x54C            parkingLightsOn
+                      indicatorLeft/Right
+                      dteValue, voltBat
 ```
 
 ---
