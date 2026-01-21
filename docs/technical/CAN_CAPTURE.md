@@ -114,14 +114,12 @@ The capture relies on the **ESP32-TWAI-CAN** library.
 
 ### Debug Logging
 
-When connected via USB Serial, the module outputs decoded values every second:
+When connected via USB Serial (`pio device monitor`), the system outputs each received CAN frame:
 
 ```
---- NISSAN DATA DECODED ---
-RPM: 2500 | Speed: 45 | Volt: 14.2V | Temp: 85 C
-Fuel: 32 L (VW scale) | Steer: -150
-Doors Raw: 0x00
----------------------------
+RX ID: 0x180 | DLC: 8 | Data: 00 00 45 6A 7A 00 32 10
+RX ID: 0x284 | DLC: 8 | Data: 00 00 00 2D 00 00 D6 5C
+RX ID: 0x60D | DLC: 8 | Data: 08 06 00 00 00 00 00 00
 ```
 
 ---

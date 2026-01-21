@@ -170,27 +170,5 @@ void handleCanCapture(CanFrame &rxFrame) {
             fuelConsumptionInst = rxFrame.data[2] & 0x7F;  // e.g., 0x81 → 1 (0.1 L/100km)
             fuelConsumptionAvg = rxFrame.data[4];          // e.g., 0x3D = 61 → 6.1 L/100km
             break;
-
-        // ======================================================================
-        // ALTERNATIVE: FUEL CONSUMPTION (CAN ID 0x358) - COMMENTED
-        // ======================================================================
-        // Frame: 00 4A 80 00 00 00 00 00
-        // Byte [1]: 0x4A = 74, possibly consumption × 10 = 7.4 L/100km
-        // Uncomment and adjust if 0x580 doesn't work correctly
-        // case 0x358:
-        //     fuelConsumptionInst = rxFrame.data[1] * 10;
-        //     break;
     }
-
-    // ==========================================================================
-    // DEBUG LOGGING (Every 1 second when Serial is connected)
-    // ==========================================================================
-    // if (Serial && (now - lastLogTime >= 1000)) {
-    //     Serial.println("--- NISSAN DATA DECODED ---");
-    //     Serial.printf("RPM: %u | Speed: %u | Volt: %.1fV | Temp: %d C\n", engineRPM, vehicleSpeed, voltBat, tempExt);
-    //     Serial.printf("Fuel: %u L (VW scale) | Steer: %d\n", fuelLevel, currentSteer);
-    //     Serial.printf("Doors Raw: 0x%02X\n", currentDoors);
-    //     Serial.println("---------------------------");
-    //     lastLogTime = now;
-    // }
 }

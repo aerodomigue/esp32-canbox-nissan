@@ -68,7 +68,7 @@ void setup() {
     esp_task_wdt_add(NULL); 
 
     // D. Radio UART - Communication with Android head unit
-    // TX=GPIO5, RX=GPIO6, 38400 baud, 8N1 (VW Polo protocol standard)
+    // TX=GPIO5, RX=GPIO6, 38400 baud, 8N1 (Toyota RAV4 protocol)
     RadioSerial.begin(38400, SERIAL_8N1, 6, 5); 
 
     // E. CAN Bus Initialization - TWAI controller setup
