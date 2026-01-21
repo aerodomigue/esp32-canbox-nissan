@@ -13,11 +13,11 @@
   <em>Dynamic reverse camera guidelines working with the CAN bridge</em>
 </p>
 
-This project is an intelligent gateway that integrates telemetry data from a Nissan Juke F15 (Platform B) into an Android head unit. The ESP32 intercepts **Cabin CAN bus** frames via the OBD-II port and **translates Nissan CAN frames to VW Polo protocol**.
+This project is an intelligent gateway that integrates telemetry data from a Nissan Juke F15 (Platform B) into an Android head unit. The ESP32 intercepts **Cabin CAN bus** frames via the OBD-II port and **translates Nissan CAN frames to Toyota RAV4 protocol**.
 
-**Why VW Polo protocol?** Most Android head units (like those running DuduOS, FYT, etc.) have much better native support for VW/Polo CAN protocol than for Nissan. By translating the frames, we get better integration: working dashboard widgets, door status, reverse camera guidelines, and more.
+**Why Toyota RAV4 protocol?** Most Android head units (like those running DuduOS, FYT, etc.) have much better native support for Toyota/RAV4 CAN protocol than for Nissan. By translating the frames, we get better integration: working dashboard widgets, door status, reverse camera guidelines, and more.
 
-> **Important:** In your head unit settings, configure the CAN protocol as **"VW Polo" (2009-2018)** for this to work.
+> **Important:** In your head unit settings, configure the CAN protocol as **"Toyota RAV4"** for this to work.
 
 ---
 
@@ -42,7 +42,7 @@ This project is an intelligent gateway that integrates telemetry data from a Nis
 | Door Status | ⚠️ WIP | Mapping may need adjustment |
 | Handbrake | ⚠️ WIP | Signal not yet identified |
 
-> **Note:** Documentation for the Raise/VW-Polo protocol used by Android head units is scarce. Some features are still being reverse-engineered due to lack of official protocol specifications.
+> **Note:** Documentation for the Raise/Toyota RAV4 protocol used by Android head units is scarce. Some features are still being reverse-engineered due to lack of official protocol specifications.
 
 See the **[Roadmap](ROADMAP.md)** for planned features including USB configuration app and OTA updates.
 
@@ -205,9 +205,8 @@ pio device monitor
 - [jackm / Carhack Nissan](https://github.com/jackm/carhack/blob/master/nissan.md)
 - [balrog-kun / Nissan Qashqai CAN info](https://github.com/balrog-kun/nissan-qashqai-can-info)
 
-### Radio Protocols (VW/Raise/RZC)
-- **[VW Polo Protocol Documentation](docs/protocols/raise-vw-polo/raise%20VW%20-%20polo%20protocole.en.md)** - Complete protocol specification (English)
-- **[Documentation Protocole VW Polo](docs/protocols/raise-vw-polo/raise%20VW%20-%20polo%20protocole.fr.md)** - Spécification complète du protocole (Français)
+### Radio Protocols (Toyota/Raise/RZC)
+- **[Toyota RAV4 Protocol Specification](docs/protocols/raise-toyota-rav4/)** - Official Raise protocol documentation (PDF)
 - [smartgauges / canbox](https://github.com/smartgauges/canbox)
 - [cxsichen / Raise Protocol](https://github.com/cxsichen/helllo-world/tree/master/%E5%8D%8F%E8%AE%AE/%E7%9D%BF%E5%BF%97%E8%AF%9A)
 - [DUDU-AUTO Forum / Qashqai 2011 CANbus](https://forum.dudu-auto.com/d/1786-nissan-qashqai-2011-canbus/6)
