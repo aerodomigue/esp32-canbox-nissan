@@ -10,12 +10,17 @@
 | **V1.0** | Engine RPM | ✅ Done | |
 | **V1.0** | Fuel Tank Level | ✅ Done | Calibrated 45L |
 | **V1.0** | Battery Voltage | ✅ Done | |
-| **V1.1** | Vehicle Speed | ⚠️ WIP | Testing and validating scaling |
-| **V1.1** | External Temperature | ⚠️ WIP | Find ext. sensor on CAN or keep coolant temp |
-| **V1.2** | Door Status | ⚠️ WIP | Validate bit mapping for Juke F15 |
-| **V1.2** | Handbrake | ⚠️ WIP | Identify CAN signal |
-| **V1.3** | Cleanup & Documentation | 🔲 Todo | Remove debug logs, finalize docs |
-| **V1.3** | Stable Release | 🔲 Todo | GitHub tag v1.0.0 |
+| **V1.1** | Vehicle Speed | ✅ Done | |
+| **V1.2** | Door Status | ✅ Done | All 4 doors + trunk |
+| **V1.2** | Handbrake | ✅ Done | |
+| **V1.3** | Indicators | ✅ Done | Left/right turn signals |
+| **V1.3** | Lights | ✅ Done | Headlights, high beam, parking lights |
+| **V1.4** | Toyota RAV4 Protocol | ✅ Done | Migrated from VW Polo to Toyota RAV4 |
+| **V1.4** | External Temperature | ⚠️ WIP | Shows coolant temp (no ext. sensor on CAN) |
+| **V1.4** | Instant Fuel Consumption | ❌ Not working | Decoded but not displayed on head unit |
+| **V1.4** | Distance to Empty | ❌ Not working | Decoded but not displayed on head unit |
+| **V1.5** | Cleanup & Documentation | 🔲 Todo | Remove debug logs, finalize docs |
+| **V1.5** | Stable Release | 🔲 Todo | GitHub tag v1.0.0 |
 
 ---
 
@@ -87,7 +92,7 @@
 ## Development Order
 
 ```
-V1.1 (Speed) → V1.2 (Doors/Handbrake) → V1.3 (Cleanup) → Release V1
+V1.0-1.1 (Core) → V1.2 (Doors) → V1.3 (Lights) → V1.4 (RAV4 Protocol) → V1.5 (Cleanup) → Release V1
     │
     └──→ V2.1 (NVS) → V2.2 (Commands) → V2.3 (OTA) → V2.4 (APK) → Release V2
 ```
