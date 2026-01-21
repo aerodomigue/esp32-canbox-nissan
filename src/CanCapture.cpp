@@ -16,6 +16,7 @@
 
 #include <ESP32-TWAI-CAN.hpp>
 #include "GlobalData.h"
+#include "ConfigManager.h"
 
 #define LED_HEARTBEAT 8
 
@@ -46,9 +47,9 @@ void handleCanCapture(CanFrame &rxFrame) {
         // ======================================================================
         // Format: Big Endian unsigned 16-bit value
         // Bytes: [0-1] Raw RPM value
-        // Scale factor: /7 (calibrated to match head unit display)
-        case 0x180: 
-            engineRPM = (uint16_t)((rxFrame.data[0] << 8) | rxFrame.data[1]) / 7;
+        // Scale factor: configurable divisor (default 7)
+        case 0x180:
+            engineRPM = (uint16_t)((rxFrame.data[0] << 8) | rxFrame.data[1]) / configGetRpmDivisor();
             break;
 
         // ======================================================================
@@ -69,9 +70,9 @@ void handleCanCapture(CanFrame &rxFrame) {
             {
                 // Byte [0]: Fuel level raw value
                 // Inverted scale for Juke (255=empty, 0=full)
-                // Mapped to 0-45L (Nissan Juke F15 tank capacity)
+                // Mapped to 0-tankCapacity (configurable, default 45L)
                 uint8_t rawFuel = rxFrame.data[0];
-                fuelLevel = map(rawFuel, 255, 0, 0, 45);
+                fuelLevel = map(rawFuel, 255, 0, 0, configGetTankCapacity());
 
                 // Bytes [1-3]: Odometer reading in km (24-bit, for logging only)
                 currentOdo = ((uint32_t)rxFrame.data[1] << 16) | 
@@ -149,12 +150,12 @@ void handleCanCapture(CanFrame &rxFrame) {
         // 8. TRIP COMPUTER - Distance to Empty (CAN ID 0x54C)
         // ======================================================================
         // Frame: 00 00 00 00 00 80 04 08
-        // Bytes [6-7] big-endian: raw value, divide by ~2.83 to get km
-        // Example: 0x0408 = 1032 / 2.83 ≈ 365 km
+        // Bytes [6-7] big-endian: raw value, divide by configurable divisor
+        // Example: 0x0408 = 1032 / 2.83 ≈ 365 km (divisor = 283)
         case 0x54C:
             {
                 uint16_t rawDte = (rxFrame.data[6] << 8) | rxFrame.data[7];
-                dteValue = (rawDte * 100) / 283;  // Approx divide by 2.83
+                dteValue = (rawDte * 100) / configGetDteDivisor();
             }
             break;
 

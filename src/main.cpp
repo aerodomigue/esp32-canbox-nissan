@@ -1,20 +1,21 @@
 /**
  * @file main.cpp
- * @brief ESP32 CAN Gateway for Nissan Juke F15 to VW-protocol head unit
- * 
+ * @brief ESP32 CAN Gateway for Nissan Juke F15 to Android head unit
+ *
  * This firmware acts as a bridge between the Nissan Juke F15 CAN bus and an
- * aftermarket Android head unit using VW/Polo protocol. It reads vehicle data
+ * aftermarket Android head unit using Toyota RAV4 protocol. It reads vehicle data
  * from the OBD-II CAN bus and translates it to the format expected by the radio.
- * 
- * Hardware: ESP32-S3 (or compatible) with TWAI CAN controller
+ *
+ * Hardware: ESP32-C3 (or compatible) with TWAI CAN controller
  * CAN Speed: 500 kbps (Nissan standard)
- * Radio Protocol: VW Polo UART @ 38400 baud
+ * Radio Protocol: Toyota RAV4 UART @ 38400 baud
  */
 
 #include <Arduino.h>
 #include <ESP32-TWAI-CAN.hpp>
 #include <esp_task_wdt.h>
 #include "GlobalData.h"
+#include "ConfigManager.h"
 #include "CanCapture.h"
 #include "RadioSend.h"
 
@@ -39,13 +40,14 @@ HardwareSerial RadioSerial(1);
 
 /**
  * @brief System initialization
- * 
+ *
  * Initializes all hardware peripherals in the following order:
  * A. Status LED
  * B. Debug Serial
- * C. Hardware Watchdog
- * D. Radio UART
- * E. CAN Controller
+ * C. Configuration (NVS)
+ * D. Hardware Watchdog
+ * E. Radio UART
+ * F. CAN Controller
  */
 void setup() {
     // A. Status LED - Used for boot indication and heartbeat
@@ -54,10 +56,14 @@ void setup() {
 
     // B. Debug Serial - For monitoring via USB
     Serial.begin(115200);
-    delay(2000); 
+    delay(2000);
     Serial.println("--- ESP32 BOOT (F15 Gateway) ---");
 
-    // C. Hardware Watchdog - Automatic reboot on system hang
+    // C. Load configuration from NVS (or use defaults on first boot)
+    configInit();
+    Serial.println("Config loaded");
+
+    // D. Hardware Watchdog - Automatic reboot on system hang
     esp_task_wdt_deinit();
     esp_task_wdt_config_t twdt_config = {
         .timeout_ms = WDT_TIMEOUT * 1000,
@@ -67,11 +73,11 @@ void setup() {
     esp_task_wdt_init(&twdt_config);
     esp_task_wdt_add(NULL); 
 
-    // D. Radio UART - Communication with Android head unit
+    // E. Radio UART - Communication with Android head unit
     // TX=GPIO5, RX=GPIO6, 38400 baud, 8N1 (Toyota RAV4 protocol)
-    RadioSerial.begin(38400, SERIAL_8N1, 6, 5); 
+    RadioSerial.begin(38400, SERIAL_8N1, 6, 5);
 
-    // E. CAN Bus Initialization - TWAI controller setup
+    // F. CAN Bus Initialization - TWAI controller setup
     ESP32Can.setPins(CAN_TX, CAN_RX);
     ESP32Can.setSpeed(ESP32Can.convertSpeed(500000)); // 500kbps (Nissan Juke standard)
     
