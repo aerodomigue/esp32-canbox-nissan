@@ -34,13 +34,17 @@ Ce projet est une passerelle intelligente permettant d'intégrer les données t�
 | Fonctionnalité | Statut | Notes |
 | --- | --- | --- |
 | Régime Moteur (RPM) | ✅ Fonctionnel | |
-| Vitesse Véhicule | ⚠️ WIP | Tests en cours |
+| Vitesse Véhicule | ✅ Fonctionnel | |
 | Niveau Essence | ✅ Fonctionnel | Calibré pour Juke F15 (réservoir 45L) |
 | Tension Batterie | ✅ Fonctionnel | |
 | Direction / Lignes Dynamiques | ✅ Fonctionnel | Calibré pour Juke F15 |
+| État des Portes | ✅ Fonctionnel | 4 portes + coffre |
+| Clignotants | ✅ Fonctionnel | Gauche/droite |
+| Feux | ✅ Fonctionnel | Phares, feux de route, veilleuses |
 | Température Extérieure | ⚠️ WIP | Affiche actuellement la temp moteur (pas de sonde ext. sur CAN) |
-| État des Portes | ⚠️ WIP | Mapping peut nécessiter ajustement |
-| Frein à Main | ⚠️ WIP | Signal pas encore identifié |
+| Frein à Main | ✅ Fonctionnel | |
+| Conso. Instantanée | ❌ Non fonctionnel | Décodé mais non affiché sur l'autoradio |
+| Autonomie Restante | ❌ Non fonctionnel | Décodé mais non affiché sur l'autoradio |
 
 > **Note :** La documentation du protocole Raise/Toyota RAV4 utilisé par les autoradios Android est rare. Certaines fonctionnalités sont encore en cours de reverse-engineering par manque de spécifications officielles du protocole.
 

@@ -34,13 +34,17 @@ This project is an intelligent gateway that integrates telemetry data from a Nis
 | Feature | Status | Notes |
 | --- | --- | --- |
 | Engine RPM | ✅ Working | |
-| Vehicle Speed | ⚠️ WIP | Testing in progress |
+| Vehicle Speed | ✅ Working | |
 | Fuel Tank Level | ✅ Working | Calibrated for Juke F15 (45L tank) |
 | Battery Voltage | ✅ Working | |
 | Steering / Dynamic Guidelines | ✅ Working | Calibrated for Juke F15 |
-| External Temperature | ⚠️ WIP | Currently shows coolant temp (no exterior sensor on CAN) |
-| Door Status | ⚠️ WIP | Mapping may need adjustment |
-| Handbrake | ⚠️ WIP | Signal not yet identified |
+| Door Status | ✅ Working | All 4 doors + trunk |
+| Indicators | ✅ Working | Left/right turn signals |
+| Lights | ✅ Working | Headlights, high beam, parking lights |
+| External Temperature | ⚠️ WIP | wrong delta |
+| Handbrake | ✅ Working | |
+| Instant Fuel Consumption | ⚠️ WIP | not decoded yet |
+| Distance to Empty | ⚠️ WIP| not decoded yet  |
 
 > **Note:** Documentation for the Raise/Toyota RAV4 protocol used by Android head units is scarce. Some features are still being reverse-engineered due to lack of official protocol specifications.
 
