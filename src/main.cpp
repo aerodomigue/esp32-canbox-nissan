@@ -16,6 +16,7 @@
 #include <esp_task_wdt.h>
 #include "GlobalData.h"
 #include "ConfigManager.h"
+#include "SerialCommand.h"
 #include "CanCapture.h"
 #include "RadioSend.h"
 
@@ -63,6 +64,9 @@ void setup() {
     configInit();
     Serial.println("Config loaded");
 
+    // C2. Initialize serial command interface
+    serialCommandInit();
+
     // D. Hardware Watchdog - Automatic reboot on system hang
     esp_task_wdt_deinit();
     esp_task_wdt_config_t twdt_config = {
@@ -109,6 +113,9 @@ void loop() {
     unsigned long now = millis();
     esp_task_wdt_reset(); // Feed the watchdog to prevent system reset
 
+    // Process serial commands (non-blocking)
+    serialCommandProcess();
+
     // ==========================================================================
     // 1. SAFETY: CAN BUS ERROR MONITORING
     // ==========================================================================
@@ -122,19 +129,11 @@ void loop() {
     // - Bus error counter exceeds threshold
     // - Controller has entered Bus Off state (disconnected from bus)
 
-    if (Serial && (ESP32Can.rxErrorCounter() > 0 || ESP32Can.busErrCounter() > 0)) {
-        Serial.printf("Erreurs RX: %d | Erreurs Bus: %d | State: %d\n", 
-                      ESP32Can.rxErrorCounter(), 
+    if (isCanLogEnabled() && (ESP32Can.rxErrorCounter() > 0 || ESP32Can.busErrCounter() > 0)) {
+        Serial.printf("Erreurs RX: %d | Erreurs Bus: %d | State: %d\n",
+                      ESP32Can.rxErrorCounter(),
                       ESP32Can.busErrCounter(),
                       ESP32Can.canState());
-    }
-
-    if (Serial) {
-        Serial.printf("RX ID: 0x%03X | DLC: %d | Data: ", rxFrame.identifier, rxFrame.data_length_code);
-        for (int i = 0; i < rxFrame.data_length_code; i++) {
-            Serial.printf("%02X ", rxFrame.data[i]);
-        }
-        Serial.println();
     }
     if (rxErr > MAX_CAN_ERRORS || busErr > MAX_CAN_ERRORS || ESP32Can.canState() == TWAI_STATE_BUS_OFF) {
         
@@ -159,9 +158,18 @@ void loop() {
     if (ESP32Can.readFrame(rxFrame)) {
         handleCanCapture(rxFrame);
         lastCanMessageTime = now;
-        
+
+        // Log CAN frame if enabled
+        if (isCanLogEnabled()) {
+            Serial.printf("RX 0x%03X [%d]: ", rxFrame.identifier, rxFrame.data_length_code);
+            for (int i = 0; i < rxFrame.data_length_code; i++) {
+                Serial.printf("%02X ", rxFrame.data[i]);
+            }
+            Serial.println();
+        }
+
         // Toggle LED on each received frame (activity indicator)
-        digitalWrite(8, !digitalRead(8)); 
+        digitalWrite(8, !digitalRead(8));
     } 
     else {
         // Slow heartbeat when no messages (indicates silent bus)
