@@ -2,6 +2,8 @@
 
 > **Available Languages:** [Français](README.fr.md) | **English**
 
+> ⚠️ **Project on hold** - Development is currently paused while waiting for hardware (ESP32). Will resume once the components arrive.
+
 <p align="center">
   <img src="docs/images/hardware/build/BUILD_1.png" width="45%" alt="Assembled unit with OBD-II connector"/>
   <img src="docs/images/hardware/build/BUILD_2.png" width="45%" alt="3D printed enclosure"/>
