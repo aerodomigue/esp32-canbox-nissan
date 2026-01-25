@@ -234,6 +234,19 @@ pio device monitor
 
 ---
 
+## Companion App
+
+**[ESP32 CANBox Manager](https://github.com/aerodomigue/esp32-canbox-manager)** - Android app to configure and monitor the CANBox via USB.
+
+Features:
+- Live vehicle data dashboard
+- CAN configuration management
+- Calibration parameter tuning
+- Firmware updates (OTA)
+- CAN frame debugging
+
+---
+
 ## References & Credits
 
 ### Nissan CAN Documentation
