@@ -28,71 +28,83 @@
 
 **Goal:** No more recompiling to change parameters or update firmware.
 
-### Phase 2.1 - Storage & Config (ESP32)
+### Phase 2.1 - Storage & Config (ESP32) ✅
 
-| Task | Details |
-| --- | --- |
-| 🔲 Add `Preferences.h` (NVS) | Persistent parameter storage |
-| 🔲 Replace `#define` with variables | STEER_OFFSET, STEER_SCALE, TANK_SIZE, RPM_DIVISOR |
-| 🔲 Load config at boot | Read NVS → apply to variables |
-| 🔲 Default values | If NVS empty, use Juke F15 defaults |
+| Task | Details | Status |
+| --- | --- | --- |
+| Add `Preferences.h` (NVS) | Persistent parameter storage | ✅ Done |
+| Replace `#define` with variables | STEER_OFFSET, STEER_SCALE, TANK_SIZE, RPM_DIVISOR | ✅ Done |
+| Load config at boot | Read NVS → apply to variables | ✅ Done |
+| Default values | If NVS empty, use Juke F15 defaults | ✅ Done |
 
-### Phase 2.2 - Serial Command Protocol (ESP32)
+### Phase 2.2 - Serial Command Protocol (ESP32) ✅
 
-| Task | Details |
-| --- | --- |
-| 🔲 Command parser | Read Serial, parse AT-style commands |
-| 🔲 CONFIG commands | `CFG GET`, `CFG SET`, `CFG SAVE`, `CFG RESET` |
-| 🔲 LOG commands | `LOG ON/OFF`, `LOG LEVEL`, `LOG CAN` |
-| 🔲 SYSTEM commands | `SYS INFO`, `SYS REBOOT`, `SYS VERSION` |
-| 🔲 JSON responses | Structured format for the app |
+| Task | Details | Status |
+| --- | --- | --- |
+| Command parser | Read Serial, parse AT-style commands | ✅ Done |
+| CFG commands | `CFG GET`, `CFG SET`, `CFG LIST`, `CFG SAVE`, `CFG RESET` | ✅ Done |
+| LOG commands | `LOG ON/OFF` for CAN frame logging | ✅ Done |
+| SYS commands | `SYS INFO`, `SYS DATA`, `SYS REBOOT` | ✅ Done |
 
-### Phase 2.3 - OTA Update (ESP32)
+### Phase 2.3 - CAN Configurable System (ESP32) ✅
 
-| Task | Details |
-| --- | --- |
-| 🔲 Integrate `Update.h` | Native ESP32 OTA library |
-| 🔲 OTA commands | `OTA START <size>`, `OTA DATA`, `OTA END`, `OTA ABORT` |
-| 🔲 Checksum validation | MD5 or CRC32 before reboot |
-| 🔲 Rollback safety | Keep old partition if update fails |
+| Task | Details | Status |
+| --- | --- | --- |
+| JSON-based CAN config | Vehicle configs stored on LittleFS | ✅ Done |
+| Mock data generator | Simulated data for testing without vehicle | ✅ Done |
+| CAN serial commands | `CAN STATUS`, `CAN LIST`, `CAN LOAD`, `CAN GET`, `CAN DELETE` | ✅ Done |
+| CAN config upload | `CAN UPLOAD START/DATA/END` via Base64 | ✅ Done |
+| Multi-vehicle support | Switch configs without recompiling | ✅ Done |
+| USB protocol documentation | `docs/protocols/USB_SERIAL_PROTOCOL.md` | ✅ Done |
 
-### Phase 2.4 - Android Application (APK)
+### Phase 2.4 - OTA Firmware Update (ESP32)
 
-| Task | Details |
-| --- | --- |
-| 🔲 Android Studio project | Kotlin, Material Design |
-| 🔲 USB Serial integration | `usb-serial-for-android` library |
-| 🔲 Config screen | Sliders/inputs for each parameter |
-| 🔲 Logs screen | Real-time CAN data display |
-| 🔲 Update screen | Select .bin file, progress bar, flash |
-| 🔲 Debug screen | Send manual commands, view raw responses |
+| Task | Details | Status |
+| --- | --- | --- |
+| 🔲 Integrate `Update.h` | Native ESP32 OTA library | Todo |
+| 🔲 OTA commands | `OTA START <size>`, `OTA DATA`, `OTA END`, `OTA ABORT` | Todo |
+| 🔲 Checksum validation | MD5 or CRC32 before reboot | Todo |
+| 🔲 Rollback safety | Keep old partition if update fails | Todo |
 
-### Phase 2.5 - Polish & Release
+### Phase 2.5 - Android Application (APK)
 
-| Task | Details |
-| --- | --- |
-| 🔲 Full testing | Config, OTA, edge cases |
-| 🔲 V2 Documentation | APK user guide |
-| 🔲 Release APK | GitHub releases |
-| 🔲 GitHub tag v2.0.0 | |
+| Task | Details | Status |
+| --- | --- | --- |
+| 🔲 Android Studio project | Kotlin, Material Design | Todo |
+| 🔲 USB Serial integration | `usb-serial-for-android` library | Todo |
+| 🔲 Config screen | Sliders/inputs for each parameter | Todo |
+| 🔲 Logs screen | Real-time CAN data display | Todo |
+| 🔲 Update screen | Select .bin file, progress bar, flash | Todo |
+| 🔲 CAN config screen | Upload/download vehicle configs | Todo |
+| 🔲 Debug screen | Send manual commands, view raw responses | Todo |
+
+### Phase 2.6 - Polish & Release
+
+| Task | Details | Status |
+| --- | --- | --- |
+| 🔲 Full testing | Config, OTA, edge cases | Todo |
+| 🔲 V2 Documentation | APK user guide | Todo |
+| 🔲 Release APK | GitHub releases | Todo |
+| 🔲 GitHub tag v2.0.0 | | Todo |
 
 ---
 
 ## V3 - Future Ideas
 
-| Idea | Details |
-| --- | --- |
-| 💡 Multi-vehicle support | Profiles for Qashqai, Leaf, Micra... |
-| 💡 Steering auto-calibration | Automatically detect center offset |
-| 💡 CAN frame recorder | Record frames for debugging |
-| 💡 Community presets | Share configs between users |
+| Idea | Details | Status |
+| --- | --- | --- |
+| ✅ Multi-vehicle support | Profiles for Qashqai, Leaf, Micra... | Done in V2.3 |
+| 💡 Steering auto-calibration | Automatically detect center offset | Todo |
+| 💡 CAN frame recorder | Record frames for debugging | Todo |
+| 💡 Community presets | Share configs between users | Todo |
 
 ---
 
 ## Development Order
 
 ```
-V1.0-1.1 (Core) → V1.2 (Doors) → V1.3 (Lights) → V1.4 (RAV4 Protocol) → V1.5 (Cleanup) → Release V1
+V1.0-1.4 (Core) ────────────────────────────────────────→ V1.5 (Cleanup) → Release V1
     │
-    └──→ V2.1 (NVS) → V2.2 (Commands) → V2.3 (OTA) → V2.4 (APK) → Release V2
+    └──→ V2.1 (NVS) → V2.2 (Commands) → V2.3 (CAN Config) → V2.4 (OTA) → V2.5 (APK) → Release V2
+              ✅            ✅               ✅              🔲           🔲
 ```

@@ -128,14 +128,46 @@ The original box likely has CAN signal access on its connector, so it might be p
 
 ---
 
+## USB Configuration (V2)
+
+The device can be configured via USB serial without recompiling. Connect to the USB port and use a terminal at **115200 baud**.
+
+### Available Commands
+
+| Command | Description |
+| --- | --- |
+| `CFG LIST` | Show calibration parameters |
+| `CFG SET <param> <value>` | Change a parameter |
+| `CFG SAVE` | Save to flash (NVS) |
+| `CAN STATUS` | Show CAN config status (MOCK/REAL mode) |
+| `CAN LIST` | List vehicle config files |
+| `CAN LOAD <file>` | Load a vehicle config |
+| `CAN UPLOAD START/DATA/END` | Upload config via Base64 |
+| `SYS INFO` | System information |
+| `SYS DATA` | Live vehicle data |
+| `HELP` | Full command list |
+
+See **[USB Serial Protocol Documentation](docs/protocols/USB_SERIAL_PROTOCOL.md)** for complete details.
+
+### Multi-Vehicle Support
+
+Vehicle configurations are stored as JSON files on the device's filesystem. You can:
+- Upload multiple vehicle configs (NissanJukeF15.json, ToyotaCorolla.json, etc.)
+- Switch between vehicles with `CAN LOAD <file>`
+- Use **Mock Mode** for testing without a vehicle
+
+---
+
 ## Software Architecture
 
 The system is designed to be 100% autonomous and resilient to vehicle electrical interference:
 
-1. **[CAN Capture](docs/technical/CAN_CAPTURE.md)**: Decodes Nissan frames (500kbps) and updates global variables (Speed, RPM, Doors, etc.)
+1. **[CAN Capture](docs/technical/CAN_CAPTURE.md)**: Decodes frames using JSON configuration and updates global variables
 2. **[Radio Send](docs/technical/RADIO_SEND.md)**: Formats and transmits data to the head unit at two intervals (100ms for steering, 400ms for dashboard)
-3. **Hardware Watchdog**: Automatic reboot if the program freezes for more than 5 seconds
-4. **CAN Watchdog**: Forces reboot if no CAN data received for 30s while battery > 11V
+3. **ConfigManager**: Persistent calibration storage (NVS)
+4. **SerialCommand**: USB configuration interface
+5. **Hardware Watchdog**: Automatic reboot if the program freezes for more than 5 seconds
+6. **CAN Watchdog**: Forces reboot if no CAN data received for 30s while battery > 11V
 
 ---
 
@@ -146,6 +178,7 @@ The LED (GPIO 8) provides quick diagnostics without requiring a PC connection:
 | Pattern | Status | Meaning |
 | --- | --- | --- |
 | **Rapid flashing** | Normal | CAN data being received and processed |
+| **Slow blink (500ms)** | Mock Mode | Running with simulated data |
 | **Slow heartbeat (1s)** | Idle | System running, but CAN bus is silent |
 | **Solid ON during boot** | Boot | System initializing |
 | **No activity** | Error | System frozen or power issue |
