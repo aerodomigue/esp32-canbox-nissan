@@ -1,20 +1,40 @@
 /**
  * @file SerialCommand.cpp
  * @brief Serial command parser implementation
+ *
+ * Handles USB serial commands for device configuration and monitoring.
+ * Supports both calibration parameters (NVS) and CAN config files (LittleFS).
  */
 
 #include "SerialCommand.h"
 #include "ConfigManager.h"
 #include "GlobalData.h"
+#include "CanConfigProcessor.h"
+#include <LittleFS.h>
+#include <ArduinoJson.h>
+#include <libb64/cdecode.h>
+
+// External reference to CAN processor (defined in main.cpp)
+extern CanConfigProcessor canProcessor;
 
 // =============================================================================
 // PRIVATE VARIABLES
 // =============================================================================
 
 static char cmdBuffer[CMD_BUFFER_SIZE];
-static uint8_t cmdIndex = 0;
+static uint16_t cmdIndex = 0;
 static bool canLogEnabled = false;
 static unsigned long bootTime = 0;
+
+// =============================================================================
+// CAN UPLOAD STATE
+// =============================================================================
+
+static bool uploadInProgress = false;
+static char uploadFilename[32];
+static uint32_t uploadExpectedSize = 0;
+static uint32_t uploadReceivedSize = 0;
+static uint8_t* uploadBuffer = nullptr;
 
 // =============================================================================
 // PARAMETER DEFINITIONS
@@ -43,6 +63,7 @@ static const uint8_t PARAM_COUNT = sizeof(params) / sizeof(params[0]);
 
 static void processCommand(const char* cmd);
 static void handleCfgCommand(const char* args);
+static void handleCanCommand(const char* args);
 static void handleLogCommand(const char* args);
 static void handleSysCommand(const char* args);
 static void handleHelpCommand();
@@ -51,6 +72,17 @@ static void cfgGet(const char* param);
 static void cfgSet(const char* param, const char* value);
 static void cfgList();
 
+static void canStatus();
+static void canList();
+static void canLoad(const char* filename);
+static void canGet();
+static void canDelete(const char* filename);
+static void canUploadStart(const char* filename, uint32_t size);
+static void canUploadData(const char* base64Data);
+static void canUploadEnd();
+static void canUploadAbort();
+
+static size_t base64Decode(const char* input, uint8_t* output, size_t maxLen);
 static void printOK();
 static void printError(const char* msg);
 
@@ -128,6 +160,9 @@ static void processCommand(const char* cmd) {
     // Route to handler
     if (strcmp(cmdUpper, "CFG") == 0) {
         handleCfgCommand(args);
+    }
+    else if (strcmp(cmdUpper, "CAN") == 0) {
+        handleCanCommand(args);
     }
     else if (strcmp(cmdUpper, "LOG") == 0) {
         handleLogCommand(args);
@@ -296,6 +331,373 @@ static void cfgList() {
 }
 
 // =============================================================================
+// CAN COMMAND HANDLER
+// =============================================================================
+
+/**
+ * @brief Handle CAN configuration commands
+ *
+ * Subcommands:
+ * - STATUS: Show current CAN mode and profile
+ * - LIST: List available config files
+ * - LOAD <file>: Load a config file
+ * - GET: Output current config as JSON
+ * - DELETE <file>: Delete a config file
+ * - UPLOAD START <file> <size>: Begin upload
+ * - UPLOAD DATA <base64>: Send data chunk
+ * - UPLOAD END: Finalize upload
+ * - UPLOAD ABORT: Cancel upload
+ * - RELOAD: Reload current config
+ */
+static void handleCanCommand(const char* args) {
+    char subCmd[16];
+    char param1[32];
+    char param2[16];
+
+    // Parse subcommand and parameters
+    int n = sscanf(args, "%15s %31s %15s", subCmd, param1, param2);
+
+    if (n < 1) {
+        printError("Usage: CAN <STATUS|LIST|LOAD|GET|DELETE|UPLOAD|RELOAD>");
+        return;
+    }
+
+    // Convert subcommand to uppercase
+    for (int i = 0; subCmd[i]; i++) subCmd[i] = toupper(subCmd[i]);
+
+    if (strcmp(subCmd, "STATUS") == 0) {
+        canStatus();
+    }
+    else if (strcmp(subCmd, "LIST") == 0) {
+        canList();
+    }
+    else if (strcmp(subCmd, "LOAD") == 0 && n >= 2) {
+        canLoad(param1);
+    }
+    else if (strcmp(subCmd, "GET") == 0) {
+        canGet();
+    }
+    else if (strcmp(subCmd, "DELETE") == 0 && n >= 2) {
+        canDelete(param1);
+    }
+    else if (strcmp(subCmd, "UPLOAD") == 0 && n >= 2) {
+        // Handle UPLOAD subcommands
+        for (int i = 0; param1[i]; i++) param1[i] = toupper(param1[i]);
+
+        if (strcmp(param1, "START") == 0) {
+            // Parse: UPLOAD START <filename> <size>
+            char filename[32];
+            uint32_t size;
+            if (sscanf(args + 13, "%31s %u", filename, &size) == 2) {
+                canUploadStart(filename, size);
+            } else {
+                printError("Usage: CAN UPLOAD START <filename> <size>");
+            }
+        }
+        else if (strcmp(param1, "DATA") == 0) {
+            // Find the base64 data after "UPLOAD DATA "
+            const char* dataStart = strstr(args, "DATA ");
+            if (dataStart) {
+                dataStart += 5;  // Skip "DATA "
+                while (*dataStart == ' ') dataStart++;
+                canUploadData(dataStart);
+            } else {
+                printError("Usage: CAN UPLOAD DATA <base64_data>");
+            }
+        }
+        else if (strcmp(param1, "END") == 0) {
+            canUploadEnd();
+        }
+        else if (strcmp(param1, "ABORT") == 0) {
+            canUploadAbort();
+        }
+        else {
+            printError("Usage: CAN UPLOAD <START|DATA|END|ABORT>");
+        }
+    }
+    else if (strcmp(subCmd, "RELOAD") == 0) {
+        Serial.println("Reloading CAN configuration...");
+        if (canProcessor.begin()) {
+            printOK();
+            Serial.printf("Loaded: %s (%s mode)\n",
+                          canProcessor.getProfileName(),
+                          canProcessor.isMockMode() ? "MOCK" : "REAL");
+        } else {
+            Serial.println("No config found - MOCK mode active");
+        }
+    }
+    else {
+        printError("Usage: CAN <STATUS|LIST|LOAD|GET|DELETE|UPLOAD|RELOAD>");
+    }
+}
+
+/**
+ * @brief Display current CAN configuration status
+ */
+static void canStatus() {
+    Serial.println("=== CAN Configuration Status ===");
+    Serial.printf("Mode: %s\n", canProcessor.isMockMode() ? "MOCK (simulated data)" : "REAL (CAN bus)");
+    Serial.printf("Profile: %s\n", canProcessor.getProfileName());
+    Serial.printf("Frames processed: %lu\n", canProcessor.getFramesProcessed());
+    Serial.printf("Unknown frames: %lu\n", canProcessor.getUnknownFrames());
+    if (uploadInProgress) {
+        Serial.printf("Upload in progress: %s (%lu/%lu bytes)\n",
+                      uploadFilename, uploadReceivedSize, uploadExpectedSize);
+    }
+    Serial.println("================================");
+}
+
+/**
+ * @brief List all JSON config files on LittleFS
+ */
+static void canList() {
+    Serial.println("=== CAN Config Files ===");
+
+    File root = LittleFS.open("/");
+    if (!root || !root.isDirectory()) {
+        printError("Failed to open filesystem");
+        return;
+    }
+
+    int count = 0;
+    File file = root.openNextFile();
+    while (file) {
+        String name = file.name();
+        if (name.endsWith(".json")) {
+            Serial.printf("  %s (%d bytes)\n", file.name(), file.size());
+            count++;
+        }
+        file = root.openNextFile();
+    }
+
+    if (count == 0) {
+        Serial.println("  (no config files found)");
+    }
+    Serial.printf("Total: %d file(s)\n", count);
+    Serial.println("========================");
+}
+
+/**
+ * @brief Load a specific config file
+ */
+static void canLoad(const char* filename) {
+    // Ensure filename starts with /
+    char path[40];
+    if (filename[0] != '/') {
+        snprintf(path, sizeof(path), "/%s", filename);
+    } else {
+        strncpy(path, filename, sizeof(path) - 1);
+        path[sizeof(path) - 1] = '\0';
+    }
+
+    // Check file exists
+    if (!LittleFS.exists(path)) {
+        printError("File not found");
+        return;
+    }
+
+    // Try to load the config
+    if (canProcessor.loadFromJson(path)) {
+        printOK();
+        Serial.printf("Loaded: %s\n", canProcessor.getProfileName());
+        Serial.printf("Mode: %s\n", canProcessor.isMockMode() ? "MOCK" : "REAL");
+    } else {
+        printError("Failed to parse config file");
+    }
+}
+
+/**
+ * @brief Output current config file content
+ */
+static void canGet() {
+    // Try to find and output the current config file
+    const char* configPaths[] = {"/vehicle.json", "/NissanJukeF15.json"};
+
+    for (const char* path : configPaths) {
+        if (LittleFS.exists(path)) {
+            File file = LittleFS.open(path, "r");
+            if (file) {
+                Serial.println("=== BEGIN JSON ===");
+                while (file.available()) {
+                    Serial.write(file.read());
+                }
+                Serial.println();
+                Serial.println("=== END JSON ===");
+                file.close();
+                return;
+            }
+        }
+    }
+
+    printError("No config file found");
+}
+
+/**
+ * @brief Delete a config file
+ */
+static void canDelete(const char* filename) {
+    char path[40];
+    if (filename[0] != '/') {
+        snprintf(path, sizeof(path), "/%s", filename);
+    } else {
+        strncpy(path, filename, sizeof(path) - 1);
+        path[sizeof(path) - 1] = '\0';
+    }
+
+    if (!LittleFS.exists(path)) {
+        printError("File not found");
+        return;
+    }
+
+    if (LittleFS.remove(path)) {
+        printOK();
+        Serial.printf("Deleted: %s\n", path);
+    } else {
+        printError("Failed to delete file");
+    }
+}
+
+/**
+ * @brief Start a new config file upload
+ */
+static void canUploadStart(const char* filename, uint32_t size) {
+    // Cancel any previous upload
+    if (uploadBuffer) {
+        free(uploadBuffer);
+        uploadBuffer = nullptr;
+    }
+
+    // Validate size
+    if (size == 0 || size > CAN_UPLOAD_MAX_SIZE) {
+        printError("Invalid size (max 8KB)");
+        return;
+    }
+
+    // Allocate buffer
+    uploadBuffer = (uint8_t*)malloc(size + 1);
+    if (!uploadBuffer) {
+        printError("Out of memory");
+        return;
+    }
+
+    // Store upload state
+    if (filename[0] != '/') {
+        snprintf(uploadFilename, sizeof(uploadFilename), "/%s", filename);
+    } else {
+        strncpy(uploadFilename, filename, sizeof(uploadFilename) - 1);
+        uploadFilename[sizeof(uploadFilename) - 1] = '\0';
+    }
+
+    uploadExpectedSize = size;
+    uploadReceivedSize = 0;
+    uploadInProgress = true;
+
+    Serial.println("OK READY");
+    Serial.printf("Awaiting %lu bytes for %s\n", size, uploadFilename);
+}
+
+/**
+ * @brief Receive a chunk of base64-encoded data
+ */
+static void canUploadData(const char* base64Data) {
+    if (!uploadInProgress || !uploadBuffer) {
+        printError("No upload in progress");
+        return;
+    }
+
+    // Decode base64 data directly into buffer
+    size_t remaining = uploadExpectedSize - uploadReceivedSize;
+    size_t decoded = base64Decode(base64Data, uploadBuffer + uploadReceivedSize, remaining);
+
+    if (decoded == 0) {
+        printError("Base64 decode failed");
+        return;
+    }
+
+    uploadReceivedSize += decoded;
+
+    Serial.printf("OK %lu/%lu\n", uploadReceivedSize, uploadExpectedSize);
+}
+
+/**
+ * @brief Finalize upload and validate JSON
+ */
+static void canUploadEnd() {
+    if (!uploadInProgress || !uploadBuffer) {
+        printError("No upload in progress");
+        return;
+    }
+
+    // Null-terminate the buffer
+    uploadBuffer[uploadReceivedSize] = '\0';
+
+    // Validate JSON
+    JsonDocument doc;
+    DeserializationError error = deserializeJson(doc, (char*)uploadBuffer);
+
+    if (error) {
+        Serial.printf("ERROR: JSON parse failed: %s\n", error.c_str());
+        canUploadAbort();
+        return;
+    }
+
+    // Check required fields
+    if (!doc["name"].is<const char*>() || !doc["frames"].is<JsonArray>()) {
+        printError("Invalid config: missing 'name' or 'frames'");
+        canUploadAbort();
+        return;
+    }
+
+    // Write to file
+    File file = LittleFS.open(uploadFilename, "w");
+    if (!file) {
+        printError("Failed to create file");
+        canUploadAbort();
+        return;
+    }
+
+    file.write(uploadBuffer, uploadReceivedSize);
+    file.close();
+
+    // Cleanup
+    free(uploadBuffer);
+    uploadBuffer = nullptr;
+    uploadInProgress = false;
+
+    printOK();
+    Serial.printf("Saved: %s (%lu bytes)\n", uploadFilename, uploadReceivedSize);
+    Serial.println("Use 'CAN RELOAD' to activate");
+}
+
+/**
+ * @brief Abort current upload
+ */
+static void canUploadAbort() {
+    if (uploadBuffer) {
+        free(uploadBuffer);
+        uploadBuffer = nullptr;
+    }
+    uploadInProgress = false;
+    uploadReceivedSize = 0;
+    uploadExpectedSize = 0;
+    Serial.println("Upload aborted");
+}
+
+/**
+ * @brief Decode base64 string to binary
+ * @return Number of bytes decoded
+ */
+static size_t base64Decode(const char* input, uint8_t* output, size_t maxLen) {
+    base64_decodestate state;
+    base64_init_decodestate(&state);
+
+    size_t inputLen = strlen(input);
+    int decoded = base64_decode_block(input, inputLen, (char*)output, &state);
+
+    return (decoded > 0 && (size_t)decoded <= maxLen) ? decoded : 0;
+}
+
+// =============================================================================
 // LOG COMMAND HANDLER
 // =============================================================================
 
@@ -379,11 +781,19 @@ static void handleSysCommand(const char* args) {
 static void handleHelpCommand() {
     Serial.println("=== ESP32 CANBox Command Interface ===");
     Serial.println();
-    Serial.println("CFG GET <param>       Read config value");
-    Serial.println("CFG SET <param> <val> Set config value");
-    Serial.println("CFG LIST              Show all config");
-    Serial.println("CFG SAVE              Save to flash");
+    Serial.println("CFG GET <param>       Read calibration value");
+    Serial.println("CFG SET <param> <val> Set calibration value");
+    Serial.println("CFG LIST              Show all calibration");
+    Serial.println("CFG SAVE              Save to flash (NVS)");
     Serial.println("CFG RESET             Reset to defaults");
+    Serial.println();
+    Serial.println("CAN STATUS            CAN config status");
+    Serial.println("CAN LIST              List config files");
+    Serial.println("CAN LOAD <file>       Load config file");
+    Serial.println("CAN GET               Output current config");
+    Serial.println("CAN DELETE <file>     Delete config file");
+    Serial.println("CAN UPLOAD START/DATA/END  Upload config");
+    Serial.println("CAN RELOAD            Reload configuration");
     Serial.println();
     Serial.println("LOG ON|OFF            CAN frame logging");
     Serial.println();
