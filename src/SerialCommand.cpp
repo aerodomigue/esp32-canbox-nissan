@@ -16,6 +16,7 @@
 #include <libb64/cdecode.h>
 #include <Update.h>
 #include <MD5Builder.h>
+#include "soc/rtc_cntl_reg.h"  // For bootloader mode
 
 // External reference to CAN processor (defined in main.cpp)
 extern CanConfigProcessor canProcessor;
@@ -1043,8 +1044,18 @@ static void handleSysCommand(const char* args) {
         delay(100);
         ESP.restart();
     }
+    else if (strcmp(subCmd, "BOOTLOADER") == 0) {
+        Serial.println("Entering bootloader mode for esptool...");
+        Serial.println("Use esptool.py to flash firmware.");
+        Serial.flush();
+        delay(100);
+
+        // Force download boot mode on next restart
+        REG_WRITE(RTC_CNTL_OPTION1_REG, RTC_CNTL_FORCE_DOWNLOAD_BOOT);
+        esp_restart();
+    }
     else {
-        printError("Usage: SYS <INFO|REBOOT|DATA>");
+        printError("Usage: SYS <INFO|DATA|REBOOT|BOOTLOADER>");
     }
 }
 
@@ -1080,6 +1091,7 @@ static void handleHelpCommand() {
     Serial.println("SYS INFO              System information");
     Serial.println("SYS DATA              Live vehicle data");
     Serial.println("SYS REBOOT            Restart device");
+    Serial.println("SYS BOOTLOADER        Enter esptool flash mode");
     Serial.println();
     Serial.println("HELP                  This message");
     Serial.println("======================================");

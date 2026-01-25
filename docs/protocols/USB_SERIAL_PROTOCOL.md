@@ -494,6 +494,19 @@ Restart the device.
 Rebooting...
 ```
 
+#### SYS BOOTLOADER
+Enter esptool bootloader mode for fast firmware flashing.
+
+```
+> SYS BOOTLOADER
+Entering bootloader mode for esptool...
+Use esptool.py to flash firmware.
+```
+
+After this command, the device restarts in download mode. Use `esptool.py` or an Android app implementing the esptool protocol to flash firmware at high speed (~100+ KB/s).
+
+**Note:** This is the recommended method for firmware updates. The OTA serial commands (base64) are provided as a fallback.
+
 ---
 
 ### HELP
@@ -528,6 +541,7 @@ LOG ON|OFF            CAN frame logging
 SYS INFO              System information
 SYS DATA              Live vehicle data
 SYS REBOOT            Restart device
+SYS BOOTLOADER        Enter esptool flash mode
 
 HELP                  This message
 ======================================
