@@ -57,14 +57,14 @@
 | Multi-vehicle support | Switch configs without recompiling | ✅ Done |
 | USB protocol documentation | `docs/protocols/USB_SERIAL_PROTOCOL.md` | ✅ Done |
 
-### Phase 2.4 - OTA Firmware Update (ESP32)
+### Phase 2.4 - OTA Firmware Update (ESP32) ✅
 
 | Task | Details | Status |
 | --- | --- | --- |
-| 🔲 Integrate `Update.h` | Native ESP32 OTA library | Todo |
-| 🔲 OTA commands | `OTA START <size>`, `OTA DATA`, `OTA END`, `OTA ABORT` | Todo |
-| 🔲 Checksum validation | MD5 or CRC32 before reboot | Todo |
-| 🔲 Rollback safety | Keep old partition if update fails | Todo |
+| Integrate `Update.h` | Native ESP32 OTA library | ✅ Done |
+| OTA commands | `OTA START <size> [md5]`, `OTA DATA`, `OTA END`, `OTA ABORT`, `OTA STATUS` | ✅ Done |
+| MD5 validation | Optional MD5 verification before reboot | ✅ Done |
+| Auto-reboot | Automatic reboot after successful update | ✅ Done |
 
 ### Phase 2.5 - Android Application (APK)
 
@@ -106,5 +106,5 @@
 V1.0-1.4 (Core) ────────────────────────────────────────→ V1.5 (Cleanup) → Release V1
     │
     └──→ V2.1 (NVS) → V2.2 (Commands) → V2.3 (CAN Config) → V2.4 (OTA) → V2.5 (APK) → Release V2
-              ✅            ✅               ✅              🔲           🔲
+              ✅            ✅               ✅               ✅           🔲
 ```

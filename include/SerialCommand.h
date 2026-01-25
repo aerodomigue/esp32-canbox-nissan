@@ -5,6 +5,7 @@
  * Provides a simple AT-style command interface for:
  * - Reading/writing calibration parameters (CFG)
  * - CAN configuration file management (CAN)
+ * - OTA firmware updates (OTA)
  * - Enabling/disabling CAN debug logs (LOG)
  * - System information and control (SYS)
  *
@@ -17,6 +18,14 @@
  * 4. Device responds: OK <bytes_received>/<total_bytes>
  * 5. Host sends: CAN UPLOAD END
  * 6. Device validates JSON and responds: OK or ERROR
+ *
+ * OTA Firmware Update Protocol:
+ * 1. Host sends: OTA START <size_bytes> [md5_hash]
+ * 2. Device responds: OK READY
+ * 3. Host sends: OTA DATA <base64_chunk> (multiple times)
+ * 4. Device responds: OK <bytes>/<total> (<percent>%)
+ * 5. Host sends: OTA END
+ * 6. Device verifies MD5 (if provided), writes firmware, reboots
  */
 
 #ifndef SERIAL_COMMAND_H
@@ -28,7 +37,7 @@
 // VERSION INFO
 // =============================================================================
 
-#define FIRMWARE_VERSION "1.6.0"
+#define FIRMWARE_VERSION "1.7.0"
 #define FIRMWARE_DATE    "2026-01-26"
 
 // =============================================================================

@@ -3,7 +3,8 @@
  * @brief Serial command parser implementation
  *
  * Handles USB serial commands for device configuration and monitoring.
- * Supports both calibration parameters (NVS) and CAN config files (LittleFS).
+ * Supports calibration parameters (NVS), CAN config files (LittleFS),
+ * and OTA firmware updates.
  */
 
 #include "SerialCommand.h"
@@ -13,6 +14,8 @@
 #include <LittleFS.h>
 #include <ArduinoJson.h>
 #include <libb64/cdecode.h>
+#include <Update.h>
+#include <MD5Builder.h>
 
 // External reference to CAN processor (defined in main.cpp)
 extern CanConfigProcessor canProcessor;
@@ -35,6 +38,16 @@ static char uploadFilename[32];
 static uint32_t uploadExpectedSize = 0;
 static uint32_t uploadReceivedSize = 0;
 static uint8_t* uploadBuffer = nullptr;
+
+// =============================================================================
+// OTA UPDATE STATE
+// =============================================================================
+
+static bool otaInProgress = false;
+static uint32_t otaExpectedSize = 0;
+static uint32_t otaReceivedSize = 0;
+static char otaExpectedMD5[33] = {0};  // 32 hex chars + null
+static MD5Builder otaMD5;
 
 // =============================================================================
 // PARAMETER DEFINITIONS
@@ -64,6 +77,7 @@ static const uint8_t PARAM_COUNT = sizeof(params) / sizeof(params[0]);
 static void processCommand(const char* cmd);
 static void handleCfgCommand(const char* args);
 static void handleCanCommand(const char* args);
+static void handleOtaCommand(const char* args);
 static void handleLogCommand(const char* args);
 static void handleSysCommand(const char* args);
 static void handleHelpCommand();
@@ -81,6 +95,12 @@ static void canUploadStart(const char* filename, uint32_t size);
 static void canUploadData(const char* base64Data);
 static void canUploadEnd();
 static void canUploadAbort();
+
+static void otaStart(uint32_t size, const char* md5);
+static void otaData(const char* base64Data);
+static void otaEnd();
+static void otaAbort();
+static void otaStatus();
 
 static size_t base64Decode(const char* input, uint8_t* output, size_t maxLen);
 static void printOK();
@@ -163,6 +183,9 @@ static void processCommand(const char* cmd) {
     }
     else if (strcmp(cmdUpper, "CAN") == 0) {
         handleCanCommand(args);
+    }
+    else if (strcmp(cmdUpper, "OTA") == 0) {
+        handleOtaCommand(args);
     }
     else if (strcmp(cmdUpper, "LOG") == 0) {
         handleLogCommand(args);
@@ -698,6 +721,257 @@ static size_t base64Decode(const char* input, uint8_t* output, size_t maxLen) {
 }
 
 // =============================================================================
+// OTA COMMAND HANDLER
+// =============================================================================
+
+/**
+ * @brief Handle OTA firmware update commands
+ *
+ * Subcommands:
+ * - START <size> [md5]: Begin firmware update
+ * - DATA <base64>: Send firmware chunk
+ * - END: Finalize update and reboot
+ * - ABORT: Cancel update
+ * - STATUS: Show update status
+ *
+ * Protocol:
+ * 1. OTA START <size_bytes> [md5_hash]
+ * 2. OTA DATA <base64_chunk> (repeat)
+ * 3. OTA END (validates and reboots)
+ */
+static void handleOtaCommand(const char* args) {
+    char subCmd[16];
+    char param1[40];
+    char param2[40];
+
+    int n = sscanf(args, "%15s %39s %39s", subCmd, param1, param2);
+
+    if (n < 1) {
+        printError("Usage: OTA <START|DATA|END|ABORT|STATUS>");
+        return;
+    }
+
+    // Convert subcommand to uppercase
+    for (int i = 0; subCmd[i]; i++) subCmd[i] = toupper(subCmd[i]);
+
+    if (strcmp(subCmd, "START") == 0 && n >= 2) {
+        uint32_t size = strtoul(param1, nullptr, 10);
+        const char* md5 = (n >= 3) ? param2 : nullptr;
+        otaStart(size, md5);
+    }
+    else if (strcmp(subCmd, "DATA") == 0) {
+        // Find the base64 data after "DATA "
+        const char* dataStart = strstr(args, "DATA ");
+        if (!dataStart) dataStart = strstr(args, "data ");
+        if (dataStart) {
+            dataStart += 5;  // Skip "DATA "
+            while (*dataStart == ' ') dataStart++;
+            otaData(dataStart);
+        } else {
+            printError("Usage: OTA DATA <base64_data>");
+        }
+    }
+    else if (strcmp(subCmd, "END") == 0) {
+        otaEnd();
+    }
+    else if (strcmp(subCmd, "ABORT") == 0) {
+        otaAbort();
+    }
+    else if (strcmp(subCmd, "STATUS") == 0) {
+        otaStatus();
+    }
+    else {
+        printError("Usage: OTA <START|DATA|END|ABORT|STATUS>");
+    }
+}
+
+/**
+ * @brief Start OTA firmware update
+ * @param size Expected firmware size in bytes
+ * @param md5 Optional MD5 hash for verification (32 hex chars)
+ */
+static void otaStart(uint32_t size, const char* md5) {
+    // Check if another update is in progress
+    if (otaInProgress) {
+        printError("OTA already in progress. Use OTA ABORT first.");
+        return;
+    }
+
+    // Validate size
+    if (size == 0) {
+        printError("Invalid firmware size");
+        return;
+    }
+
+    // Check available space
+    if (size > (ESP.getFreeSketchSpace() - 0x1000)) {
+        Serial.printf("ERROR: Firmware too large (%lu bytes, max %lu)\n",
+                      size, ESP.getFreeSketchSpace() - 0x1000);
+        return;
+    }
+
+    // Store expected MD5 if provided
+    if (md5 && strlen(md5) == 32) {
+        strncpy(otaExpectedMD5, md5, 32);
+        otaExpectedMD5[32] = '\0';
+        // Convert to lowercase for comparison
+        for (int i = 0; i < 32; i++) {
+            otaExpectedMD5[i] = tolower(otaExpectedMD5[i]);
+        }
+    } else {
+        otaExpectedMD5[0] = '\0';  // No MD5 verification
+    }
+
+    // Begin update
+    if (!Update.begin(size)) {
+        Serial.printf("ERROR: Update.begin failed: %s\n", Update.errorString());
+        return;
+    }
+
+    // Initialize MD5 calculation
+    otaMD5.begin();
+
+    otaExpectedSize = size;
+    otaReceivedSize = 0;
+    otaInProgress = true;
+
+    Serial.println("OK READY");
+    Serial.printf("OTA started: expecting %lu bytes\n", size);
+    if (otaExpectedMD5[0]) {
+        Serial.printf("MD5 verification: %s\n", otaExpectedMD5);
+    }
+}
+
+/**
+ * @brief Receive a chunk of base64-encoded firmware data
+ * @param base64Data Base64 encoded firmware chunk
+ */
+static void otaData(const char* base64Data) {
+    if (!otaInProgress) {
+        printError("No OTA in progress. Use OTA START first.");
+        return;
+    }
+
+    // Decode base64 to binary
+    static uint8_t decodeBuffer[256];  // Decode buffer
+    size_t decoded = base64Decode(base64Data, decodeBuffer, sizeof(decodeBuffer));
+
+    if (decoded == 0) {
+        printError("Base64 decode failed");
+        return;
+    }
+
+    // Check for overflow
+    if (otaReceivedSize + decoded > otaExpectedSize) {
+        Serial.printf("ERROR: Data exceeds expected size (%lu + %u > %lu)\n",
+                      otaReceivedSize, decoded, otaExpectedSize);
+        otaAbort();
+        return;
+    }
+
+    // Write to flash
+    size_t written = Update.write(decodeBuffer, decoded);
+    if (written != decoded) {
+        Serial.printf("ERROR: Write failed (wrote %u of %u): %s\n",
+                      written, decoded, Update.errorString());
+        otaAbort();
+        return;
+    }
+
+    // Update MD5
+    otaMD5.add(decodeBuffer, decoded);
+
+    otaReceivedSize += decoded;
+
+    // Progress response
+    uint8_t percent = (otaReceivedSize * 100) / otaExpectedSize;
+    Serial.printf("OK %lu/%lu (%d%%)\n", otaReceivedSize, otaExpectedSize, percent);
+}
+
+/**
+ * @brief Finalize OTA update, verify, and reboot
+ */
+static void otaEnd() {
+    if (!otaInProgress) {
+        printError("No OTA in progress");
+        return;
+    }
+
+    // Check if all data received
+    if (otaReceivedSize != otaExpectedSize) {
+        Serial.printf("ERROR: Incomplete data (%lu of %lu bytes)\n",
+                      otaReceivedSize, otaExpectedSize);
+        otaAbort();
+        return;
+    }
+
+    // Verify MD5 if provided
+    if (otaExpectedMD5[0]) {
+        otaMD5.calculate();
+        String calculatedMD5 = otaMD5.toString();
+
+        if (calculatedMD5 != otaExpectedMD5) {
+            Serial.printf("ERROR: MD5 mismatch!\n");
+            Serial.printf("  Expected: %s\n", otaExpectedMD5);
+            Serial.printf("  Got:      %s\n", calculatedMD5.c_str());
+            otaAbort();
+            return;
+        }
+        Serial.println("MD5 verified OK");
+    }
+
+    // Finalize update
+    if (!Update.end(true)) {
+        Serial.printf("ERROR: Update.end failed: %s\n", Update.errorString());
+        otaAbort();
+        return;
+    }
+
+    // Success!
+    otaInProgress = false;
+    printOK();
+    Serial.println("Firmware updated successfully!");
+    Serial.println("Rebooting in 2 seconds...");
+    delay(2000);
+    ESP.restart();
+}
+
+/**
+ * @brief Abort OTA update
+ */
+static void otaAbort() {
+    if (otaInProgress) {
+        Update.abort();
+    }
+
+    otaInProgress = false;
+    otaReceivedSize = 0;
+    otaExpectedSize = 0;
+    otaExpectedMD5[0] = '\0';
+
+    Serial.println("OTA aborted");
+}
+
+/**
+ * @brief Show OTA status
+ */
+static void otaStatus() {
+    Serial.println("=== OTA Status ===");
+    Serial.printf("Update in progress: %s\n", otaInProgress ? "YES" : "NO");
+    if (otaInProgress) {
+        uint8_t percent = (otaReceivedSize * 100) / otaExpectedSize;
+        Serial.printf("Progress: %lu / %lu bytes (%d%%)\n",
+                      otaReceivedSize, otaExpectedSize, percent);
+        if (otaExpectedMD5[0]) {
+            Serial.printf("Expected MD5: %s\n", otaExpectedMD5);
+        }
+    }
+    Serial.printf("Free sketch space: %lu bytes\n", ESP.getFreeSketchSpace());
+    Serial.printf("Current firmware size: %lu bytes\n", ESP.getSketchSize());
+    Serial.println("==================");
+}
+
+// =============================================================================
 // LOG COMMAND HANDLER
 // =============================================================================
 
@@ -794,6 +1068,12 @@ static void handleHelpCommand() {
     Serial.println("CAN DELETE <file>     Delete config file");
     Serial.println("CAN UPLOAD START/DATA/END  Upload config");
     Serial.println("CAN RELOAD            Reload configuration");
+    Serial.println();
+    Serial.println("OTA START <size> [md5]  Start firmware update");
+    Serial.println("OTA DATA <base64>       Send firmware chunk");
+    Serial.println("OTA END                 Finalize and reboot");
+    Serial.println("OTA ABORT               Cancel update");
+    Serial.println("OTA STATUS              Update status");
     Serial.println();
     Serial.println("LOG ON|OFF            CAN frame logging");
     Serial.println();

@@ -284,6 +284,148 @@ Upload aborted
 
 ---
 
+### OTA - Firmware Updates
+
+Update the device firmware over USB serial using base64-encoded chunks.
+
+#### Protocol Sequence
+
+```
+┌─────────────┐                              ┌─────────────┐
+│   Android   │                              │    ESP32    │
+│     App     │                              │   CANBox    │
+└──────┬──────┘                              └──────┬──────┘
+       │                                            │
+       │  OTA START <size> [md5_hash]               │
+       │───────────────────────────────────────────>│
+       │                                            │
+       │  OK READY                                  │
+       │<───────────────────────────────────────────│
+       │  OTA started: expecting <size> bytes       │
+       │                                            │
+       │  OTA DATA <base64_chunk_1>                 │
+       │───────────────────────────────────────────>│
+       │                                            │
+       │  OK 128/413648 (0%)                        │
+       │<───────────────────────────────────────────│
+       │                                            │
+       │  OTA DATA <base64_chunk_2>                 │
+       │───────────────────────────────────────────>│
+       │                                            │
+       │  OK 256/413648 (0%)                        │
+       │<───────────────────────────────────────────│
+       │                                            │
+       │  ... (repeat until 100%)                   │
+       │                                            │
+       │  OTA END                                   │
+       │───────────────────────────────────────────>│
+       │                                            │
+       │  MD5 verified OK (if provided)             │
+       │<───────────────────────────────────────────│
+       │  OK                                        │
+       │  Firmware updated successfully!            │
+       │  Rebooting in 2 seconds...                 │
+       │                                            │
+       ▼         [Device reboots]                   ▼
+```
+
+#### OTA START `<size>` `[md5]`
+Begin a firmware update session.
+
+- `size`: Exact firmware size in bytes (from the `.bin` file)
+- `md5`: Optional MD5 hash (32 hex characters) for verification
+
+```
+> OTA START 413648 a1b2c3d4e5f6789012345678abcdef01
+OK READY
+OTA started: expecting 413648 bytes
+MD5 verification: a1b2c3d4e5f6789012345678abcdef01
+```
+
+**Without MD5 verification:**
+```
+> OTA START 413648
+OK READY
+OTA started: expecting 413648 bytes
+```
+
+**Limits:**
+- Maximum size: Limited by free sketch space (~900KB on ESP32-C3)
+- Use `OTA STATUS` to check available space
+
+#### OTA DATA `<base64_data>`
+Send a chunk of base64-encoded firmware data.
+
+```
+> OTA DATA UjBsR09EbGhBUUFCQUlBQUFBQUFBUC8vL3lINUJBRUFBQUFBTEFBQUFBQUJBQUVBQUFJQlJBQTc=
+OK 128/413648 (0%)
+```
+
+**Chunk Size Recommendations:**
+- Recommended chunk size: 128-192 bytes of raw firmware data
+- Base64 expands data by ~33%
+- Response includes progress percentage
+
+#### OTA END
+Finalize the update, verify MD5 (if provided), and reboot.
+
+```
+> OTA END
+MD5 verified OK
+OK
+Firmware updated successfully!
+Rebooting in 2 seconds...
+```
+
+**Verification Steps:**
+1. Check all data received (size matches)
+2. Verify MD5 hash (if provided at START)
+3. Write to flash partition
+4. Automatic reboot after 2 seconds
+
+**If MD5 mismatch:**
+```
+> OTA END
+ERROR: MD5 mismatch!
+  Expected: a1b2c3d4e5f6789012345678abcdef01
+  Got:      deadbeefcafe1234567890abcdef0123
+OTA aborted
+```
+
+#### OTA ABORT
+Cancel an in-progress update.
+
+```
+> OTA ABORT
+OTA aborted
+```
+
+#### OTA STATUS
+Show current OTA status and available space.
+
+```
+> OTA STATUS
+=== OTA Status ===
+Update in progress: NO
+Free sketch space: 917504 bytes
+Current firmware size: 413648 bytes
+==================
+```
+
+**During update:**
+```
+> OTA STATUS
+=== OTA Status ===
+Update in progress: YES
+Progress: 206824 / 413648 bytes (50%)
+Expected MD5: a1b2c3d4e5f6789012345678abcdef01
+Free sketch space: 917504 bytes
+Current firmware size: 413648 bytes
+==================
+```
+
+---
+
 ### LOG - CAN Frame Logging
 
 Enable/disable real-time CAN frame logging for debugging.
@@ -318,7 +460,7 @@ Display system information.
 ```
 > SYS INFO
 === System Info ===
-Firmware: 1.6.0 (2026-01-26)
+Firmware: 1.7.0 (2026-01-26)
 Uptime: 3600 sec
 Free heap: 245000 bytes
 CPU freq: 160 MHz
@@ -374,6 +516,12 @@ CAN GET               Output current config
 CAN DELETE <file>     Delete config file
 CAN UPLOAD START/DATA/END  Upload config
 CAN RELOAD            Reload configuration
+
+OTA START <size> [md5]  Start firmware update
+OTA DATA <base64>       Send firmware chunk
+OTA END                 Finalize update
+OTA ABORT               Cancel update
+OTA STATUS              Show OTA status
 
 LOG ON|OFF            CAN frame logging
 
@@ -467,6 +615,12 @@ class CanBoxSerial(private val usbConnection: UsbDeviceConnection) {
 | `Invalid config: missing 'name' or 'frames'` | Required fields missing | Add name and frames to JSON |
 | `File not found` | File doesn't exist | Check filename with CAN LIST |
 | `Failed to create file` | Filesystem error | Check LittleFS space |
+| `OTA already in progress` | START sent twice | Send OTA ABORT first |
+| `Firmware too large` | Size exceeds free space | Check OTA STATUS for available space |
+| `OTA not started` | DATA/END without START | Send OTA START first |
+| `OTA write failed` | Flash write error | Abort and retry, check device health |
+| `MD5 mismatch!` | Firmware corrupted | Re-download firmware and retry |
+| `Not enough data received` | Incomplete transfer | Resend missing chunks |
 
 ---
 
@@ -474,5 +628,6 @@ class CanBoxSerial(private val usbConnection: UsbDeviceConnection) {
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 1.7.0 | 2026-01-26 | Added OTA firmware update commands |
 | 1.6.0 | 2026-01-26 | Added CAN config upload commands |
 | 1.5.0 | 2026-01-22 | Initial serial command interface |
