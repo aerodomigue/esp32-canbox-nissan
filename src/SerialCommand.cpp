@@ -651,6 +651,8 @@ static void canUploadData(const char* base64Data) {
     uploadReceivedSize += decoded;
 
     Serial.printf("OK %lu/%lu\n", uploadReceivedSize, uploadExpectedSize);
+    Serial.flush();  // Ensure ACK is sent before processing next chunk
+    delay(1);        // Give USB CDC stack time to transmit
 }
 
 /**

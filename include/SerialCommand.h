@@ -44,7 +44,7 @@
 // CONFIGURATION
 // =============================================================================
 
-#define CMD_BUFFER_SIZE     256  // Max command length (increased for base64 data)
+#define CMD_BUFFER_SIZE     320  // Max command length (16 prefix + 240 base64 + 1 null + margin)
 #define CMD_PROMPT          "> " // Command prompt (optional)
 #define CAN_UPLOAD_MAX_SIZE 8192 // Max JSON config file size (8KB)
 

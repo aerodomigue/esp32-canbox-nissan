@@ -69,7 +69,7 @@ OTA DATA <base64_chunk>\n
 
 **Taille de chunk recommandée :** 180 bytes binaires = 240 caractères base64
 
-> Important: La commande totale (`OTA DATA ` + base64 + `\n`) doit tenir dans 256 bytes.
+> Important: La commande totale (`OTA DATA ` + base64 + `\n`) doit tenir dans 320 bytes.
 
 **Réponse (succès) :**
 ```
@@ -300,6 +300,6 @@ Cela permet de s'assurer qu'on envoie le bon firmware pour le bon chip.
 
 4. **Reboot automatique** : L'ESP32 redémarre automatiquement après `OTA END`. La connexion USB sera temporairement perdue.
 
-5. **Buffer size** : Le buffer de commande est de 256 bytes. Ne pas dépasser cette limite.
+5. **Buffer size** : Le buffer de commande est de 320 bytes. Ne pas dépasser cette limite.
 
 6. **Chip unique** : Actuellement seul l'ESP32-C3 est supporté.
