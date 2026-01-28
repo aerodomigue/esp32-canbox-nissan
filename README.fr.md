@@ -2,8 +2,6 @@
 
 > **Langues disponibles :** **Français** | [English](README.md)
 
-> ⚠️ **Projet en pause** - Le développement est actuellement suspendu en attente de matériel (ESP32). Reprendra dès réception des composants.
-
 <p align="center">
   <img src="docs/images/hardware/build/BUILD_1.png" width="45%" alt="Module assemblé avec connecteur OBD-II"/>
   <img src="docs/images/hardware/build/BUILD_2.png" width="45%" alt="Boîtier imprimé 3D"/>
