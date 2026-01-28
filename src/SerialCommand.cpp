@@ -535,26 +535,35 @@ static void canLoad(const char* filename) {
  * @brief Output current config file content
  */
 static void canGet() {
-    // Try to find and output the current config file
-    const char* configPaths[] = {"/vehicle.json", "/NissanJukeF15.json"};
-
-    for (const char* path : configPaths) {
-        if (LittleFS.exists(path)) {
-            File file = LittleFS.open(path, "r");
-            if (file) {
-                Serial.println("=== BEGIN JSON ===");
-                while (file.available()) {
-                    Serial.write(file.read());
-                }
-                Serial.println();
-                Serial.println("=== END JSON ===");
-                file.close();
-                return;
-            }
-        }
+    // Get the currently loaded config file
+    const char* currentFile = configGetVehicleFile();
+    if (currentFile[0] == '\0') {
+        printError("No config file loaded");
+        return;
     }
 
-    printError("No config file found");
+    // Build path with leading /
+    char path[48];
+    snprintf(path, sizeof(path), "/%s", currentFile);
+
+    if (!LittleFS.exists(path)) {
+        printError("Config file not found on filesystem");
+        return;
+    }
+
+    File file = LittleFS.open(path, "r");
+    if (!file) {
+        printError("Failed to open config file");
+        return;
+    }
+
+    Serial.printf("=== %s ===\n", currentFile);
+    while (file.available()) {
+        Serial.write(file.read());
+    }
+    Serial.println();
+    Serial.println("=== END ===");
+    file.close();
 }
 
 /**
