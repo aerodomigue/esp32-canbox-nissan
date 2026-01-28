@@ -154,6 +154,10 @@ bool isCanLogEnabled() {
     return canLogEnabled;
 }
 
+bool isOtaInProgress() {
+    return otaInProgress;
+}
+
 // =============================================================================
 // COMMAND PARSER
 // =============================================================================

@@ -70,4 +70,12 @@ void serialCommandProcess();
  */
 bool isCanLogEnabled();
 
+/**
+ * @brief Check if OTA update is in progress
+ * @return true if OTA START was called and not yet completed/aborted
+ *
+ * Use this to pause CAN processing during OTA for better throughput.
+ */
+bool isOtaInProgress();
+
 #endif // SERIAL_COMMAND_H

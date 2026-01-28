@@ -136,7 +136,13 @@ void loop() {
 
     // ==========================================================================
     // MODE-DEPENDENT DATA ACQUISITION
+    // Skip during OTA for maximum throughput
     // ==========================================================================
+    if (isOtaInProgress()) {
+        // During OTA, skip all CAN/mock processing for speed
+        return;
+    }
+
     if (canProcessor.isMockMode()) {
         // MOCK MODE: Generate simulated data
         mockGenerator.update();
