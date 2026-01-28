@@ -265,7 +265,7 @@ class OtaUpdater(private val serialPort: UsbSerialPort) {
 Si aucune réponse n'est reçue dans les 10 secondes après une commande `OTA DATA`, considérez le transfert comme échoué et envoyez `OTA ABORT`.
 
 ### Déconnexion USB
-Si la connexion USB est perdue pendant le transfert, l'ESP32 annulera automatiquement l'OTA après 30 secondes d'inactivité.
+Si la connexion USB est perdue pendant le transfert, l'OTA restera en attente. Utilisez `OTA ABORT` pour annuler manuellement, ou redémarrez le device.
 
 ### Reprise après échec
 Il n'y a pas de mécanisme de reprise. En cas d'échec, il faut recommencer depuis le début avec `OTA START`.
