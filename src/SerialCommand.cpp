@@ -442,6 +442,9 @@ static void handleCanCommand(const char* args) {
     else if (strcmp(subCmd, "RELOAD") == 0) {
         Serial.println("Reloading CAN configuration...");
         if (canProcessor.begin()) {
+            // Reset vehicle data to clear stale values
+            resetVehicleData();
+
             printOK();
             Serial.printf("Loaded: %s (%s mode)\n",
                           canProcessor.getProfileName(),
@@ -523,6 +526,9 @@ static void canLoad(const char* filename) {
 
     // Try to load the config
     if (canProcessor.loadFromJson(path)) {
+        // Reset vehicle data to clear stale values from previous config
+        resetVehicleData();
+
         printOK();
         Serial.printf("Loaded: %s\n", canProcessor.getProfileName());
         Serial.printf("Mode: %s\n", canProcessor.isMockMode() ? "MOCK" : "REAL");

@@ -94,4 +94,16 @@ extern uint16_t averageSpeed;
 /** Elapsed driving time in seconds - for trip display */
 extern uint16_t elapsedTime;
 
+// =============================================================================
+// UTILITY FUNCTIONS
+// =============================================================================
+
+/**
+ * @brief Reset all vehicle data to default values
+ *
+ * Call this when loading a new CAN configuration to clear stale data
+ * from the previous configuration.
+ */
+void resetVehicleData();
+
 #endif

@@ -78,3 +78,41 @@ uint16_t averageSpeed = 0;
 
 /** Elapsed driving time in seconds - 0 = unknown */
 uint16_t elapsedTime = 0;
+
+// =============================================================================
+// UTILITY FUNCTIONS
+// =============================================================================
+
+/**
+ * @brief Reset all vehicle data to default values
+ */
+void resetVehicleData() {
+    // Vehicle data
+    currentSteer = 0;
+    engineRPM = 0;
+    vehicleSpeed = 0;
+    currentDoors = 0;
+    fuelLevel = 0;
+    voltBat = 0.0;
+    dteValue = 0;
+    fuelConsoMoy = 0.0;
+    tempExt = 0;
+    currentOdo = 0;
+
+    // Lights & indicators
+    indicatorLeft = false;
+    indicatorRight = false;
+    headlightsOn = false;
+    highBeamOn = false;
+    parkingLightsOn = false;
+    lastLeftIndicatorTime = 0;
+    lastRightIndicatorTime = 0;
+
+    // Fuel consumption
+    fuelConsumptionInst = 0;
+    fuelConsumptionAvg = 0;
+
+    // Trip computer
+    averageSpeed = 0;
+    elapsedTime = 0;
+}
