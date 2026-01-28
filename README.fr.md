@@ -122,14 +122,46 @@ Le boîtier d'origine a probablement accès au signal CAN sur son connecteur, il
 
 ---
 
+## Configuration USB (V2)
+
+Le boîtier peut être configuré via USB série sans recompilation. Connectez-vous au port USB et utilisez un terminal à **115200 baud**.
+
+### Commandes Disponibles
+
+| Commande | Description |
+| --- | --- |
+| `CFG LIST` | Afficher les paramètres de calibration |
+| `CFG SET <param> <valeur>` | Modifier un paramètre |
+| `CFG SAVE` | Sauvegarder en flash (NVS) |
+| `CAN STATUS` | État de la config CAN (mode MOCK/REAL) |
+| `CAN LIST` | Lister les fichiers de config véhicule |
+| `CAN LOAD <fichier>` | Charger une config véhicule |
+| `CAN UPLOAD START/DATA/END` | Upload config via Base64 |
+| `SYS INFO` | Informations système |
+| `SYS DATA` | Données véhicule en temps réel |
+| `HELP` | Liste complète des commandes |
+
+Voir la **[Documentation du Protocole USB Série](docs/protocols/USB_SERIAL_PROTOCOL.md)** pour les détails complets.
+
+### Support Multi-Véhicules
+
+Les configurations véhicules sont stockées sous forme de fichiers JSON sur le filesystem du boîtier. Vous pouvez :
+- Uploader plusieurs configs véhicules (NissanJukeF15.json, ToyotaCorolla.json, etc.)
+- Basculer entre véhicules avec `CAN LOAD <fichier>`
+- Utiliser le **Mode Mock** pour tester sans véhicule
+
+---
+
 ## Architecture Logicielle
 
 Le système est conçu pour être 100% autonome et résistant aux parasites électriques du véhicule :
 
-1. **[Capture CAN](docs/technical/CAN_CAPTURE.md)** : Décode les trames Nissan (500kbps) et met à jour les variables globales (Vitesse, RPM, Portes, etc.)
+1. **[Capture CAN](docs/technical/CAN_CAPTURE.md)** : Décode les trames selon la configuration JSON et met à jour les variables globales
 2. **[Envoi Radio](docs/technical/RADIO_SEND.md)** : Formate et transmet les données au poste à deux intervalles (100ms pour direction, 400ms pour tableau de bord)
-3. **Watchdog Matériel** : Redémarrage automatique si le programme gèle plus de 5 secondes
-4. **Watchdog CAN** : Force un reboot si aucune donnée CAN reçue pendant 30s alors que batterie > 11V
+3. **ConfigManager** : Stockage persistant des paramètres de calibration (NVS)
+4. **SerialCommand** : Interface de configuration USB
+5. **Watchdog Matériel** : Redémarrage automatique si le programme gèle plus de 5 secondes
+6. **Watchdog CAN** : Force un reboot si aucune donnée CAN reçue pendant 30s alors que batterie > 11V
 
 ---
 
@@ -140,6 +172,7 @@ La LED (GPIO 8) permet un diagnostic rapide sans connexion PC :
 | Pattern | Statut | Signification |
 | --- | --- | --- |
 | **Clignotement rapide** | Normal | Données CAN reçues et traitées |
+| **Clignotement lent (500ms)** | Mode Mock | Données simulées en cours |
 | **Battement lent (1s)** | Veille | Système actif, mais bus CAN silencieux |
 | **Allumée fixe au boot** | Démarrage | Système en initialisation |
 | **Aucune activité** | Erreur | Système figé ou problème d'alimentation |
@@ -192,6 +225,19 @@ pio device monitor
 | Température | 0x551 | 400ms | LDR (utilisé comme ext.) |
 | État Portes | 0x60D | Sur changement | Toutes portes + coffre |
 | Autonomie | 0x54C | 400ms | Distance estimée |
+
+---
+
+## Application Compagnon
+
+**[ESP32 CANBox Manager](https://github.com/aerodomigue/esp32-canbox-manager)** - Application Android pour configurer et surveiller le CANBox via USB.
+
+Fonctionnalités :
+- Tableau de bord données véhicule en temps réel
+- Gestion des configurations CAN
+- Réglage des paramètres de calibration
+- Mises à jour firmware (OTA)
+- Débogage des trames CAN
 
 ---
 

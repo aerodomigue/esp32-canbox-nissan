@@ -27,7 +27,7 @@
 
 #include <Arduino.h>
 #include "GlobalData.h"
-#include "Config.h"
+#include "ConfigManager.h"
 
 extern HardwareSerial RadioSerial;
 
@@ -58,7 +58,7 @@ const uint8_t MASK_LIGHT_HIGH_BEAM   = 0x20;  // High beam
 const uint8_t MASK_LIGHT_HEADLIGHTS  = 0x40;  // Headlights (low beam)
 const uint8_t MASK_LIGHT_PARKING     = 0x80;  // Parking lights
 
-// Indicator timeout uses Config.h value
+// Indicator timeout loaded from ConfigManager
 
 // =============================================================================
 // SEND INTERVALS (milliseconds)
@@ -322,18 +322,18 @@ void processRadioUpdates() {
     // 1. STEERING WHEEL ANGLE (CMD 0x29) - 200ms interval
     // =========================================================================
     // Per PDF: Angle in 0.1° units, range -540 to +540 (so -5400 to +5400 raw)
-    // Calibration values in Config.h: STEER_CENTER_OFFSET, STEER_INVERT_DIRECTION
+    // Calibration values from ConfigManager (stored in NVS)
     if (now - lastSteeringTime >= STEERING_INTERVAL_MS) {
-        // Step 1: Apply center offset from Config.h
-        int32_t centered = (int32_t)currentSteer + STEER_CENTER_OFFSET;
+        // Step 1: Apply center offset from config
+        int32_t centered = (int32_t)currentSteer + configGetSteerOffset();
 
-        // Step 2: Apply scale factor from Config.h (percent, 100 = 1.0x)
-        int32_t angleRAV4 = (centered * STEER_SCALE_PERCENT) / 100;
+        // Step 2: Apply scale factor from config (percent, 100 = 1.0x)
+        int32_t angleRAV4 = (centered * configGetSteerScale()) / 100;
 
-        // Step 4: Invert direction if configured
-        #if STEER_INVERT_DIRECTION
-        angleRAV4 = -angleRAV4;
-        #endif
+        // Step 3: Invert direction if configured
+        if (configGetSteerInvert()) {
+            angleRAV4 = -angleRAV4;
+        }
 
         sendSteeringAngleMessage(angleRAV4);
         lastSteeringTime = now;
@@ -360,12 +360,13 @@ void processRadioUpdates() {
     // 3. LIGHTS & INDICATORS (CMD 0x7D, SUB 0x01) - 200ms interval or on change
     // =========================================================================
     // Build lights bitmask from global state
-    // Indicators use timeout detection (500ms) since CAN only signals when active
+    // Indicators use timeout detection (configurable) since CAN only signals when active
     uint8_t lightStatus = 0;
 
     // Check if indicators are active (received signal within timeout)
-    bool leftActive = (now - lastLeftIndicatorTime) < INDICATOR_TIMEOUT_MS;
-    bool rightActive = (now - lastRightIndicatorTime) < INDICATOR_TIMEOUT_MS;
+    uint16_t indTimeout = configGetIndicatorTimeout();
+    bool leftActive = (now - lastLeftIndicatorTime) < indTimeout;
+    bool rightActive = (now - lastRightIndicatorTime) < indTimeout;
 
     if (rightActive)      lightStatus |= MASK_LIGHT_RIGHT_IND;
     if (leftActive)       lightStatus |= MASK_LIGHT_LEFT_IND;

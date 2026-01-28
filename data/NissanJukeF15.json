@@ -1,0 +1,227 @@
+{
+  "name": "Nissan Juke F15",
+  "isMock": false,
+  "frames": [
+    {
+      "canId": "0x002",
+      "fields": [
+        {
+          "target": "STEERING",
+          "startByte": 1,
+          "byteCount": 2,
+          "byteOrder": "BE",
+          "dataType": "INT16",
+          "formula": "NONE"
+        }
+      ]
+    },
+    {
+      "canId": "0x180",
+      "fields": [
+        {
+          "target": "ENGINE_RPM",
+          "startByte": 0,
+          "byteCount": 2,
+          "byteOrder": "BE",
+          "dataType": "UINT16",
+          "formula": "SCALE",
+          "params": [1, 7, 0]
+        }
+      ]
+    },
+    {
+      "canId": "0x284",
+      "fields": [
+        {
+          "target": "VEHICLE_SPEED",
+          "startByte": 0,
+          "byteCount": 2,
+          "byteOrder": "BE",
+          "dataType": "UINT16",
+          "formula": "SCALE",
+          "params": [1, 100, 0]
+        }
+      ]
+    },
+    {
+      "canId": "0x5C5",
+      "fields": [
+        {
+          "target": "FUEL_LEVEL",
+          "startByte": 0,
+          "byteCount": 1,
+          "byteOrder": "BE",
+          "dataType": "UINT8",
+          "formula": "MAP_RANGE",
+          "params": [255, 0, 0, 45]
+        },
+        {
+          "target": "ODOMETER",
+          "startByte": 1,
+          "byteCount": 3,
+          "byteOrder": "BE",
+          "dataType": "UINT24",
+          "formula": "NONE"
+        }
+      ]
+    },
+    {
+      "canId": "0x6F6",
+      "fields": [
+        {
+          "target": "VOLTAGE",
+          "startByte": 0,
+          "byteCount": 1,
+          "byteOrder": "BE",
+          "dataType": "UINT8",
+          "formula": "NONE"
+        }
+      ]
+    },
+    {
+      "canId": "0x551",
+      "fields": [
+        {
+          "target": "TEMPERATURE",
+          "startByte": 0,
+          "byteCount": 1,
+          "byteOrder": "BE",
+          "dataType": "UINT8",
+          "formula": "SCALE",
+          "params": [1, 1, -40]
+        }
+      ]
+    },
+    {
+      "canId": "0x60D",
+      "fields": [
+        {
+          "target": "DOOR_DRIVER",
+          "startByte": 0,
+          "byteCount": 3,
+          "byteOrder": "BE",
+          "dataType": "BITMASK",
+          "formula": "BITMASK_EXTRACT",
+          "params": [1048576, 20]
+        },
+        {
+          "target": "DOOR_PASSENGER",
+          "startByte": 0,
+          "byteCount": 3,
+          "byteOrder": "BE",
+          "dataType": "BITMASK",
+          "formula": "BITMASK_EXTRACT",
+          "params": [524288, 19]
+        },
+        {
+          "target": "DOOR_REAR_LEFT",
+          "startByte": 0,
+          "byteCount": 3,
+          "byteOrder": "BE",
+          "dataType": "BITMASK",
+          "formula": "BITMASK_EXTRACT",
+          "params": [2097152, 21]
+        },
+        {
+          "target": "DOOR_REAR_RIGHT",
+          "startByte": 0,
+          "byteCount": 3,
+          "byteOrder": "BE",
+          "dataType": "BITMASK",
+          "formula": "BITMASK_EXTRACT",
+          "params": [4194304, 22]
+        },
+        {
+          "target": "DOOR_BOOT",
+          "startByte": 0,
+          "byteCount": 3,
+          "byteOrder": "BE",
+          "dataType": "BITMASK",
+          "formula": "BITMASK_EXTRACT",
+          "params": [8388608, 23]
+        },
+        {
+          "target": "HIGH_BEAM",
+          "startByte": 0,
+          "byteCount": 3,
+          "byteOrder": "BE",
+          "dataType": "BITMASK",
+          "formula": "BITMASK_EXTRACT",
+          "params": [2048, 11]
+        },
+        {
+          "target": "HEADLIGHTS",
+          "startByte": 0,
+          "byteCount": 3,
+          "byteOrder": "BE",
+          "dataType": "BITMASK",
+          "formula": "BITMASK_EXTRACT",
+          "params": [131072, 17]
+        },
+        {
+          "target": "PARKING_LIGHTS",
+          "startByte": 0,
+          "byteCount": 3,
+          "byteOrder": "BE",
+          "dataType": "BITMASK",
+          "formula": "BITMASK_EXTRACT",
+          "params": [262144, 18]
+        },
+        {
+          "target": "INDICATOR_LEFT",
+          "startByte": 0,
+          "byteCount": 3,
+          "byteOrder": "BE",
+          "dataType": "BITMASK",
+          "formula": "BITMASK_EXTRACT",
+          "params": [8192, 13]
+        },
+        {
+          "target": "INDICATOR_RIGHT",
+          "startByte": 0,
+          "byteCount": 3,
+          "byteOrder": "BE",
+          "dataType": "BITMASK",
+          "formula": "BITMASK_EXTRACT",
+          "params": [16384, 14]
+        }
+      ]
+    },
+    {
+      "canId": "0x54C",
+      "fields": [
+        {
+          "target": "DTE",
+          "startByte": 6,
+          "byteCount": 2,
+          "byteOrder": "BE",
+          "dataType": "UINT16",
+          "formula": "SCALE",
+          "params": [100, 283, 0]
+        }
+      ]
+    },
+    {
+      "canId": "0x580",
+      "fields": [
+        {
+          "target": "FUEL_CONS_INST",
+          "startByte": 2,
+          "byteCount": 1,
+          "byteOrder": "BE",
+          "dataType": "UINT8",
+          "formula": "BITMASK_EXTRACT",
+          "params": [127, 0]
+        },
+        {
+          "target": "FUEL_CONS_AVG",
+          "startByte": 4,
+          "byteCount": 1,
+          "byteOrder": "BE",
+          "dataType": "UINT8",
+          "formula": "NONE"
+        }
+      ]
+    }
+  ]
+}
