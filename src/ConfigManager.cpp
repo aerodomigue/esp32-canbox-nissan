@@ -22,6 +22,10 @@ static const char* KEY_IND_TIMEOUT     = "indTimeout";
 static const char* KEY_RPM_DIVISOR     = "rpmDiv";
 static const char* KEY_TANK_CAPACITY   = "tankCap";
 static const char* KEY_DTE_DIVISOR     = "dteDiv";
+static const char* KEY_VEHICLE_FILE    = "vehicleFile";
+
+// Buffer for vehicle config filename (max path length)
+static char vehicleFile[40] = "";
 
 // =============================================================================
 // PRIVATE FUNCTIONS
@@ -150,4 +154,31 @@ void configSetTankCapacity(uint8_t value) {
 
 void configSetDteDivisor(uint16_t value) {
     config.dteDivisor = value;
+}
+
+// =============================================================================
+// VEHICLE CONFIG FILE
+// =============================================================================
+
+const char* configGetVehicleFile() {
+    // Load from NVS if not already loaded
+    if (vehicleFile[0] == '\0') {
+        if (prefs.begin(NVS_NAMESPACE, true)) {
+            prefs.getString(KEY_VEHICLE_FILE, vehicleFile, sizeof(vehicleFile));
+            prefs.end();
+        }
+    }
+    return vehicleFile;
+}
+
+void configSetVehicleFile(const char* filename) {
+    // Store in memory
+    strncpy(vehicleFile, filename, sizeof(vehicleFile) - 1);
+    vehicleFile[sizeof(vehicleFile) - 1] = '\0';
+
+    // Save to NVS immediately
+    if (prefs.begin(NVS_NAMESPACE, false)) {
+        prefs.putString(KEY_VEHICLE_FILE, vehicleFile);
+        prefs.end();
+    }
 }

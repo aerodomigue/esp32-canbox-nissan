@@ -460,6 +460,7 @@ static void handleCanCommand(const char* args) {
  */
 static void canStatus() {
     Serial.println("=== CAN Configuration Status ===");
+    Serial.printf("Config: %s\n", configGetVehicleFile());
     Serial.printf("Mode: %s\n", canProcessor.isMockMode() ? "MOCK (simulated data)" : "REAL (CAN bus)");
     Serial.printf("Profile: %s\n", canProcessor.getProfileName());
     Serial.printf("Frames processed: %lu\n", canProcessor.getFramesProcessed());
@@ -1027,6 +1028,10 @@ static void handleSysCommand(const char* args) {
     }
     else if (strcmp(subCmd, "DATA") == 0) {
         Serial.println("=== Live Vehicle Data ===");
+        Serial.printf("Config:   %s\n", configGetVehicleFile());
+        Serial.printf("Mode:     %s (%s)\n",
+            canProcessor.isMockMode() ? "MOCK" : "REAL",
+            canProcessor.getProfileName());
         Serial.printf("RPM:      %d\n", engineRPM);
         Serial.printf("Speed:    %d km/h\n", vehicleSpeed);
         Serial.printf("Steering: %d\n", currentSteer);

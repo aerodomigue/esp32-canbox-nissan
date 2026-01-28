@@ -22,6 +22,7 @@
 
 #include "CanConfigProcessor.h"
 #include "GlobalData.h"
+#include "ConfigManager.h"
 #include <LittleFS.h>
 #include <ArduinoJson.h>
 
@@ -54,7 +55,24 @@ bool CanConfigProcessor::begin() {
         return false;
     }
 
-    // Configuration file search order
+    // Check if a previously loaded config is saved in NVS
+    const char* savedFile = configGetVehicleFile();
+    if (savedFile[0] != '\0') {
+        char savedPath[48];
+        snprintf(savedPath, sizeof(savedPath), "/%s", savedFile);
+        if (LittleFS.exists(savedPath)) {
+            Serial.printf("[CanConfig] Restoring saved config: %s\n", savedPath);
+            if (loadFromJson(savedPath)) {
+                Serial.printf("[CanConfig] Loaded: %s (%d frames) - %s mode\n",
+                              _profile.name.c_str(),
+                              _profile.frames.size(),
+                              _mockMode ? "MOCK" : "REAL CAN");
+                return true;
+            }
+        }
+    }
+
+    // Fallback: Configuration file search order
     const char* configPaths[] = {
         "/vehicle.json",        // Primary: generic name for current vehicle
         "/NissanJukeF15.json"   // Fallback: specific vehicle config
@@ -65,8 +83,6 @@ bool CanConfigProcessor::begin() {
         if (LittleFS.exists(path)) {
             Serial.printf("[CanConfig] Found config: %s\n", path);
             if (loadFromJson(path)) {
-                // Use isMock flag from JSON (defaults to false if not specified)
-                _mockMode = _profile.isMock;
                 Serial.printf("[CanConfig] Loaded: %s (%d frames) - %s mode\n",
                               _profile.name.c_str(),
                               _profile.frames.size(),
@@ -171,7 +187,23 @@ bool CanConfigProcessor::loadFromJson(const char* path) {
         _profile.frames.push_back(frame);
     }
 
-    return _profile.frames.size() > 0;
+    // Update mock mode flag from config
+    _mockMode = _profile.isMock;
+
+    // Check if config is valid (mock can have empty frames, real needs frames)
+    bool isValid = _profile.isMock || _profile.frames.size() > 0;
+
+    // Save the loaded config filename to NVS for persistence
+    if (isValid) {
+        // Extract filename from path (remove leading /)
+        const char* filename = path;
+        if (filename[0] == '/') {
+            filename++;
+        }
+        configSetVehicleFile(filename);
+    }
+
+    return isValid;
 }
 
 // =============================================================================

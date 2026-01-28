@@ -87,4 +87,20 @@ void configSetRpmDivisor(uint8_t value);
 void configSetTankCapacity(uint8_t value);
 void configSetDteDivisor(uint16_t value);
 
+// =============================================================================
+// VEHICLE CONFIG FILE (stored separately from calibration)
+// =============================================================================
+
+/**
+ * @brief Get the last loaded vehicle config filename
+ * @return Filename (e.g., "NissanJukeF15.json") or empty string if none saved
+ */
+const char* configGetVehicleFile();
+
+/**
+ * @brief Save the vehicle config filename to NVS
+ * @param filename The filename to save (without leading /)
+ */
+void configSetVehicleFile(const char* filename);
+
 #endif // CONFIG_MANAGER_H
