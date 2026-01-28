@@ -19,6 +19,8 @@ Ce projet est une passerelle intelligente permettant d'intégrer les données t�
 
 > **Important :** Dans les paramètres de votre autoradio, configurez le protocole CAN sur **"Toyota RAV4"** pour que cela fonctionne.
 
+> **Application requise :** Utilisez **[ESP32 CANBox Manager](https://github.com/aerodomigue/esp32-canbox-manager)** (Android) pour configurer, calibrer et mettre à jour le firmware via USB.
+
 ---
 
 ## Fonctionnalités

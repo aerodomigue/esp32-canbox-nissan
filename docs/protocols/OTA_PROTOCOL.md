@@ -2,6 +2,9 @@
 
 Documentation du protocole de mise à jour firmware via USB série pour l'application Android.
 
+> **Application requise** : [ESP32 CANBox Manager](https://github.com/aerodomigue/esp32-canbox-manager)
+> L'application Android est nécessaire pour configurer et mettre à jour le CANBox.
+
 ## Vue d'ensemble
 
 Le protocole OTA permet de mettre à jour le firmware de l'ESP32 via la connexion USB série. Il utilise l'encodage **base64** pour transférer les données binaires de manière fiable.

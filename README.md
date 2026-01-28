@@ -19,6 +19,8 @@ This project is an intelligent gateway that integrates telemetry data from a Nis
 
 > **Important:** In your head unit settings, configure the CAN protocol as **"Toyota RAV4"** for this to work.
 
+> **Required App:** Use **[ESP32 CANBox Manager](https://github.com/aerodomigue/esp32-canbox-manager)** (Android) to configure, calibrate, and update the firmware via USB.
+
 ---
 
 ## Features
