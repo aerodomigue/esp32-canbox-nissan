@@ -75,6 +75,7 @@ bool CanConfigProcessor::begin() {
     // Fallback: Configuration file search order
     const char* configPaths[] = {
         "/vehicle.json",        // Primary: generic name for current vehicle
+        "/MockDemo.json",       // Default: mock mode for testing
         "/NissanJukeF15.json"   // Fallback: specific vehicle config
     };
 

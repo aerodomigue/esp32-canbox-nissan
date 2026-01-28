@@ -19,18 +19,13 @@
  * 5. Host sends: CAN UPLOAD END
  * 6. Device validates JSON and responds: OK or ERROR
  *
- * OTA Firmware Update Protocol (fallback, base64):
+ * OTA Firmware Update Protocol:
  * 1. Host sends: OTA START <size_bytes> [md5_hash]
  * 2. Device responds: OK READY
  * 3. Host sends: OTA DATA <base64_chunk> (multiple times)
  * 4. Device responds: OK <bytes>/<total> (<percent>%)
  * 5. Host sends: OTA END
  * 6. Device verifies MD5 (if provided), writes firmware, reboots
- *
- * Fast Firmware Update (recommended, esptool):
- * 1. Host sends: SYS BOOTLOADER
- * 2. Device enters ROM bootloader mode
- * 3. Host uses esptool protocol for fast binary flashing (~100+ KB/s)
  */
 
 #ifndef SERIAL_COMMAND_H
