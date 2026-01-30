@@ -32,7 +32,19 @@
 
 ## 🚧 Upcoming
 
-### v1.8 — External CANBox Passthrough
+### v1.8 — Additional Vehicle Data
+
+| Task | Status | Notes |
+|------|--------|-------|
+| External Temperature | 🔲 | CAN data not yet extracted |
+| Instant Fuel Consumption | 🔲 | CAN data not yet extracted |
+| Distance to Empty | 🔲 | CAN data not yet extracted |
+| CAN Frame Recorder | 🔲 | For debugging |
+| Steering Auto-Calibration | 🔲 | Auto-detect center offset |
+
+> **Note:** Community Presets are managed by the [Android app](https://github.com/aerodomigue/esp32-canbox-manager) (download from GitHub or local).
+
+### v1.9 — External CANBox Passthrough
 
 Allow external CAN boxes (parking sensors, blind spot monitors, etc.) to communicate with the head unit through our device.
 
@@ -48,13 +60,33 @@ Allow external CAN boxes (parking sensors, blind spot monitors, etc.) to communi
 
 ---
 
-## 💡 Ideas
+## 🏆 v2.0 — Custom PCB
 
-| Feature | Notes |
-|---------|-------|
-| External Temperature | CAN data not yet extracted |
-| Instant Fuel Consumption | CAN data not yet extracted |
-| Distance to Empty | CAN data not yet extracted |
-| Steering Auto-Calibration | Detect center offset automatically |
-| CAN Frame Recorder | For debugging |
-| Community Presets | Share vehicle configs |
+The end goal: a dedicated, professional-grade board ready to use.
+
+> **Prerequisite:** Software (ESP32 firmware + Android app) must be stable and feature-complete before starting PCB development.
+
+### Phase 1 — Prototype
+
+| Task | Status |
+|------|--------|
+| Validate passthrough on perfboard | 🔲 |
+| Test JST connectors | 🔲 |
+| Validate 3.3V protection circuit | 🔲 |
+
+### Phase 2 — PCB Design & Manufacturing
+
+| Task | Status |
+|------|--------|
+| PCB design (KiCad) | 🔲 |
+| ESP32-C3 (module or chip TBD) | 🔲 |
+| Integrated CAN transceiver | 🔲 |
+| JST connectors (head unit, passthrough) | 🔲 |
+| 3.3V pin protection | 🔲 |
+| USB-C power (from head unit) | 🔲 |
+| Boot/Reset buttons | 🔲 |
+| Compact form factor | 🔲 |
+| 3D printed enclosure | 🔲 |
+| PCBA manufacturing | 🔲 |
+
+> **Goal:** One-click order via shared JLCPCB project link (Gerbers + BOM + assembly).

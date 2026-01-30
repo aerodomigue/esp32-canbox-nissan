@@ -1,4 +1,4 @@
-# Nissan Juke (F15) to Android Head Unit CAN Bridge (ESP32)
+# ESP32 CANBox Bridge
 
 > **Available Languages:** [Français](README.fr.md) | **English**
 
@@ -13,9 +13,14 @@
   <em>Dynamic reverse camera guidelines working with the CAN bridge</em>
 </p>
 
-This project is an intelligent gateway that integrates telemetry data from a Nissan Juke F15 (Platform B) into an Android head unit. The ESP32 intercepts **Cabin CAN bus** frames via the OBD-II port and **translates Nissan CAN frames to Toyota RAV4 protocol**.
+This project is a **universal CAN bridge** that connects any vehicle to an Android head unit. The ESP32 reads CAN bus frames via the OBD-II port and translates them to protocols understood by Android head units (Toyota RAV4, Raise, etc.).
 
-**Why Toyota RAV4 protocol?** Most Android head units (like those running DuduOS, FYT, etc.) have much better native support for Toyota/RAV4 CAN protocol than for Nissan. By translating the frames, we get better integration: working dashboard widgets, door status, reverse camera guidelines, and more.
+The project started as a custom solution for the **Nissan Juke F15**, but has since evolved into a generic, multi-vehicle platform.
+
+**Key features:**
+- **Multi-vehicle support** — Vehicle-specific CAN mappings are defined in JSON configuration files, making it easy to add support for new cars
+- **Protocol translation** — Converts manufacturer-specific CAN data to head unit protocols (Toyota RAV4, Raise/RZC)
+- **No recompilation needed** — Switch vehicles or adjust calibration via USB commands
 
 > **Important:** In your head unit settings, configure the CAN protocol as **"Toyota RAV4"** for this to work.
 
@@ -25,7 +30,7 @@ This project is an intelligent gateway that integrates telemetry data from a Nis
 
 ## Features
 
-- **Real-time data translation** from Nissan CAN to VW protocol
+- **Real-time data translation** from Nissan CAN to Toyota RAV4 protocol
 - **Steering wheel angle** for reverse camera guidelines
 - **Dashboard data**: RPM, speed, battery voltage, temperature, fuel level
 - **Door status** with automatic updates on change
@@ -43,14 +48,14 @@ This project is an intelligent gateway that integrates telemetry data from a Nis
 | Door Status | ✅ Working | All 4 doors + trunk |
 | Indicators | ✅ Working | Left/right turn signals |
 | Lights | ✅ Working | Headlights, high beam, parking lights |
-| External Temperature | ⚠️ WIP | wrong delta |
 | Handbrake | ✅ Working | |
-| Instant Fuel Consumption | ⚠️ WIP | not decoded yet |
-| Distance to Empty | ⚠️ WIP| not decoded yet  |
+| External Temperature | 📋 Planned | CAN data not yet extracted |
+| Instant Fuel Consumption | 📋 Planned | CAN data not yet extracted |
+| Distance to Empty | 📋 Planned | CAN data not yet extracted |
 
 > **Note:** Documentation for the Raise/Toyota RAV4 protocol used by Android head units is scarce. Some features are still being reverse-engineered due to lack of official protocol specifications.
 
-See the **[Roadmap](ROADMAP.md)** for planned features including USB configuration app and OTA updates.
+See the **[Roadmap](ROADMAP.md)** for upcoming features.
 
 ---
 

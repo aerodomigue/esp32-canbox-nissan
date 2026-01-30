@@ -1,4 +1,4 @@
-# Nissan Juke (F15) vers Autoradio Android - Pont CAN (ESP32)
+# ESP32 CANBox Bridge
 
 > **Langues disponibles :** **Français** | [English](README.md)
 
@@ -13,9 +13,14 @@
   <em>Lignes de guidage dynamiques de la caméra de recul en fonctionnement</em>
 </p>
 
-Ce projet est une passerelle intelligente permettant d'intégrer les données télémétriques d'un Nissan Juke F15 (Plateforme B) sur un autoradio Android. L'ESP32 intercepte les trames du bus **CAN habitacle** via le port OBD-II et **traduit les trames CAN Nissan vers le protocole Toyota RAV4**.
+Ce projet est un **pont CAN universel** qui connecte n'importe quel véhicule à un autoradio Android. L'ESP32 lit les trames du bus CAN via le port OBD-II et les traduit vers des protocoles compris par les autoradios Android (Toyota RAV4, Raise, etc.).
 
-**Pourquoi le protocole Toyota RAV4 ?** La plupart des autoradios Android (comme ceux sous DuduOS, FYT, etc.) ont une bien meilleure prise en charge native du protocole CAN Toyota/RAV4 que du Nissan. En traduisant les trames, on obtient une meilleure intégration : widgets tableau de bord fonctionnels, état des portes, lignes de guidage caméra de recul, etc.
+Le projet a démarré comme une solution dédiée à la **Nissan Juke F15**, mais a depuis évolué vers une plateforme générique multi-véhicules.
+
+**Points clés :**
+- **Support multi-véhicules** — Les mappings CAN spécifiques à chaque véhicule sont définis dans des fichiers de configuration JSON, facilitant l'ajout de nouvelles voitures
+- **Traduction de protocoles** — Convertit les données CAN constructeur vers les protocoles autoradio (Toyota RAV4, Raise/RZC)
+- **Sans recompilation** — Changez de véhicule ou ajustez la calibration via commandes USB
 
 > **Important :** Dans les paramètres de votre autoradio, configurez le protocole CAN sur **"Toyota RAV4"** pour que cela fonctionne.
 
@@ -25,7 +30,7 @@ Ce projet est une passerelle intelligente permettant d'intégrer les données t�
 
 ## Fonctionnalités
 
-- **Traduction en temps réel** des données CAN Nissan vers le protocole VW
+- **Traduction en temps réel** des données CAN Nissan vers le protocole Toyota RAV4
 - **Angle de braquage** pour les lignes de guidage de la caméra de recul
 - **Données tableau de bord** : RPM, vitesse, tension batterie, température, niveau essence
 - **État des portes** avec mise à jour automatique sur changement
@@ -43,14 +48,14 @@ Ce projet est une passerelle intelligente permettant d'intégrer les données t�
 | État des Portes | ✅ Fonctionnel | 4 portes + coffre |
 | Clignotants | ✅ Fonctionnel | Gauche/droite |
 | Feux | ✅ Fonctionnel | Phares, feux de route, veilleuses |
-| Température Extérieure | ⚠️ WIP | Affiche actuellement la temp moteur (pas de sonde ext. sur CAN) |
 | Frein à Main | ✅ Fonctionnel | |
-| Conso. Instantanée | ❌ Non fonctionnel | Décodé mais non affiché sur l'autoradio |
-| Autonomie Restante | ❌ Non fonctionnel | Décodé mais non affiché sur l'autoradio |
+| Température Extérieure | 📋 Prévu | Données CAN pas encore extraites |
+| Conso. Instantanée | 📋 Prévu | Données CAN pas encore extraites |
+| Autonomie Restante | 📋 Prévu | Données CAN pas encore extraites |
 
 > **Note :** La documentation du protocole Raise/Toyota RAV4 utilisé par les autoradios Android est rare. Certaines fonctionnalités sont encore en cours de reverse-engineering par manque de spécifications officielles du protocole.
 
-Voir la **[Roadmap](ROADMAP.md)** pour les fonctionnalités prévues, incluant l'application de configuration USB et les mises à jour OTA.
+Voir la **[Roadmap](ROADMAP.md)** pour les fonctionnalités à venir.
 
 ---
 
