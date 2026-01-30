@@ -2,6 +2,9 @@
  * @file VehicleConfig.h
  * @brief CAN configuration structures for vehicle profiles
  *
+ * @note If you modify targets, data types, or formulas, update the documentation:
+ *       docs/VEHICLE_PRESET_GUIDE.md
+ *
  * This header defines the data structures used to describe CAN frame parsing
  * and data conversion. Configurations can be loaded from JSON files at runtime,
  * allowing support for multiple vehicles without code changes.
