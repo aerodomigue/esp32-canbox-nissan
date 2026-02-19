@@ -277,7 +277,7 @@ Process:
 Use the Android app or serial commands:
 
 ```
-CAN UPLOAD START <filename>
+CAN UPLOAD START <filename> <size>
 CAN UPLOAD DATA <base64_chunk>
 CAN UPLOAD END
 CAN LOAD <filename>

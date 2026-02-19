@@ -1,6 +1,6 @@
 # CAN Capture - Technical Documentation
 
-This module handles passive listening on the Nissan Juke F15 **High Speed CAN bus** (Cabin network). It decodes binary vehicle frames into normalized variables for use by the rest of the system.
+This module handles passive listening on the vehicle **High Speed CAN bus** (Cabin network). It delegates frame processing to the `CanConfigProcessor`, which uses JSON configuration files to decode binary vehicle frames into normalized variables.
 
 ---
 
@@ -15,68 +15,75 @@ This module handles passive listening on the Nissan Juke F15 **High Speed CAN bu
 
 ---
 
-## Decoded CAN Frames
+## Architecture
 
-The `CanCapture.cpp` module processes frames in real-time using the following identifiers:
+Since v1.6, CAN frame decoding is **fully configurable via JSON files**. The `CanCapture.cpp` module is a thin wrapper that:
+
+1. Receives CAN frames from the TWAI driver
+2. Delegates processing to `CanConfigProcessor.processFrame()`
+3. Toggles the LED on steering frame (0x002) for activity indication
+4. Logs frames to serial if `LOG ON` is active
+
+The actual decoding logic (byte extraction, formulas, target mapping) is defined in JSON configuration files stored on LittleFS. See [Vehicle Preset Guide](../VEHICLE_PRESET_GUIDE.md) for the JSON format.
+
+---
+
+## Decoded CAN Frames (Nissan Juke F15)
+
+The following table describes the CAN frames decoded by the default `NissanJukeF15.json` configuration:
 
 ### 1. Steering & Dynamics
 
 | CAN ID | Signal | Bytes | Formula | Unit | Notes |
 | --- | --- | --- | --- | --- | --- |
-| **0x002** | Steering Angle | [1-2] | `(int16)(Data[1]<<8 \| Data[2])` | 0.1° | Signed, Big Endian. Center ≈ 2912 |
-| **0x180** | Engine RPM | [0-1] | `(uint16)(Data[0]<<8 \| Data[1]) / 7` | RPM | Scale factor ~0.14 (calibrated) |
-| **0x284** | Vehicle Speed | [0-1] | `(uint16)(Data[0]<<8 \| Data[1]) / 100` | km/h | Wheel speed sensor |
+| **0x002** | Steering Angle | [1-2] | NONE (raw INT16) | 0.1° | Signed, Big Endian. Center offset applied by ConfigManager |
+| **0x180** | Engine RPM | [0-1] | SCALE [1, 7, 0] | RPM | `raw / 7` |
+| **0x284** | Vehicle Speed | [0-1] | SCALE [1, 100, 0] | km/h | `raw / 100` (wheel speed sensor) |
 
 ### 2. Instrument Cluster (CAN ID 0x5C5)
 
 | Byte | Signal | Formula | Notes |
 | --- | --- | --- | --- |
-| **[0]** | Fuel Level | `map(Data[0], 255, 0, 0, 45)` | Inverted scale (255=empty, 0=full) mapped to 0-45L (Juke F15 tank capacity) |
-| **[1-3]** | Odometer | `(Data[1]<<16 \| Data[2]<<8 \| Data[3])` | Total km (24-bit) |
+| **[0]** | Fuel Level | MAP_RANGE [255, 0, 0, 45] | Inverted scale (255=empty, 0=full) mapped to 0-45L |
+| **[1-3]** | Odometer | NONE (UINT24) | Total km (24-bit Big Endian) |
 
 ### 3. Power Management
 
 | CAN ID | Signal | Bytes | Formula | Unit | Notes |
 | --- | --- | --- | --- | --- | --- |
-| **0x6F6** | Battery Voltage | [0] | `Data[0] * 0.1` | V | Alternator output (e.g., 141 = 14.1V) |
-| **0x551** | Coolant Temp | [0] | `Data[0] - 40` | °C | Used as exterior temp substitute |
+| **0x6F6** | Battery Voltage | [0] | NONE (UINT8) | 0.1V | Raw value in decivolts (e.g., 141 = 14.1V). Converted to float by `writeToGlobalData()` |
+| **0x551** | Coolant Temp | [0] | SCALE [1, 1, -40] | °C | Used as exterior temp substitute |
 
 ### 4. Body Control Module (CAN ID 0x60D)
 
-Bytes [0-2] form a **24-bit status word** containing doors, lights, and indicators:
+Bytes [0-2] form a **24-bit status word** (Big Endian BITMASK). Individual bits are extracted using `BITMASK_EXTRACT`:
 
-```cpp
-uint32_t status = (Data[0] << 16) | (Data[1] << 8) | Data[2];
-```
-
-**Status Word Bit Mapping:**
-
-| Bit | Signal | Notes |
-| --- | --- | --- |
-| 11 | High Beam | 1 = on |
-| 13 | Left Indicator | Pulse when active |
-| 14 | Right Indicator | Pulse when active |
-| 17 | Headlights (low beam) | 1 = on |
-| 18 | Parking Lights | 1 = on |
-| 19 | Passenger Door | 1 = open |
-| 20 | Driver Door | 1 = open |
-| 21 | Rear Left Door | 1 = open |
-| 22 | Rear Right Door | 1 = open |
-| 23 | Boot/Trunk | 1 = open |
+| Bit | Mask (decimal) | Signal | Notes |
+| --- | --- | --- | --- |
+| 11 | 2048 | High Beam | 1 = on |
+| 13 | 8192 | Left Indicator | Pulse when active |
+| 14 | 16384 | Right Indicator | Pulse when active |
+| 17 | 131072 | Headlights (low beam) | 1 = on |
+| 18 | 262144 | Parking Lights | 1 = on |
+| 19 | 524288 | Passenger Door | 1 = open |
+| 20 | 1048576 | Driver Door | 1 = open |
+| 21 | 2097152 | Rear Left Door | 1 = open |
+| 22 | 4194304 | Rear Right Door | 1 = open |
+| 23 | 8388608 | Boot/Trunk | 1 = open |
 
 **Indicator Detection:**
 - Indicators pulse on CAN only when the blinker relay is active
-- A 500ms timeout is used to detect if indicator is currently blinking
+- A configurable timeout (default 500ms) is used to detect if indicator is currently blinking
 - Timestamps are recorded for each pulse to track indicator state
 
-**Output Remapping (for Toyota RAV4 protocol):**
+**Output Mapping:**
 
-*Doors* → `currentDoors` bitmask:
-- Bit 20 → 0x80 (Driver)
-- Bit 19 → 0x40 (Passenger)
-- Bit 21 → 0x20 (Rear Left)
-- Bit 22 → 0x10 (Rear Right)
-- Bit 23 → 0x08 (Boot)
+*Doors* → `currentDoors` bitmask (Toyota RAV4 format):
+- Bit 20 (Driver) → 0x80
+- Bit 19 (Passenger) → 0x40
+- Bit 21 (Rear Left) → 0x20
+- Bit 22 (Rear Right) → 0x10
+- Bit 23 (Boot) → 0x08
 
 *Lights* → Individual boolean variables:
 - `headlightsOn`, `highBeamOn`, `parkingLightsOn`
@@ -86,22 +93,40 @@ uint32_t status = (Data[0] << 16) | (Data[1] << 8) | Data[2];
 
 | Byte | Signal | Formula | Notes |
 | --- | --- | --- | --- |
-| **[4-5]** | Distance to Empty | `(Data[4]<<8 \| Data[5])` | Estimated range in km |
+| **[6-7]** | Distance to Empty | SCALE [100, 283, 0] | `raw * 100 / 283` → estimated range in km |
 
 ### 6. Fuel Consumption (CAN ID 0x580)
 
 | Byte | Signal | Formula | Notes |
 | --- | --- | --- | --- |
-| **[1]** | Instant. Consumption | `Data[1] * 10` | 0.1 L/100km units (needs calibration) |
-| **[4]** | Average Consumption | `Data[4] * 10` | 0.1 L/100km units (needs calibration) |
-
-**Note:** Alternative ID 0x358 byte[1] may also contain consumption data. See CanCapture.cpp comments.
+| **[2]** | Instant. Consumption | BITMASK_EXTRACT [127, 0] | Mask 0x7F, 0.1 L/100km units |
+| **[4]** | Average Consumption | NONE (UINT8) | 0.1 L/100km units |
 
 ---
 
 ## Software Implementation
 
 The capture relies on the **ESP32-TWAI-CAN** library.
+
+### Processing Pipeline
+
+```
+CAN Frame received
+       │
+       ▼
+CanCapture.handleCanCapture()
+       │
+       ├─► CanConfigProcessor.processFrame()
+       │       │
+       │       ├─► findFrameConfig(canId)     → lookup JSON config
+       │       ├─► extractRawValue()           → read bytes (BE/LE)
+       │       ├─► applyFormula()              → SCALE / MAP_RANGE / BITMASK
+       │       └─► writeToGlobalData()         → update global variables
+       │
+       ├─► LED toggle on 0x002 (heartbeat)
+       │
+       └─► Serial log if LOG ON
+```
 
 ### Activity Monitoring
 
@@ -114,12 +139,12 @@ The capture relies on the **ESP32-TWAI-CAN** library.
 
 ### Debug Logging
 
-When connected via USB Serial (`pio device monitor`), the system outputs each received CAN frame:
+When CAN logging is enabled (`LOG ON` via serial), the system outputs each received CAN frame:
 
 ```
-RX ID: 0x180 | DLC: 8 | Data: 00 00 45 6A 7A 00 32 10
-RX ID: 0x284 | DLC: 8 | Data: 00 00 00 2D 00 00 D6 5C
-RX ID: 0x60D | DLC: 8 | Data: 08 06 00 00 00 00 00 00
+RX 0x180 [8]: 00 00 45 6A 7A 00 32 10
+RX 0x284 [8]: 00 00 00 2D 00 00 D6 5C
+RX 0x60D [8]: 08 06 00 00 00 00 00 00
 ```
 
 ---
@@ -127,20 +152,22 @@ RX ID: 0x60D | DLC: 8 | Data: 08 06 00 00 00 00 00 00
 ## Data Flow
 
 ```
-┌─────────────┐      ┌──────────────┐      ┌─────────────┐
-│  Nissan     │ CAN  │  ESP32       │ Vars │  RadioSend  │
-│  ECUs       │ ───► │  CanCapture  │ ───► │  Module     │
-└─────────────┘      └──────────────┘      └─────────────┘
-     0x002            currentSteer
-     0x180            engineRPM              Reads global
-     0x284            vehicleSpeed           variables
-     0x5C5            fuelLevel, currentOdo  Sends to radio
-     0x551            tempExt
-     0x60D            currentDoors
-     0x6F6            headlightsOn, highBeamOn
-     0x54C            parkingLightsOn
-                      indicatorLeft/Right
-                      dteValue, voltBat
+┌─────────────┐      ┌──────────────────┐      ┌──────────────┐      ┌─────────────┐
+│  Vehicle     │ CAN  │  CanCapture      │      │  CanConfig   │ Vars │  RadioSend  │
+│  ECUs        │ ───► │  (thin wrapper)  │ ───► │  Processor   │ ───► │  Module     │
+└─────────────┘      └──────────────────┘      └──────────────┘      └─────────────┘
+     0x002                                       JSON config           Reads global
+     0x180            Delegates to               defines how           variables
+     0x284            processor                  to decode             Sends to radio
+     0x5C5                                       each frame
+     0x551
+     0x60D            Output variables:
+     0x6F6            currentSteer, engineRPM, vehicleSpeed,
+     0x54C            fuelLevel, currentOdo, voltBat, tempExt,
+     0x580            currentDoors, headlightsOn, highBeamOn,
+                      parkingLightsOn, dteValue,
+                      fuelConsumptionInst, fuelConsumptionAvg,
+                      lastLeftIndicatorTime, lastRightIndicatorTime
 ```
 
 ---

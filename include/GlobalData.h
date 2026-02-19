@@ -19,7 +19,7 @@
 // SHARED VEHICLE DATA (extern declarations)
 // =============================================================================
 
-/** Steering wheel angle in 0.1 degree units (signed, ±720°) */
+/** Steering wheel angle in 0.1 degree units (signed, ±540°) */
 extern int16_t currentSteer;
 
 /** Engine speed in RPM (0-8000 typical range) */
@@ -31,7 +31,7 @@ extern uint8_t vehicleSpeed;
 /** Door status bitmask (see CanCapture.cpp for bit mapping) */
 extern uint8_t currentDoors;
 
-/** Fuel level in liters, scaled to VW Polo tank (0-45L) */
+/** Fuel level in liters, scaled to tank capacity (default 0-45L for Juke F15) */
 extern uint8_t fuelLevel;
 
 /** Battery/alternator voltage in volts (typically 12.0-14.5V) */

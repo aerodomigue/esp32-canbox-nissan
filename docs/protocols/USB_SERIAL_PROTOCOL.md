@@ -460,7 +460,7 @@ Display system information.
 ```
 > SYS INFO
 === System Info ===
-Firmware: 1.7.0 (2026-01-26)
+Firmware: 1.7.2 (2026-01-28)
 Uptime: 3600 sec
 Free heap: 245000 bytes
 CPU freq: 160 MHz
@@ -642,6 +642,7 @@ class CanBoxSerial(private val usbConnection: UsbDeviceConnection) {
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 1.7.2 | 2026-01-28 | Added SYS BOOTLOADER, fuel consumption, DTE commands |
 | 1.7.0 | 2026-01-26 | Added OTA firmware update commands |
 | 1.6.0 | 2026-01-26 | Added CAN config upload commands |
 | 1.5.0 | 2026-01-22 | Initial serial command interface |

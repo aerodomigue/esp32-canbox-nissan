@@ -16,7 +16,7 @@ uint8_t vehicleSpeed = 0;
 /** Door status bitmask - 0 = all doors closed */
 uint8_t currentDoors = 0;
 
-/** Fuel level in liters (VW scale) - 0 = empty */
+/** Fuel level in liters (default 0-45L for Juke F15) - 0 = empty */
 uint8_t fuelLevel = 0;
 
 /** Battery voltage - 0.0V until first CAN reading */

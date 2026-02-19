@@ -48,10 +48,11 @@ Le projet a démarré comme une solution dédiée à la **Nissan Juke F15**, mai
 | État des Portes | ✅ Fonctionnel | 4 portes + coffre |
 | Clignotants | ✅ Fonctionnel | Gauche/droite |
 | Feux | ✅ Fonctionnel | Phares, feux de route, veilleuses |
-| Frein à Main | ✅ Fonctionnel | |
+| Frein à Main | 📋 Prévu | Données CAN pas encore extraites |
 | Température Extérieure | 📋 Prévu | Données CAN pas encore extraites |
-| Conso. Instantanée | 📋 Prévu | Données CAN pas encore extraites |
-| Autonomie Restante | 📋 Prévu | Données CAN pas encore extraites |
+| Conso. Instantanée | ✅ Fonctionnel | Depuis CAN 0x580 |
+| Conso. Moyenne | ✅ Fonctionnel | Depuis CAN 0x580 |
+| Autonomie Restante | ✅ Fonctionnel | Depuis CAN 0x54C |
 
 > **Note :** La documentation du protocole Raise/Toyota RAV4 utilisé par les autoradios Android est rare. Certaines fonctionnalités sont encore en cours de reverse-engineering par manque de spécifications officielles du protocole.
 
@@ -76,9 +77,17 @@ Voir la **[Roadmap](ROADMAP.md)** pour les fonctionnalités à venir.
 
 ### Note sur l'Alimentation
 
-L'ESP32 est alimenté via **USB depuis l'autoradio Android**, et non pas depuis le 12V du véhicule.
+L'ESP32 est alimenté via **USB depuis l'autoradio Android**.
 
-**Pourquoi ?** Le 12V disponible sur le connecteur CAN du poste est **permanent** (toujours alimenté, même contact coupé). L'utiliser viderait lentement la batterie en stationnement. En utilisant le port USB du poste, l'ESP32 ne s'allume que lorsque l'autoradio est actif.
+**IMPORTANT - Si vous utilisez le 12V au lieu de l'USB :**
+- **Ne JAMAIS utiliser le 12V permanent** - cela viderait la batterie en stationnement
+- **Utiliser uniquement le 12V ACC (accessoire)** - il se coupe avec le contact
+- Vous aurez besoin d'un régulateur de tension (comme le L7805CV dans le BOM) pour convertir le 12V en 5V
+- **Le circuit 12V actuel nécessite des améliorations** : Il manque une protection contre l'inversion de polarité (risque de dommage en cas de mauvais câblage) et un filtrage correct du bruit électrique généré par l'alternateur. Des composants supplémentaires (diode, condensateurs, diode TVS) seraient recommandés pour une alimentation 12V robuste.
+
+**Pourquoi l'USB est recommandé :**
+1. **Gestion automatique de l'alimentation** : L'USB de l'autoradio n'est actif que lorsque le poste est allumé (contrôlé par ACC), évitant ainsi de vider la batterie.
+2. **Stabilité de la tension** : Le 12V automobile est instable - il varie significativement au démarrage (chutes de tension), pendant la charge de l'alternateur (pics jusqu'à 14.5V), et contient du bruit électrique. L'USB fournit une alimentation 5V propre et régulée.
 
 ### Schéma de Câblage
 
@@ -162,7 +171,7 @@ Les configurations véhicules sont stockées sous forme de fichiers JSON sur le 
 Le système est conçu pour être 100% autonome et résistant aux parasites électriques du véhicule :
 
 1. **[Capture CAN](docs/technical/CAN_CAPTURE.md)** : Décode les trames selon la configuration JSON et met à jour les variables globales
-2. **[Envoi Radio](docs/technical/RADIO_SEND.md)** : Formate et transmet les données au poste à deux intervalles (100ms pour direction, 400ms pour tableau de bord)
+2. **[Envoi Radio](docs/technical/RADIO_SEND.md)** : Formate et transmet les données au poste à plusieurs intervalles (200ms pour direction, 333ms pour RPM, 500ms pour vitesse, etc.)
 3. **ConfigManager** : Stockage persistant des paramètres de calibration (NVS)
 4. **SerialCommand** : Interface de configuration USB
 5. **Watchdog Matériel** : Redémarrage automatique si le programme gèle plus de 5 secondes
@@ -203,7 +212,7 @@ Ce projet utilise **PlatformIO**. Pour compiler et flasher :
 
 ```bash
 # Cloner le dépôt
-git clone https://github.com/yourusername/Nissan-canbus-headunit.git
+git clone https://github.com/aerodomigue/Nissan-canbus-headunit.git
 cd Nissan-canbus-headunit
 
 # Compiler
@@ -220,16 +229,19 @@ pio device monitor
 
 ## Données Supportées
 
-| Donnée | ID CAN | Fréquence | Notes |
+| Donnée | ID CAN | Fréq. envoi | Notes |
 | --- | --- | --- | --- |
-| Angle Volant | 0x002 | 100ms | Pour lignes caméra |
-| Régime Moteur | 0x180 | 400ms | |
-| Vitesse Véhicule | 0x284 | 400ms | Capteur roue |
-| Niveau Essence | 0x5C5 | 400ms | Mappé sur 45L (capacité réservoir Juke F15) |
-| Tension Batterie | 0x6F6 | 400ms | Sortie alternateur |
-| Température | 0x551 | 400ms | LDR (utilisé comme ext.) |
-| État Portes | 0x60D | Sur changement | Toutes portes + coffre |
-| Autonomie | 0x54C | 400ms | Distance estimée |
+| Angle Volant | 0x002 | 200ms | Pour lignes caméra |
+| Régime Moteur | 0x180 | 333ms | |
+| Vitesse Véhicule | 0x284 | 500ms | Capteur roue |
+| Niveau Essence | 0x5C5 | — | Mappé sur 45L (capacité réservoir Juke F15) |
+| Tension Batterie | 0x6F6 | — | Sortie alternateur |
+| Température | 0x551 | 5000ms | LDR (utilisé comme ext.) |
+| État Portes | 0x60D | 250ms | Toutes portes + coffre (ou sur changement) |
+| Autonomie | 0x54C | 5000ms | Distance estimée |
+| Conso. Instantanée | 0x580 | 1000ms | Unités 0.1 L/100km |
+| Conso. Moyenne | 0x580 | 5000ms | Unités 0.1 L/100km |
+| Compteur km | 0x5C5 | 10000ms | Total km (24-bit) |
 
 ---
 

@@ -48,10 +48,11 @@ The project started as a custom solution for the **Nissan Juke F15**, but has si
 | Door Status | ✅ Working | All 4 doors + trunk |
 | Indicators | ✅ Working | Left/right turn signals |
 | Lights | ✅ Working | Headlights, high beam, parking lights |
-| Handbrake | ✅ Working | |
+| Handbrake | 📋 Planned | CAN data not yet extracted |
 | External Temperature | 📋 Planned | CAN data not yet extracted |
-| Instant Fuel Consumption | 📋 Planned | CAN data not yet extracted |
-| Distance to Empty | 📋 Planned | CAN data not yet extracted |
+| Instant Fuel Consumption | ✅ Working | From CAN 0x580 |
+| Average Fuel Consumption | ✅ Working | From CAN 0x580 |
+| Distance to Empty | ✅ Working | From CAN 0x54C |
 
 > **Note:** Documentation for the Raise/Toyota RAV4 protocol used by Android head units is scarce. Some features are still being reverse-engineered due to lack of official protocol specifications.
 
@@ -170,7 +171,7 @@ Vehicle configurations are stored as JSON files on the device's filesystem. You 
 The system is designed to be 100% autonomous and resilient to vehicle electrical interference:
 
 1. **[CAN Capture](docs/technical/CAN_CAPTURE.md)**: Decodes frames using JSON configuration and updates global variables
-2. **[Radio Send](docs/technical/RADIO_SEND.md)**: Formats and transmits data to the head unit at two intervals (100ms for steering, 400ms for dashboard)
+2. **[Radio Send](docs/technical/RADIO_SEND.md)**: Formats and transmits data to the head unit at multiple intervals (200ms for steering, 333ms for RPM, 500ms for speed, etc.)
 3. **ConfigManager**: Persistent calibration storage (NVS)
 4. **SerialCommand**: USB configuration interface
 5. **Hardware Watchdog**: Automatic reboot if the program freezes for more than 5 seconds
@@ -211,7 +212,7 @@ This project uses **PlatformIO**. To build and flash:
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/Nissan-canbus-headunit.git
+git clone https://github.com/aerodomigue/Nissan-canbus-headunit.git
 cd Nissan-canbus-headunit
 
 # Build
@@ -228,16 +229,19 @@ pio device monitor
 
 ## Supported Data
 
-| Data | CAN ID | Update Rate | Notes |
+| Data | CAN ID | Send Rate | Notes |
 | --- | --- | --- | --- |
-| Steering Angle | 0x002 | 100ms | For camera guidelines |
-| Engine RPM | 0x180 | 400ms | |
-| Vehicle Speed | 0x284 | 400ms | Wheel speed sensor |
-| Fuel Level | 0x5C5 | 400ms | Mapped to 45L (Juke F15 tank capacity) |
-| Battery Voltage | 0x6F6 | 400ms | Alternator output |
-| Temperature | 0x551 | 400ms | Coolant (used as exterior) |
-| Door Status | 0x60D | On change | All doors + trunk |
-| Distance to Empty | 0x54C | 400ms | Estimated range |
+| Steering Angle | 0x002 | 200ms | For camera guidelines |
+| Engine RPM | 0x180 | 333ms | |
+| Vehicle Speed | 0x284 | 500ms | Wheel speed sensor |
+| Fuel Level | 0x5C5 | — | Mapped to 45L (Juke F15 tank capacity) |
+| Battery Voltage | 0x6F6 | — | Alternator output |
+| Temperature | 0x551 | 5000ms | Coolant (used as exterior) |
+| Door Status | 0x60D | 250ms | All doors + trunk (or on change) |
+| Distance to Empty | 0x54C | 5000ms | Estimated range |
+| Instant Fuel Consumption | 0x580 | 1000ms | 0.1 L/100km units |
+| Average Fuel Consumption | 0x580 | 5000ms | 0.1 L/100km units |
+| Odometer | 0x5C5 | 10000ms | Total km (24-bit) |
 
 ---
 

@@ -16,6 +16,7 @@
 #include <libb64/cdecode.h>
 #include <Update.h>
 #include <MD5Builder.h>
+#include <esp_task_wdt.h>
 #include "soc/rtc_cntl_reg.h"  // For bootloader mode
 
 // External reference to CAN processor (defined in main.cpp)
@@ -660,6 +661,9 @@ static void canUploadData(const char* base64Data) {
 
     uploadReceivedSize += decoded;
 
+    // Feed the watchdog during flash/filesystem operations
+    esp_task_wdt_reset();
+
     Serial.printf("OK %lu/%lu\n", uploadReceivedSize, uploadExpectedSize);
     Serial.flush();  // Ensure ACK is sent before processing next chunk
     delay(1);        // Give USB CDC stack time to transmit
@@ -701,6 +705,9 @@ static void canUploadEnd() {
         canUploadAbort();
         return;
     }
+
+    // Feed the watchdog before slow LittleFS write
+    esp_task_wdt_reset();
 
     file.write(uploadBuffer, uploadReceivedSize);
     file.close();
@@ -906,6 +913,9 @@ static void otaData(const char* base64Data) {
 
     otaReceivedSize += decoded;
 
+    // Feed the watchdog during slow flash writes
+    esp_task_wdt_reset();
+
     // Progress response
     uint8_t percent = (otaReceivedSize * 100) / otaExpectedSize;
     Serial.printf("OK %lu/%lu (%d%%)\n", otaReceivedSize, otaExpectedSize, percent);
@@ -942,6 +952,9 @@ static void otaEnd() {
         }
         Serial.println("MD5 verified OK");
     }
+
+    // Feed the watchdog before the slow finalization process
+    esp_task_wdt_reset();
 
     // Finalize update
     if (!Update.end(true)) {

@@ -228,7 +228,7 @@ Envoyer le JSON encodé en base64. Peut être fait en plusieurs chunks.
       "fields": [
         {
           "target": "STEERING",
-          "startByte": 0,
+          "startByte": 1,
           "byteCount": 2,
           "byteOrder": "BE",
           "dataType": "INT16",

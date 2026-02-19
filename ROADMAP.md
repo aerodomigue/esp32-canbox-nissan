@@ -26,6 +26,9 @@
 | JSON CAN Config | Multi-vehicle support via LittleFS |
 | Mock Data Generator | Testing without vehicle |
 | OTA Firmware Update | Via USB serial |
+| Distance to Empty | From CAN 0x54C |
+| Instant Fuel Consumption | From CAN 0x580 |
+| Average Fuel Consumption | From CAN 0x580 |
 | Android Companion App | [ESP32 CANBox Manager](https://github.com/aerodomigue/esp32-canbox-manager) |
 
 ---
@@ -37,8 +40,7 @@
 | Task | Status | Notes |
 |------|--------|-------|
 | External Temperature | 🔲 | CAN data not yet extracted |
-| Instant Fuel Consumption | 🔲 | CAN data not yet extracted |
-| Distance to Empty | 🔲 | CAN data not yet extracted |
+| Handbrake | 🔲 | CAN data not yet extracted |
 | CAN Frame Recorder | 🔲 | For debugging |
 | Steering Auto-Calibration | 🔲 | Auto-detect center offset |
 
