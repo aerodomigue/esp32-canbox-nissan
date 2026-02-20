@@ -37,7 +37,9 @@ jobs:
           pip install platformio esptool
 
       - name: Build Project
-        run: pio run
+        run: |
+          pio run --target clean
+          pio run
         env:
           PLATFORMIO_BUILD_CACHE_DIR: .pio/cache
           APP_VERSION: ${{ github.ref_name }}
