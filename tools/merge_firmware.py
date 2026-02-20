@@ -10,7 +10,7 @@ def post_build_merged_bin(source, target, env):
     firmware = os.path.join(build_dir, "firmware.bin")
     bootloader = os.path.join(build_dir, "bootloader.bin")
     partitions = os.path.join(build_dir, "partitions.bin")
-    merged_bin = os.path.join(build_dir, "merged-firmware.bin")
+    merged_bin = os.path.join(build_dir, "all-firmware.bin")
 
     # Localisation de boot_app0.bin dans le framework Arduino
     platform = env.PioPlatform()

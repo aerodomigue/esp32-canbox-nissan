@@ -215,19 +215,19 @@ L'ESP32 doit d'abord être programmé avec le firmware avant d'être installé. 
 
 - **Option A : Navigateur Web (Recommandé)**
   Ouvrez **[web.esphome.io](https://web.esphome.io/)** dans un navigateur basé sur Chrome.
-  1. Téléchargez le fichier **`merged-firmware.bin`** depuis la page des [Dernières Releases](https://github.com/aerodomigue/Nissan-canbus-headunit/releases). Ce fichier unique contient le bootloader, les partitions et l'application.
+  1. Téléchargez le fichier **`all-firmware.bin`** depuis la page des [Dernières Releases](https://github.com/aerodomigue/Nissan-canbus-headunit/releases). Ce fichier unique contient le bootloader, les partitions et l'application.
   2. Connectez votre ESP32 à votre ordinateur via USB.
-  3. Cliquez sur **Connect**, puis **Install** et sélectionnez le fichier `merged-firmware.bin`.
+  3. Cliquez sur **Connect**, puis **Install** et sélectionnez le fichier `all-firmware.bin`.
 
 - **Option B : Smartphone Android (Sans PC)**
-  Vous pouvez flasher depuis votre téléphone avec un **adaptateur USB OTG** et l'application **[ESP32 Loader](https://play.google.com/store/apps/details?id=com.bluedot.esp32loader)**. Sélectionnez le fichier `merged-firmware.bin` et flashez-le sur l'ESP32.
+  Vous pouvez flasher depuis votre téléphone avec un **adaptateur USB OTG** et l'application **[ESP32 Loader](https://play.google.com/store/apps/details?id=com.bluedot.esp32loader)**. Sélectionnez le fichier `all-firmware.bin` et flashez-le sur l'ESP32.
 
 - **Option C : PlatformIO (Développeurs)**
   Si vous travaillez avec le code source :
   ```bash
   pio run --target upload
   ```
-  *Note : Un fichier `merged-firmware.bin` est généré automatiquement dans `.pio/build/` après chaque compilation.*
+  *Note : Un fichier `all-firmware.bin` est généré automatiquement dans `.pio/build/` après chaque compilation.*
 
 ### 2. Configuration et Pilotage
 Une fois flashé, branchez l'ESP32 sur un port USB de votre autoradio Android. Toute la configuration se fait ensuite via l'application compagnon :

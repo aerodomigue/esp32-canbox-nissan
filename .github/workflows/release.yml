@@ -40,7 +40,7 @@ jobs:
         run: |
           ls -R .pio/build/
           cp .pio/build/esp32-c3-devkitm-1/firmware.bin firmware.bin
-          cp .pio/build/esp32-c3-devkitm-1/merged-firmware.bin merged-firmware.bin
+          cp .pio/build/esp32-c3-devkitm-1/all-firmware.bin all-firmware.bin
 
       - name: Prepare Configs
         run: |
@@ -54,14 +54,14 @@ jobs:
           draft: true
           files: |
             firmware.bin
-            merged-firmware.bin
+            all-firmware.bin
             vehicle_configs.zip
           body: |
             ## Changes in this version
             - Automatic build for tag ${{ github.ref_name }}
             
             ## Installation
-            - Use `merged-firmware.bin` for single-file flashing via [web.esphome.io](https://web.esphome.io/) or Android.
+            - Use `all-firmware.bin` for single-file flashing via [web.esphome.io](https://web.esphome.io/) or Android.
             - Use `firmware.bin` if you are performing an OTA update via the app.
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

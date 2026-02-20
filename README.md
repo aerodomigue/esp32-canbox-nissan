@@ -215,19 +215,19 @@ The ESP32 must be flashed with the firmware before installation. Use one of thes
 
 - **Option A: Web Browser (Recommended)**
   Open **[web.esphome.io](https://web.esphome.io/)** in a Chrome-based browser.
-  1. Download the **`merged-firmware.bin`** from the [Latest Releases](https://github.com/aerodomigue/Nissan-canbus-headunit/releases). This single file contains the bootloader, partitions, and app.
+  1. Download the **`all-firmware.bin`** from the [Latest Releases](https://github.com/aerodomigue/Nissan-canbus-headunit/releases). This single file contains the bootloader, partitions, and app.
   2. Connect your ESP32 to your computer via USB.
-  3. Click **Connect**, then **Install** and select the `merged-firmware.bin` file.
+  3. Click **Connect**, then **Install** and select the `all-firmware.bin` file.
 
 - **Option B: Android Phone (No PC needed)**
-  You can flash from your phone using an **USB OTG adapter** and the **[ESP32 Loader](https://play.google.com/store/apps/details?id=com.bluedot.esp32loader)** app. Select the `merged-firmware.bin` and flash it to the ESP32.
+  You can flash from your phone using an **USB OTG adapter** and the **[ESP32 Loader](https://play.google.com/store/apps/details?id=com.bluedot.esp32loader)** app. Select the `all-firmware.bin` and flash it to the ESP32.
 
 - **Option C: PlatformIO (Developers)**
   If you are working with the source code:
   ```bash
   pio run --target upload
   ```
-  *Note: A `merged-firmware.bin` is automatically generated in `.pio/build/` after each build.*
+  *Note: A `all-firmware.bin` is automatically generated in `.pio/build/` after each build.*
 
 ### 2. Configuration & Management
 Once flashed, connect the ESP32 to your Android head unit's USB port. All further configuration is done via the companion app:
