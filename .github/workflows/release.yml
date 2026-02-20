@@ -52,16 +52,16 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           draft: true
+          generate_release_notes: true
           files: |
             firmware.bin
             all-firmware.bin
             vehicle_configs.zip
           body: |
-            ## Changes in this version
-            - Automatic build for tag ${{ github.ref_name }}
+            ## 📦 Installation & Upgrade
+            - **First install?** Download **`all-firmware.bin`** and use [web.esphome.io](https://web.esphome.io/) or an Android OTG flasher.
+            - **OTA Update?** Use **`firmware.bin`** inside the Android companion app.
             
-            ## Installation
-            - Use `all-firmware.bin` for single-file flashing via [web.esphome.io](https://web.esphome.io/) or Android.
-            - Use `firmware.bin` if you are performing an OTA update via the app.
+            ---
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
