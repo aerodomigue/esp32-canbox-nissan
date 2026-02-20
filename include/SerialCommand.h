@@ -8,24 +8,6 @@
  * - OTA firmware updates (OTA)
  * - Enabling/disabling CAN debug logs (LOG)
  * - System information and control (SYS)
- *
- * Commands are newline-terminated and case-insensitive.
- *
- * CAN Config Upload Protocol:
- * 1. Host sends: CAN UPLOAD START <filename> <size_bytes>
- * 2. Device responds: OK READY
- * 3. Host sends: CAN UPLOAD DATA <base64_chunk> (multiple times)
- * 4. Device responds: OK <bytes_received>/<total_bytes>
- * 5. Host sends: CAN UPLOAD END
- * 6. Device validates JSON and responds: OK or ERROR
- *
- * OTA Firmware Update Protocol:
- * 1. Host sends: OTA START <size_bytes> [md5_hash]
- * 2. Device responds: OK READY
- * 3. Host sends: OTA DATA <base64_chunk> (multiple times)
- * 4. Device responds: OK <bytes>/<total> (<percent>%)
- * 5. Host sends: OTA END
- * 6. Device verifies MD5 (if provided), writes firmware, reboots
  */
 
 #ifndef SERIAL_COMMAND_H
@@ -37,6 +19,8 @@
 // VERSION INFO
 // =============================================================================
 
+// APP_VERSION is defined as a compiler flag (-DAPP_VERSION="v1.x.x")
+// If not defined, fallback to "dev"
 #ifndef APP_VERSION
   #define APP_VERSION "dev"
 #endif
@@ -58,13 +42,11 @@
 
 /**
  * @brief Initialize serial command parser
- * Call once in setup() after Serial.begin()
  */
 void serialCommandInit();
 
 /**
  * @brief Process incoming serial data
- * Call in loop() to handle commands. Non-blocking.
  */
 void serialCommandProcess();
 
@@ -76,9 +58,6 @@ bool isCanLogEnabled();
 
 /**
  * @brief Check if OTA update is in progress
- * @return true if OTA START was called and not yet completed/aborted
- *
- * Use this to pause CAN processing during OTA for better throughput.
  */
 bool isOtaInProgress();
 
