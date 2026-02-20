@@ -35,6 +35,7 @@ jobs:
         run: pio run
         env:
           PLATFORMIO_BUILD_CACHE_DIR: .pio/cache
+          APP_VERSION: ${{ github.ref_name }}
 
       - name: Check Artifacts
         run: |

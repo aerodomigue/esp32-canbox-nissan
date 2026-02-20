@@ -37,8 +37,12 @@
 // VERSION INFO
 // =============================================================================
 
-#define FIRMWARE_VERSION "1.7.2"
-#define FIRMWARE_DATE    "2026-01-28"
+#ifndef APP_VERSION
+  #define APP_VERSION "1.7.3-dev"
+#endif
+
+#define FIRMWARE_VERSION APP_VERSION
+#define FIRMWARE_DATE    __DATE__
 
 // =============================================================================
 // CONFIGURATION
