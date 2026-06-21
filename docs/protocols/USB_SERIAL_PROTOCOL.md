@@ -73,7 +73,7 @@ Display all calibration parameters.
 === Current Configuration ===
 steerOffset  = 100    (center offset)
 steerInvert  = 1      (invert direction)
-steerScale   = 4      (scale x0.01)
+steerScale   = 300    (scale x0.0001)
 indTimeout   = 500    (indicator ms)
 rpmDiv       = 7      (RPM divisor)
 tankCap      = 45     (tank liters)
@@ -105,7 +105,7 @@ Configuration reset to defaults
 |-----------|------|-------|---------|-------------|
 | `steerOffset` | int16 | -500 to +500 | 100 | Steering center offset |
 | `steerInvert` | bool | 0/1 | 1 | Invert steering direction |
-| `steerScale` | uint8 | 1-200 | 4 | Scale factor (x0.01) |
+| `steerScale` | uint16 | 1-20000 | 300 | Scale factor (x0.0001). e.g. 200 = 0.0200x |
 | `indTimeout` | uint16 | 100-2000 | 500 | Indicator timeout (ms) |
 | `rpmDiv` | uint8 | 1-20 | 7 | RPM divisor |
 | `tankCap` | uint8 | 20-100 | 45 | Tank capacity (liters) |
