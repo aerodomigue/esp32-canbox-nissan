@@ -305,11 +305,11 @@ static void cfgSet(const char* param, const char* value) {
         configSetSteerInvert(val != 0);
     }
     else if (strcmp(paramLower, "steerscale") == 0) {
-        if (val < 1 || val > 200) {
-            printError("Value must be 1 to 200");
+        if (val < 1 || val > 20000) {
+            printError("Value must be 1 to 20000");
             return;
         }
-        configSetSteerScale((uint8_t)val);
+        configSetSteerScale((uint16_t)val);
     }
     else if (strcmp(paramLower, "indtimeout") == 0) {
         if (val < 100 || val > 2000) {
@@ -352,7 +352,7 @@ static void cfgList() {
     Serial.println("=== Current Configuration ===");
     Serial.printf("steerOffset  = %d    (center offset)\n", configGetSteerOffset());
     Serial.printf("steerInvert  = %d    (invert direction)\n", configGetSteerInvert() ? 1 : 0);
-    Serial.printf("steerScale   = %d    (scale x0.01)\n", configGetSteerScale());
+    Serial.printf("steerScale   = %d    (scale x0.0001)\n", configGetSteerScale());
     Serial.printf("indTimeout   = %d    (indicator ms)\n", configGetIndicatorTimeout());
     Serial.printf("rpmDiv       = %d    (RPM divisor)\n", configGetRpmDivisor());
     Serial.printf("tankCap      = %d    (tank liters)\n", configGetTankCapacity());
