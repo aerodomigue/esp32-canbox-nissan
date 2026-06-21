@@ -65,7 +65,7 @@ typedef struct {
 static const ParamDef params[] = {
     {"steerOffset",  "Steering center offset (-500 to +500)"},
     {"steerInvert",  "Invert steering (0/1)"},
-    {"steerScale",   "Steering scale (1-200, x0.01)"},
+    {"steerScale",   "Steering scale (1-20000, x0.0001). e.g. 200=0.0200x"},
     {"indTimeout",   "Indicator timeout ms (100-2000)"},
     {"rpmDiv",       "RPM divisor (1-20)"},
     {"tankCap",      "Tank capacity liters (20-100)"},
@@ -262,7 +262,7 @@ static void cfgGet(const char* param) {
         Serial.printf("steerInvert = %d\n", configGetSteerInvert() ? 1 : 0);
     }
     else if (strcmp(paramLower, "steerscale") == 0) {
-        Serial.printf("steerScale = %d\n", configGetSteerScale());
+        Serial.printf("steerScale = %u\n", configGetSteerScale());
     }
     else if (strcmp(paramLower, "indtimeout") == 0) {
         Serial.printf("indTimeout = %d\n", configGetIndicatorTimeout());
@@ -352,7 +352,7 @@ static void cfgList() {
     Serial.println("=== Current Configuration ===");
     Serial.printf("steerOffset  = %d    (center offset)\n", configGetSteerOffset());
     Serial.printf("steerInvert  = %d    (invert direction)\n", configGetSteerInvert() ? 1 : 0);
-    Serial.printf("steerScale   = %d    (scale x0.0001)\n", configGetSteerScale());
+    Serial.printf("steerScale   = %u    (scale x0.0001)\n", configGetSteerScale());
     Serial.printf("indTimeout   = %d    (indicator ms)\n", configGetIndicatorTimeout());
     Serial.printf("rpmDiv       = %d    (RPM divisor)\n", configGetRpmDivisor());
     Serial.printf("tankCap      = %d    (tank liters)\n", configGetTankCapacity());
