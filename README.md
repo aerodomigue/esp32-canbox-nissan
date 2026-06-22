@@ -20,7 +20,7 @@ The project started as a custom solution for the **Nissan Juke F15**, but has si
 **Key features:**
 - **Multi-vehicle support** — Vehicle-specific CAN mappings are defined in JSON configuration files, making it easy to add support for new cars
 - **Protocol translation** — Converts manufacturer-specific CAN data to head unit protocols (Toyota RAV4, Raise/RZC)
-- **No recompilation needed** — Switch vehicles or adjust calibration via USB commands
+- **No recompilation needed** — Switch vehicles, adjust calibration via USB commands, or embed model-specific calibration directly in the vehicle JSON preset (`vehicleParams`)
 
 > **Important:** In your head unit settings, configure the CAN protocol as **"Toyota RAV4"** for this to work.
 
@@ -201,7 +201,7 @@ The system is designed to be 100% autonomous and resilient to vehicle electrical
 
 1. **[CAN Capture](docs/technical/CAN_CAPTURE.md)**: Decodes frames using JSON configuration and updates global variables
 2. **[Radio Send](docs/technical/RADIO_SEND.md)**: Formats and transmits data to the head unit at multiple intervals (200ms for steering, 333ms for RPM, 500ms for speed, etc.)
-3. **ConfigManager**: Persistent calibration storage (NVS)
+3. **ConfigManager**: Persistent calibration storage (NVS). Vehicle JSON files can embed `vehicleParams` to supply model-specific defaults applied automatically on first load; user overrides via `CFG SET` are preserved across reboots on the same vehicle
 4. **SerialCommand**: USB configuration interface
 5. **Hardware Watchdog**: Automatic reboot if the program freezes for more than 5 seconds
 6. **CAN Watchdog**: Forces reboot if no CAN data received for 30s while battery > 11V

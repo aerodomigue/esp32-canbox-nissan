@@ -1,6 +1,15 @@
 {
   "name": "Nissan Juke F15",
   "isMock": false,
+  "vehicleParams": {
+    "steerScale": 300,
+    "steerOffset": 100,
+    "steerInvert": true,
+    "indTimeout": null,
+    "rpmDiv": null,
+    "tankCap": null,
+    "dteDiv": null
+  },
   "frames": [
     {
       "canId": "0x002",

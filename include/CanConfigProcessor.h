@@ -29,6 +29,7 @@
 
 #include <Arduino.h>
 #include <ESP32-TWAI-CAN.hpp>
+#include <ArduinoJson.h>
 #include "VehicleConfig.h"
 
 /**
@@ -146,6 +147,15 @@ private:
      * @param value Converted value to write
      */
     void writeToGlobalData(OutputField target, int32_t value);
+
+    /**
+     * @brief Apply vehicleParams overrides from JSON to in-memory config.
+     *
+     * Called only on vehicle switch, after configReset(). Each non-null key
+     * overrides the corresponding CanboxConfig field. Caller must call
+     * configSave() afterwards to persist.
+     */
+    void applyVehicleParams(JsonObjectConst params);
 };
 
 #endif // CAN_CONFIG_PROCESSOR_H

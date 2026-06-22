@@ -17,7 +17,7 @@
 
 #define DEFAULT_STEER_OFFSET        100     // Center offset for steering
 #define DEFAULT_STEER_INVERT        true    // Invert steering direction
-#define DEFAULT_STEER_SCALE         3       // Scale percentage (3 = 0.03x)
+#define DEFAULT_STEER_SCALE         300     // Scale (300 = 0.0300x, unit x0.0001)
 #define DEFAULT_INDICATOR_TIMEOUT   500     // Indicator timeout in ms
 #define DEFAULT_RPM_DIVISOR         7       // RPM = raw_value / 7
 #define DEFAULT_TANK_CAPACITY       45      // Tank size in liters
@@ -30,7 +30,7 @@
 struct CanboxConfig {
     int16_t  steerOffset;       // Steering center offset (-500 to +500)
     bool     steerInvert;       // Invert steering direction
-    uint8_t  steerScale;        // Scale factor (1-200, represents 0.01x to 2.0x)
+    uint16_t steerScale;        // Scale factor (1-20000, represents 0.0001x to 2.0x)
     uint16_t indicatorTimeout;  // Indicator off timeout in ms
     uint8_t  rpmDivisor;        // RPM divisor (typically 7)
     uint8_t  tankCapacity;      // Fuel tank capacity in liters
@@ -69,7 +69,7 @@ const CanboxConfig* configGet();
 
 int16_t  configGetSteerOffset();
 bool     configGetSteerInvert();
-uint8_t  configGetSteerScale();
+uint16_t configGetSteerScale();
 uint16_t configGetIndicatorTimeout();
 uint8_t  configGetRpmDivisor();
 uint8_t  configGetTankCapacity();
@@ -81,7 +81,7 @@ uint16_t configGetDteDivisor();
 
 void configSetSteerOffset(int16_t value);
 void configSetSteerInvert(bool value);
-void configSetSteerScale(uint8_t value);
+void configSetSteerScale(uint16_t value);
 void configSetIndicatorTimeout(uint16_t value);
 void configSetRpmDivisor(uint8_t value);
 void configSetTankCapacity(uint8_t value);

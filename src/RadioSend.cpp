@@ -328,8 +328,8 @@ void processRadioUpdates() {
         // Step 1: Apply center offset from config
         int32_t centered = (int32_t)currentSteer + configGetSteerOffset();
 
-        // Step 2: Apply scale factor from config (percent, 100 = 1.0x)
-        int32_t angleRAV4 = (centered * configGetSteerScale()) / 100;
+        // Step 2: Apply scale factor from config (unit x0.0001, 10000 = 1.0x)
+        int32_t angleRAV4 = (centered * configGetSteerScale()) / 10000;
 
         // Step 3: Invert direction if configured
         if (configGetSteerInvert()) {

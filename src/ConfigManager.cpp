@@ -54,7 +54,7 @@ void configInit() {
         // Load saved values (use current defaults if key doesn't exist)
         config.steerOffset      = prefs.getShort(KEY_STEER_OFFSET, config.steerOffset);
         config.steerInvert      = prefs.getBool(KEY_STEER_INVERT, config.steerInvert);
-        config.steerScale       = prefs.getUChar(KEY_STEER_SCALE, config.steerScale);
+        config.steerScale       = prefs.getUShort(KEY_STEER_SCALE, config.steerScale);
         config.indicatorTimeout = prefs.getUShort(KEY_IND_TIMEOUT, config.indicatorTimeout);
         config.rpmDivisor       = prefs.getUChar(KEY_RPM_DIVISOR, config.rpmDivisor);
         config.tankCapacity     = prefs.getUChar(KEY_TANK_CAPACITY, config.tankCapacity);
@@ -68,7 +68,7 @@ void configSave() {
     if (prefs.begin(NVS_NAMESPACE, false)) { // false = read-write mode
         prefs.putShort(KEY_STEER_OFFSET, config.steerOffset);
         prefs.putBool(KEY_STEER_INVERT, config.steerInvert);
-        prefs.putUChar(KEY_STEER_SCALE, config.steerScale);
+        prefs.putUShort(KEY_STEER_SCALE, config.steerScale);
         prefs.putUShort(KEY_IND_TIMEOUT, config.indicatorTimeout);
         prefs.putUChar(KEY_RPM_DIVISOR, config.rpmDivisor);
         prefs.putUChar(KEY_TANK_CAPACITY, config.tankCapacity);
@@ -104,7 +104,7 @@ bool configGetSteerInvert() {
     return config.steerInvert;
 }
 
-uint8_t configGetSteerScale() {
+uint16_t configGetSteerScale() {
     return config.steerScale;
 }
 
@@ -136,7 +136,7 @@ void configSetSteerInvert(bool value) {
     config.steerInvert = value;
 }
 
-void configSetSteerScale(uint8_t value) {
+void configSetSteerScale(uint16_t value) {
     config.steerScale = value;
 }
 
