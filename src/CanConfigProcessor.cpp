@@ -191,20 +191,85 @@ bool CanConfigProcessor::loadFromJson(const char* path) {
     // Update mock mode flag from config
     _mockMode = _profile.isMock;
 
-    // Check if config is valid (mock can have empty frames, real needs frames)
     bool isValid = _profile.isMock || _profile.frames.size() > 0;
 
-    // Save the loaded config filename to NVS for persistence
     if (isValid) {
-        // Extract filename from path (remove leading /)
-        const char* filename = path;
-        if (filename[0] == '/') {
-            filename++;
+        const char* filename = (path[0] == '/') ? path + 1 : path;
+        const char* currentFile = configGetVehicleFile();
+        bool isVehicleSwitch = (currentFile[0] == '\0') || (strcmp(currentFile, filename) != 0);
+
+        if (isVehicleSwitch) {
+            if (currentFile[0] != '\0') {
+                Serial.printf("[CanConfig] Vehicle switch: '%s' → '%s'\n", currentFile, filename);
+            }
+            configReset();
+            JsonObjectConst vp = doc["vehicleParams"];
+            if (vp) {
+                applyVehicleParams(vp);
+            }
+            configSave();
+        } else {
+            Serial.printf("[CanConfig] Same vehicle — calibration preserved from NVS\n");
         }
+
         configSetVehicleFile(filename);
     }
 
     return isValid;
+}
+
+// =============================================================================
+// VEHICLE PARAMS
+// =============================================================================
+
+void CanConfigProcessor::applyVehicleParams(JsonObjectConst params) {
+    int applied = 0;
+    JsonVariantConst v;
+
+    v = params["steerScale"];
+    if (!v.isNull()) {
+        configSetSteerScale(v.as<uint16_t>());
+        Serial.printf("[CanConfig] vehicleParam: steerScale = %u\n", v.as<uint16_t>());
+        applied++;
+    }
+    v = params["steerOffset"];
+    if (!v.isNull()) {
+        configSetSteerOffset(v.as<int16_t>());
+        Serial.printf("[CanConfig] vehicleParam: steerOffset = %d\n", v.as<int16_t>());
+        applied++;
+    }
+    v = params["steerInvert"];
+    if (!v.isNull()) {
+        configSetSteerInvert(v.as<bool>());
+        Serial.printf("[CanConfig] vehicleParam: steerInvert = %d\n", (int)v.as<bool>());
+        applied++;
+    }
+    v = params["indTimeout"];
+    if (!v.isNull()) {
+        configSetIndicatorTimeout(v.as<uint16_t>());
+        Serial.printf("[CanConfig] vehicleParam: indTimeout = %u\n", v.as<uint16_t>());
+        applied++;
+    }
+    v = params["rpmDiv"];
+    if (!v.isNull()) {
+        configSetRpmDivisor(v.as<uint8_t>());
+        Serial.printf("[CanConfig] vehicleParam: rpmDiv = %u\n", v.as<uint8_t>());
+        applied++;
+    }
+    v = params["tankCap"];
+    if (!v.isNull()) {
+        configSetTankCapacity(v.as<uint8_t>());
+        Serial.printf("[CanConfig] vehicleParam: tankCap = %u\n", v.as<uint8_t>());
+        applied++;
+    }
+    v = params["dteDiv"];
+    if (!v.isNull()) {
+        configSetDteDivisor(v.as<uint16_t>());
+        Serial.printf("[CanConfig] vehicleParam: dteDiv = %u\n", v.as<uint16_t>());
+        applied++;
+    }
+
+    Serial.printf("[CanConfig] %d vehicle param(s) applied\n", applied);
 }
 
 // =============================================================================

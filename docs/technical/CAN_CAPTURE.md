@@ -108,6 +108,22 @@ Bytes [0-2] form a **24-bit status word** (Big Endian BITMASK). Individual bits 
 
 The capture relies on the **ESP32-TWAI-CAN** library.
 
+### Boot Initialisation
+
+Before any CAN frame is processed, `CanConfigProcessor::begin()` runs once during `setup()`:
+
+```
+1. LittleFS mounted
+2. Vehicle JSON file located (NVS → /vehicle.json → /NissanJukeF15.json)
+3. JSON parsed: name, isMock, vehicleParams, frames
+4. Vehicle switch detection:
+   ├─ Same file as previously loaded → NVS calibration preserved, vehicleParams skipped
+   └─ Different file (or first boot) → configReset() → vehicleParams applied → configSave()
+5. CAN frame processing begins
+```
+
+The `vehicleParams` section in the JSON file allows a preset to carry its own calibration defaults (steering scale, offsets, tank capacity, etc.). These override NVS on vehicle switch but never overwrite user customisations made via `CFG SET` on the same vehicle. See [Vehicle Parameters](../VEHICLE_PRESET_GUIDE.md#vehicle-parameters-vehicleparams) for the full key reference.
+
 ### Processing Pipeline
 
 ```

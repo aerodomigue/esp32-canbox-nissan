@@ -1,5 +1,5 @@
 {
-  "name": "Mock Demo",
+  "name": "Test Vehicle Empty Params",
   "isMock": true,
   "vehicleParams": {},
   "frames": []
