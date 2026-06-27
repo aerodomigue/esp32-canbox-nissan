@@ -36,11 +36,19 @@ typedef unsigned int   word;
 typedef bool           boolean;
 
 // Arduino utility macros
+// In C++ mode use std::min/std::max to avoid macro conflicts with GCC 13 STL
+// (function-like macros break stl_bvector.h template instantiation under GCC ≥ 13)
+#ifdef __cplusplus
+#include <algorithm>
+using std::min;
+using std::max;
+#else
 #ifndef min
 #define min(a,b) ((a)<(b)?(a):(b))
 #endif
 #ifndef max
 #define max(a,b) ((a)>(b)?(a):(b))
+#endif
 #endif
 
 // millis() stub
