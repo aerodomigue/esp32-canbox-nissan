@@ -7,6 +7,10 @@ on:
         description: Firmware version string written into version.h
         type: string
         required: true
+      upload-artifacts:
+        description: Upload firmware artifacts after build (false for PRs)
+        type: boolean
+        default: false
       update-cache:
         description: Allow writing to the cache (false for PRs to avoid polluting prod cache)
         type: boolean
@@ -109,6 +113,7 @@ jobs:
         run: pio run -e esp32-c3-devkitm-1
 
       - name: Upload firmware artifacts
+        if: ${{ inputs.upload-artifacts }}
         uses: actions/upload-artifact@v4
         with:
           name: firmware
