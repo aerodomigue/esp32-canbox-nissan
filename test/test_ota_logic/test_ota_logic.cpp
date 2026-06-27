@@ -134,48 +134,35 @@ void test_base64_decode_roundtrip_180_bytes() {
 }
 
 // =============================================================================
-// CRC32 tests
+// CRC32 tests — init=0, no final XOR (matches firmware crc32_le(0,...))
+// Compatible: Android OtaProtocol.kt custom impl, Python binascii.crc32(data, 0)
 // =============================================================================
 
-// Standard CRC32 helper matching firmware and java.util.zip.CRC32:
-//   init=0xFFFFFFFF, final XOR 0xFFFFFFFF
-// This is also what zlib.crc32(data) returns in Python.
-static uint32_t std_crc32(const uint8_t* data, size_t len) {
-    return crc32_le(0xFFFFFFFFU, data, len) ^ 0xFFFFFFFFU;
-}
-
-void test_crc32_known_reference_vector() {
-    // ISO 3309 reference: CRC32("123456789") = 0xCBF43926
+void test_crc32_known_value() {
+    // crc32_le(0, "123456789", 9) = 0x2DFD2D88 (confirmed by CI)
     const uint8_t data[] = {'1','2','3','4','5','6','7','8','9'};
-    TEST_ASSERT_EQUAL_HEX32(0xCBF43926U, std_crc32(data, sizeof(data)));
+    TEST_ASSERT_EQUAL_HEX32(0x2DFD2D88U, crc32_le(0, data, sizeof(data)));
 }
 
 void test_crc32_empty_input() {
-    // CRC32 of empty = 0xFFFFFFFF ^ 0xFFFFFFFF = 0
-    TEST_ASSERT_EQUAL_HEX32(0x00000000U, std_crc32(nullptr, 0));
-}
-
-void test_crc32_single_byte() {
-    // Standard CRC32 of {0x00} = 0xD202EF8D (known reference)
-    const uint8_t data[] = {0x00};
-    TEST_ASSERT_EQUAL_HEX32(0xD202EF8DU, std_crc32(data, 1));
+    // init=0, no bytes → stays 0
+    TEST_ASSERT_EQUAL_HEX32(0x00000000U, crc32_le(0, nullptr, 0));
 }
 
 void test_crc32_chained_matches_single_call() {
-    // Chaining: crc32(crc32_raw(a), b) ^ XOR == crc32(a+b)
+    // crc32_le(crc32_le(0, a, n), b, m) == crc32_le(0, a+b, n+m)
     const uint8_t a[]  = {0x01, 0x02, 0x03};
     const uint8_t b[]  = {0x04, 0x05, 0x06};
     const uint8_t ab[] = {0x01, 0x02, 0x03, 0x04, 0x05, 0x06};
-    // Chain: intermediate state (no XOR) is fed into next call, XOR only at the end
-    uint32_t chained = crc32_le(crc32_le(0xFFFFFFFFU, a, sizeof(a)), b, sizeof(b)) ^ 0xFFFFFFFFU;
-    uint32_t single  = std_crc32(ab, sizeof(ab));
+    uint32_t chained = crc32_le(crc32_le(0, a, sizeof(a)), b, sizeof(b));
+    uint32_t single  = crc32_le(0, ab, sizeof(ab));
     TEST_ASSERT_EQUAL_HEX32(single, chained);
 }
 
 void test_crc32_mismatch_detected() {
     const uint8_t data[]      = {0xDE, 0xAD, 0xBE, 0xEF};
     const uint8_t corrupted[] = {0xDE, 0xAD, 0xBE, 0xEE};  // last byte flipped
-    TEST_ASSERT_NOT_EQUAL(std_crc32(data, sizeof(data)), std_crc32(corrupted, sizeof(corrupted)));
+    TEST_ASSERT_NOT_EQUAL(crc32_le(0, data, sizeof(data)), crc32_le(0, corrupted, sizeof(corrupted)));
 }
 
 // =============================================================================
@@ -193,9 +180,8 @@ int main(int argc, char** argv) {
     RUN_TEST(test_base64_decode_buffer_overflow_returns_zero);
     RUN_TEST(test_base64_decode_roundtrip_180_bytes);
 
-    RUN_TEST(test_crc32_known_reference_vector);
+    RUN_TEST(test_crc32_known_value);
     RUN_TEST(test_crc32_empty_input);
-    RUN_TEST(test_crc32_single_byte);
     RUN_TEST(test_crc32_chained_matches_single_call);
     RUN_TEST(test_crc32_mismatch_detected);
 
