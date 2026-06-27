@@ -120,12 +120,11 @@ void test_base64_decode_buffer_overflow_returns_zero() {
 }
 
 void test_base64_decode_roundtrip_180_bytes() {
-    // 240 base64 chars should decode to exactly 180 bytes
-    // "AAAA" repeated 60 times = 60*3 = 180 zero bytes
-    const char* b64 = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
-                      "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
-                      "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
-                      "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+    // 240 base64 chars ("AAAA" x60) decode to exactly 180 zero bytes
+    const char* b64 = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"  // 64
+                      "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"  // 64
+                      "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"  // 64
+                      "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";               // 48 → total 240
     uint8_t out[256];
     size_t n = base64Decode(b64, out, sizeof(out));
     TEST_ASSERT_EQUAL_size_t(180, n);
@@ -138,41 +137,45 @@ void test_base64_decode_roundtrip_180_bytes() {
 // CRC32 tests
 // =============================================================================
 
+// Standard CRC32 helper matching firmware and java.util.zip.CRC32:
+//   init=0xFFFFFFFF, final XOR 0xFFFFFFFF
+// This is also what zlib.crc32(data) returns in Python.
+static uint32_t std_crc32(const uint8_t* data, size_t len) {
+    return crc32_le(0xFFFFFFFFU, data, len) ^ 0xFFFFFFFFU;
+}
+
 void test_crc32_known_reference_vector() {
-    // CRC32 of "123456789" = 0xCBF43926 (ISO 3309 reference vector)
+    // ISO 3309 reference: CRC32("123456789") = 0xCBF43926
     const uint8_t data[] = {'1','2','3','4','5','6','7','8','9'};
-    uint32_t crc = crc32_le(0, data, sizeof(data));
-    TEST_ASSERT_EQUAL_HEX32(0xCBF43926U, crc);
+    TEST_ASSERT_EQUAL_HEX32(0xCBF43926U, std_crc32(data, sizeof(data)));
 }
 
 void test_crc32_empty_input() {
-    uint32_t crc = crc32_le(0, nullptr, 0);
-    TEST_ASSERT_EQUAL_HEX32(0x00000000U, crc);
+    // CRC32 of empty = 0xFFFFFFFF ^ 0xFFFFFFFF = 0
+    TEST_ASSERT_EQUAL_HEX32(0x00000000U, std_crc32(nullptr, 0));
 }
 
 void test_crc32_single_byte() {
-    // CRC32 of {0x00} = 0xD202EF8D
+    // Standard CRC32 of {0x00} = 0xD202EF8D (known reference)
     const uint8_t data[] = {0x00};
-    uint32_t crc = crc32_le(0, data, 1);
-    TEST_ASSERT_EQUAL_HEX32(0xD202EF8DU, crc);
+    TEST_ASSERT_EQUAL_HEX32(0xD202EF8DU, std_crc32(data, 1));
 }
 
 void test_crc32_chained_matches_single_call() {
-    // crc32(crc32(a), b) == crc32(a+b)
-    const uint8_t a[] = {0x01, 0x02, 0x03};
-    const uint8_t b[] = {0x04, 0x05, 0x06};
+    // Chaining: crc32(crc32_raw(a), b) ^ XOR == crc32(a+b)
+    const uint8_t a[]  = {0x01, 0x02, 0x03};
+    const uint8_t b[]  = {0x04, 0x05, 0x06};
     const uint8_t ab[] = {0x01, 0x02, 0x03, 0x04, 0x05, 0x06};
-    uint32_t chained = crc32_le(crc32_le(0, a, sizeof(a)), b, sizeof(b));
-    uint32_t single  = crc32_le(0, ab, sizeof(ab));
+    // Chain: intermediate state (no XOR) is fed into next call, XOR only at the end
+    uint32_t chained = crc32_le(crc32_le(0xFFFFFFFFU, a, sizeof(a)), b, sizeof(b)) ^ 0xFFFFFFFFU;
+    uint32_t single  = std_crc32(ab, sizeof(ab));
     TEST_ASSERT_EQUAL_HEX32(single, chained);
 }
 
 void test_crc32_mismatch_detected() {
-    const uint8_t data[]       = {0xDE, 0xAD, 0xBE, 0xEF};
-    const uint8_t corrupted[]  = {0xDE, 0xAD, 0xBE, 0xEE};  // last byte flipped
-    uint32_t crc_good = crc32_le(0, data, sizeof(data));
-    uint32_t crc_bad  = crc32_le(0, corrupted, sizeof(corrupted));
-    TEST_ASSERT_NOT_EQUAL(crc_good, crc_bad);
+    const uint8_t data[]      = {0xDE, 0xAD, 0xBE, 0xEF};
+    const uint8_t corrupted[] = {0xDE, 0xAD, 0xBE, 0xEE};  // last byte flipped
+    TEST_ASSERT_NOT_EQUAL(std_crc32(data, sizeof(data)), std_crc32(corrupted, sizeof(corrupted)));
 }
 
 // =============================================================================

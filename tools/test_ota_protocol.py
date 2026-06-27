@@ -17,10 +17,10 @@ The test requires the ESP32 to be connected and running the v2 firmware.
 
 import argparse
 import base64
-import binascii
 import hashlib
 import sys
 import time
+import zlib
 
 import serial
 
@@ -84,8 +84,8 @@ def drain(ser: serial.Serial, duration_s: float = 1.0) -> None:
 # ---------------------------------------------------------------------------
 
 def crc32_hex(data: bytes) -> str:
-    """CRC32 compatible with esp_rom_crc32_le / Java CRC32 / Python binascii."""
-    return f"{binascii.crc32(data) & 0xFFFFFFFF:08x}"
+    """Standard CRC32 matching firmware (init=0xFFFFFFFF+XOR) and java.util.zip.CRC32."""
+    return f"{zlib.crc32(data) & 0xFFFFFFFF:08x}"
 
 
 def md5_hex(data: bytes) -> str:
@@ -113,7 +113,7 @@ def send_chunk(ser: serial.Serial, chunk: bytes, with_crc: bool = True) -> list[
 
 def corrupt_crc(chunk: bytes) -> str:
     """Return a wrong CRC32 for the given chunk."""
-    correct = binascii.crc32(chunk) & 0xFFFFFFFF
+    correct = zlib.crc32(chunk) & 0xFFFFFFFF
     return f"{correct ^ 0xFFFFFFFF:08x}"
 
 
