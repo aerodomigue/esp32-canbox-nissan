@@ -265,15 +265,23 @@ data class Asset(
    b. Attend reconnexion USB
    c. Flash via protocole esptool
        ↓
-   Si échec esptool → Fallback OTA:
-   a. Envoie "OTA START <size> <md5>"
-   b. Envoie chunks base64
-   c. Envoie "OTA END"
+   Si échec esptool → Fallback OTA (protocole v2):
+   a. Pre-flight: "OTA ABORT" + drain 1s
+   b. "OTA START <size> <md5>"
+   c. Pour chaque chunk (180 bytes):
+      - Calcule CRC32 du chunk binaire
+      - Envoie "OTA DATA <base64> <crc32>"
+      - Attend OK: si CRC mismatch → retry chunk (3x max)
+      - Si timeout → OTA ABORT + restart complet
+   d. "OTA END"
        ↓
 5. Device redémarre
        ↓
 6. Vérifie nouvelle version avec "SYS INFO"
 ```
+
+> **Implémentation OTA:** voir `docs/protocols/OTA_PROTOCOL.md` pour le protocole v2 complet
+> et l'exemple Kotlin (`OtaUpdater` class) à utiliser dans `UpdateViewModel.kt`.
 
 ### Fonctionnalités
 - [ ] Fetch releases depuis GitHub API

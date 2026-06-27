@@ -8,12 +8,12 @@
  */
 
 #include "SerialCommand.h"
+#include "base64.h"
 #include "ConfigManager.h"
 #include "GlobalData.h"
 #include "CanConfigProcessor.h"
 #include <LittleFS.h>
 #include <ArduinoJson.h>
-#include <libb64/cdecode.h>
 #include <Update.h>
 #include <MD5Builder.h>
 #include <esp_task_wdt.h>
@@ -46,11 +46,25 @@ static uint8_t* uploadBuffer = nullptr;
 // OTA UPDATE STATE
 // =============================================================================
 
+#define OTA_DATA_TIMEOUT_MS 60000UL  // Auto-abort if no DATA received for 60s
+
 static bool otaInProgress = false;
 static uint32_t otaExpectedSize = 0;
 static uint32_t otaReceivedSize = 0;
 static char otaExpectedMD5[33] = {0};  // 32 hex chars + null
 static MD5Builder otaMD5;
+static unsigned long otaLastDataTime = 0;  // millis() of last OTA START/DATA
+
+// Software CRC32 (ISO 3309 / ITU-T V.42) — compatible with Java CRC32 and Python binascii.crc32
+static uint32_t crc32_le(uint32_t crc, const uint8_t* buf, size_t len) {
+    for (size_t i = 0; i < len; i++) {
+        crc ^= buf[i];
+        for (int j = 0; j < 8; j++) {
+            crc = (crc >> 1) ^ (0xEDB88320U & -(crc & 1U));
+        }
+    }
+    return crc;
+}
 
 // =============================================================================
 // PARAMETER DEFINITIONS
@@ -100,12 +114,11 @@ static void canUploadEnd();
 static void canUploadAbort();
 
 static void otaStart(uint32_t size, const char* md5);
-static void otaData(const char* base64Data);
+static void otaData(const char* base64Data, bool hasCrc, uint32_t expectedCrc);
 static void otaEnd();
 static void otaAbort();
 static void otaStatus();
 
-static size_t base64Decode(const char* input, uint8_t* output, size_t maxLen);
 static void printOK();
 static void printError(const char* msg);
 
@@ -128,7 +141,7 @@ void serialCommandProcess() {
         if (c == '\b' || c == 127) {
             if (cmdIndex > 0) {
                 cmdIndex--;
-                Serial.print("\b \b"); // Erase character on terminal
+                if (!otaInProgress) Serial.print("\b \b");
             }
             continue;
         }
@@ -137,7 +150,7 @@ void serialCommandProcess() {
         if (c == '\n' || c == '\r') {
             if (cmdIndex > 0) {
                 cmdBuffer[cmdIndex] = '\0';
-                Serial.println(); // Echo newline
+                if (!otaInProgress) Serial.println();
                 processCommand(cmdBuffer);
                 cmdIndex = 0;
             }
@@ -147,7 +160,7 @@ void serialCommandProcess() {
         // Add character to buffer (with overflow protection)
         if (cmdIndex < CMD_BUFFER_SIZE - 1) {
             cmdBuffer[cmdIndex++] = c;
-            Serial.print(c); // Echo character
+            if (!otaInProgress) Serial.print(c);
         }
     }
 }
@@ -158,6 +171,14 @@ bool isCanLogEnabled() {
 
 bool isOtaInProgress() {
     return otaInProgress;
+}
+
+void serialCommandCheckOtaTimeout() {
+    if (otaInProgress && otaLastDataTime > 0 &&
+        millis() - otaLastDataTime > OTA_DATA_TIMEOUT_MS) {
+        Serial.println("OTA timeout: no data for 60s, aborting");
+        otaAbort();
+    }
 }
 
 // =============================================================================
@@ -737,20 +758,6 @@ static void canUploadAbort() {
     Serial.println("Upload aborted");
 }
 
-/**
- * @brief Decode base64 string to binary
- * @return Number of bytes decoded
- */
-static size_t base64Decode(const char* input, uint8_t* output, size_t maxLen) {
-    base64_decodestate state;
-    base64_init_decodestate(&state);
-
-    size_t inputLen = strlen(input);
-    int decoded = base64_decode_block(input, inputLen, (char*)output, &state);
-
-    return (decoded > 0 && (size_t)decoded <= maxLen) ? decoded : 0;
-}
-
 // =============================================================================
 // OTA COMMAND HANDLER
 // =============================================================================
@@ -797,9 +804,22 @@ static void handleOtaCommand(const char* args) {
         if (dataStart) {
             dataStart += 5;  // Skip "DATA "
             while (*dataStart == ' ') dataStart++;
-            otaData(dataStart);
+
+            // Split base64 from optional CRC32 (base64 has no spaces)
+            const char* spaceAfterB64 = strchr(dataStart, ' ');
+            if (spaceAfterB64) {
+                static char base64Buf[CMD_BUFFER_SIZE];
+                size_t b64Len = (size_t)(spaceAfterB64 - dataStart);
+                if (b64Len >= sizeof(base64Buf)) b64Len = sizeof(base64Buf) - 1;
+                memcpy(base64Buf, dataStart, b64Len);
+                base64Buf[b64Len] = '\0';
+                uint32_t expectedCrc = (uint32_t)strtoul(spaceAfterB64 + 1, nullptr, 16);
+                otaData(base64Buf, true, expectedCrc);
+            } else {
+                otaData(dataStart, false, 0);
+            }
         } else {
-            printError("Usage: OTA DATA <base64_data>");
+            printError("Usage: OTA DATA <base64_data> [crc32_hex]");
         }
     }
     else if (strcmp(subCmd, "END") == 0) {
@@ -859,37 +879,57 @@ static void otaStart(uint32_t size, const char* md5) {
         return;
     }
 
+    // Drain any stale bytes that arrived before the OTA session
+    while (Serial.available()) Serial.read();
+
     // Initialize MD5 calculation
     otaMD5.begin();
 
     otaExpectedSize = size;
     otaReceivedSize = 0;
     otaInProgress = true;
+    otaLastDataTime = millis();
 
-    Serial.println("OK READY");
-    Serial.printf("OTA started: expecting %lu bytes\n", size);
+    // Send informational lines first, then the terminal OK READY line last.
+    // This ensures the Android client consumes all info before detecting OK.
+    Serial.printf("OTA starting: expecting %lu bytes\n", size);
     if (otaExpectedMD5[0]) {
-        Serial.printf("MD5 verification: %s\n", otaExpectedMD5);
+        Serial.printf("MD5: %s\n", otaExpectedMD5);
     }
+    Serial.flush();
+    Serial.println("OK READY");
 }
 
 /**
  * @brief Receive a chunk of base64-encoded firmware data
- * @param base64Data Base64 encoded firmware chunk
+ * @param base64Data  Base64 encoded firmware chunk
+ * @param hasCrc      Whether a CRC32 checksum was provided
+ * @param expectedCrc CRC32 of the decoded binary (0 if hasCrc is false)
  */
-static void otaData(const char* base64Data) {
+static void otaData(const char* base64Data, bool hasCrc, uint32_t expectedCrc) {
     if (!otaInProgress) {
         printError("No OTA in progress. Use OTA START first.");
         return;
     }
 
     // Decode base64 to binary
-    static uint8_t decodeBuffer[256];  // Decode buffer
+    static uint8_t decodeBuffer[256];
     size_t decoded = base64Decode(base64Data, decodeBuffer, sizeof(decodeBuffer));
 
     if (decoded == 0) {
         printError("Base64 decode failed");
         return;
+    }
+
+    // Verify CRC32 before writing — mismatch returns ERROR without aborting OTA
+    // so the Android client can safely retransmit the same chunk.
+    if (hasCrc) {
+        uint32_t actualCrc = crc32_le(0, decodeBuffer, decoded);
+        if (actualCrc != expectedCrc) {
+            Serial.printf("ERROR: CRC mismatch chunk (got %08lx expected %08lx)\n",
+                          actualCrc, expectedCrc);
+            return;  // otaInProgress and otaReceivedSize unchanged — chunk retry is safe
+        }
     }
 
     // Check for overflow
@@ -900,6 +940,9 @@ static void otaData(const char* base64Data) {
         return;
     }
 
+    // Feed the watchdog before the flash write — sector erase can take 20-100ms
+    esp_task_wdt_reset();
+
     // Write to flash
     size_t written = Update.write(decodeBuffer, decoded);
     if (written != decoded) {
@@ -909,15 +952,14 @@ static void otaData(const char* base64Data) {
         return;
     }
 
-    // Update MD5
+    // Update MD5 and counters
     otaMD5.add(decodeBuffer, decoded);
-
     otaReceivedSize += decoded;
+    otaLastDataTime = millis();
 
-    // Feed the watchdog during slow flash writes
+    // Feed the watchdog again after the write completes
     esp_task_wdt_reset();
 
-    // Progress response
     uint8_t percent = (otaReceivedSize * 100) / otaExpectedSize;
     Serial.printf("OK %lu/%lu (%d%%)\n", otaReceivedSize, otaExpectedSize, percent);
 }
@@ -988,6 +1030,7 @@ static void otaAbort() {
     otaReceivedSize = 0;
     otaExpectedSize = 0;
     otaExpectedMD5[0] = '\0';
+    otaLastDataTime = 0;
 
     Serial.println("OTA aborted");
 }
@@ -1123,9 +1166,9 @@ static void handleHelpCommand() {
     Serial.println("CAN UPLOAD START/DATA/END  Upload config");
     Serial.println("CAN RELOAD            Reload configuration");
     Serial.println();
-    Serial.println("OTA START <size> [md5]  Start firmware update");
-    Serial.println("OTA DATA <base64>       Send firmware chunk");
-    Serial.println("OTA END                 Finalize and reboot");
+    Serial.println("OTA START <size> [md5]       Start firmware update");
+    Serial.println("OTA DATA <base64> [crc32]    Send firmware chunk");
+    Serial.println("OTA END                      Finalize and reboot");
     Serial.println("OTA ABORT               Cancel update");
     Serial.println("OTA STATUS              Update status");
     Serial.println();

@@ -288,7 +288,9 @@ Upload aborted
 
 Update the device firmware over USB serial using base64-encoded chunks.
 
-#### Protocol Sequence
+> **Full specification:** see [`docs/protocols/OTA_PROTOCOL.md`](OTA_PROTOCOL.md)
+
+#### Protocol Sequence (v2)
 
 ```
 ┌─────────────┐                              ┌─────────────┐
@@ -296,23 +298,24 @@ Update the device firmware over USB serial using base64-encoded chunks.
 │     App     │                              │   CANBox    │
 └──────┬──────┘                              └──────┬──────┘
        │                                            │
-       │  OTA START <size> [md5_hash]               │
+       │  OTA ABORT          (pre-flight)           │
+       │───────────────────────────────────────────>│
+       │  OTA aborted  (drain 1s)                   │
+       │                                            │
+       │  OTA START <size> [md5]                    │
        │───────────────────────────────────────────>│
        │                                            │
-       │  OK READY                                  │
+       │  OTA starting: expecting <size> bytes      │  ← info lines first
        │<───────────────────────────────────────────│
-       │  OTA started: expecting <size> bytes       │
-       │                                            │
-       │  OTA DATA <base64_chunk_1>                 │
-       │───────────────────────────────────────────>│
-       │                                            │
-       │  OK 128/413648 (0%)                        │
+       │  MD5: <md5>                                │
+       │<───────────────────────────────────────────│
+       │  OK READY                                  │  ← terminal line (last)
        │<───────────────────────────────────────────│
        │                                            │
-       │  OTA DATA <base64_chunk_2>                 │
+       │  OTA DATA <base64> <crc32>                 │  ← no echo from ESP32
        │───────────────────────────────────────────>│
        │                                            │
-       │  OK 256/413648 (0%)                        │
+       │  OK 180/413648 (0%)                        │
        │<───────────────────────────────────────────│
        │                                            │
        │  ... (repeat until 100%)                   │
@@ -320,109 +323,40 @@ Update the device firmware over USB serial using base64-encoded chunks.
        │  OTA END                                   │
        │───────────────────────────────────────────>│
        │                                            │
-       │  MD5 verified OK (if provided)             │
+       │  MD5 verified OK                           │
        │<───────────────────────────────────────────│
        │  OK                                        │
-       │  Firmware updated successfully!            │
-       │  Rebooting in 2 seconds...                 │
+       │<───────────────────────────────────────────│
        │                                            │
-       ▼         [Device reboots]                   ▼
+       ▼         [Device reboots ~2s later]         ▼
 ```
 
 #### OTA START `<size>` `[md5]`
-Begin a firmware update session.
-
-- `size`: Exact firmware size in bytes (from the `.bin` file)
-- `md5`: Optional MD5 hash (32 hex characters) for verification
 
 ```
 > OTA START 413648 a1b2c3d4e5f6789012345678abcdef01
+OTA starting: expecting 413648 bytes
+MD5: a1b2c3d4e5f6789012345678abcdef01
 OK READY
-OTA started: expecting 413648 bytes
-MD5 verification: a1b2c3d4e5f6789012345678abcdef01
 ```
 
-**Without MD5 verification:**
-```
-> OTA START 413648
-OK READY
-OTA started: expecting 413648 bytes
-```
+Note: info lines come **before** `OK READY` (v2 change). Parse by scanning for the `OK` prefix.
 
-**Limits:**
-- Maximum size: Limited by free sketch space (~900KB on ESP32-C3)
-- Use `OTA STATUS` to check available space
-
-#### OTA DATA `<base64_data>`
-Send a chunk of base64-encoded firmware data.
+#### OTA DATA `<base64_data>` `[crc32_hex]`
 
 ```
-> OTA DATA UjBsR09EbGhBUUFCQUlBQUFBQUFBUC8vL3lINUJBRUFBQUFBTEFBQUFBQUJBQUVBQUFJQlJBQTc=
-OK 128/413648 (0%)
+> OTA DATA UjBsR09EbGhBUUFCQUlBQUFBQUFBUC8vL3lINUJBRUFBQUFBTEFBQUFBQUJBQUVBQUFJQlJBQTc= a1b2c3d4
+OK 180/413648 (0%)
 ```
 
-**Chunk Size Recommendations:**
-- Recommended chunk size: 128-192 bytes of raw firmware data
-- Base64 expands data by ~33%
-- Response includes progress percentage
+CRC32 is the hex checksum of the **decoded binary** chunk (not the base64 string).
+On CRC mismatch, the device returns `ERROR: CRC mismatch chunk ...` without aborting OTA — the same chunk can be retransmitted safely.
 
-#### OTA END
-Finalize the update, verify MD5 (if provided), and reboot.
+Auto-abort: if no `OTA DATA` is received for **60 seconds**, OTA is aborted automatically.
 
-```
-> OTA END
-MD5 verified OK
-OK
-Firmware updated successfully!
-Rebooting in 2 seconds...
-```
+#### OTA END / OTA ABORT / OTA STATUS
 
-**Verification Steps:**
-1. Check all data received (size matches)
-2. Verify MD5 hash (if provided at START)
-3. Write to flash partition
-4. Automatic reboot after 2 seconds
-
-**If MD5 mismatch:**
-```
-> OTA END
-ERROR: MD5 mismatch!
-  Expected: a1b2c3d4e5f6789012345678abcdef01
-  Got:      deadbeefcafe1234567890abcdef0123
-OTA aborted
-```
-
-#### OTA ABORT
-Cancel an in-progress update.
-
-```
-> OTA ABORT
-OTA aborted
-```
-
-#### OTA STATUS
-Show current OTA status and available space.
-
-```
-> OTA STATUS
-=== OTA Status ===
-Update in progress: NO
-Free sketch space: 917504 bytes
-Current firmware size: 413648 bytes
-==================
-```
-
-**During update:**
-```
-> OTA STATUS
-=== OTA Status ===
-Update in progress: YES
-Progress: 206824 / 413648 bytes (50%)
-Expected MD5: a1b2c3d4e5f6789012345678abcdef01
-Free sketch space: 917504 bytes
-Current firmware size: 413648 bytes
-==================
-```
+Unchanged from v1. See [`docs/protocols/OTA_PROTOCOL.md`](OTA_PROTOCOL.md) for full details.
 
 ---
 

@@ -57,4 +57,10 @@ bool isCanLogEnabled();
  */
 bool isOtaInProgress();
 
+/**
+ * @brief Auto-abort OTA if no DATA received within OTA_DATA_TIMEOUT_MS.
+ * Call from loop() when OTA is active.
+ */
+void serialCommandCheckOtaTimeout();
+
 #endif // SERIAL_COMMAND_H
