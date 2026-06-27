@@ -7,6 +7,10 @@ on:
         description: Firmware version string written into version.h
         type: string
         required: true
+      update-cache:
+        description: Allow writing to the cache (false for PRs to avoid polluting prod cache)
+        type: boolean
+        default: false
 
 jobs:
   test:
@@ -21,7 +25,20 @@ jobs:
         with:
           python-version: '3.x'
 
-      - name: Cache PlatformIO
+      - name: Restore cache (read-only)
+        if: ${{ !inputs.update-cache }}
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ~/.cache/pip
+            ~/.platformio
+            .pio
+          key: ${{ runner.os }}-pio-native-${{ hashFiles('**/platformio.ini') }}
+          restore-keys: |
+            ${{ runner.os }}-pio-native-
+
+      - name: Cache (read-write)
+        if: ${{ inputs.update-cache }}
         uses: actions/cache@v4
         with:
           path: |
@@ -52,7 +69,20 @@ jobs:
         with:
           python-version: '3.x'
 
-      - name: Cache PlatformIO
+      - name: Restore cache (read-only)
+        if: ${{ !inputs.update-cache }}
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ~/.cache/pip
+            ~/.platformio
+            .pio
+          key: ${{ runner.os }}-pio-esp32-${{ hashFiles('**/platformio.ini') }}
+          restore-keys: |
+            ${{ runner.os }}-pio-esp32-
+
+      - name: Cache (read-write)
+        if: ${{ inputs.update-cache }}
         uses: actions/cache@v4
         with:
           path: |

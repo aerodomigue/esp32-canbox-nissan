@@ -13,6 +13,7 @@ jobs:
     uses: ./.github/workflows/ci.yml
     with:
       version: ${{ github.ref_name }}
+      update-cache: true
 
   package:
     name: Package and Release
