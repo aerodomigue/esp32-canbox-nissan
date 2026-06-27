@@ -924,7 +924,7 @@ static void otaData(const char* base64Data, bool hasCrc, uint32_t expectedCrc) {
     // Verify CRC32 before writing — mismatch returns ERROR without aborting OTA
     // so the Android client can safely retransmit the same chunk.
     if (hasCrc) {
-        uint32_t actualCrc = crc32_le(0xFFFFFFFFU, decodeBuffer, decoded) ^ 0xFFFFFFFFU;
+        uint32_t actualCrc = crc32_le(0, decodeBuffer, decoded);
         if (actualCrc != expectedCrc) {
             Serial.printf("ERROR: CRC mismatch chunk (got %08lx expected %08lx)\n",
                           actualCrc, expectedCrc);
