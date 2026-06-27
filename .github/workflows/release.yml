@@ -48,9 +48,9 @@ jobs:
           echo "#define APP_VERSION \"${{ github.ref_name }}\"" >> include/version.h
           echo "#define BUILD_DATE \"$(date +'%b %d %Y')\"" >> include/version.h
           
-          # Force clean build
-          pio run --target clean
-          pio run
+          # Force clean build (ESP32 only — native env has no artifacts to ship)
+          pio run -e esp32-c3-devkitm-1 --target clean
+          pio run -e esp32-c3-devkitm-1
         env:
           APP_VERSION: ${{ github.ref_name }}
 
