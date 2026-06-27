@@ -1,0 +1,28 @@
+{
+  "name": "Test Vehicle Full",
+  "isMock": false,
+  "vehicleParams": {
+    "steerScale": 500,
+    "steerOffset": 50,
+    "steerInvert": false,
+    "indTimeout": 800,
+    "rpmDiv": 4,
+    "tankCap": 60,
+    "dteDiv": 200
+  },
+  "frames": [
+    {
+      "canId": "0x002",
+      "fields": [
+        {
+          "target": "STEERING",
+          "startByte": 0,
+          "byteCount": 2,
+          "byteOrder": "BE",
+          "dataType": "INT16",
+          "formula": "NONE"
+        }
+      ]
+    }
+  ]
+}

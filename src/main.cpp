@@ -14,6 +14,7 @@
 #include <Arduino.h>
 #include <ESP32-TWAI-CAN.hpp>
 #include <esp_task_wdt.h>
+#include <freertos/task.h>
 #include "GlobalData.h"
 #include "ConfigManager.h"
 #include "SerialCommand.h"
@@ -139,7 +140,8 @@ void loop() {
     // Skip during OTA for maximum throughput
     // ==========================================================================
     if (isOtaInProgress()) {
-        // During OTA, skip all CAN/mock processing for speed
+        serialCommandCheckOtaTimeout();
+        vTaskDelay(pdMS_TO_TICKS(1));  // yield to USB CDC FreeRTOS tasks
         return;
     }
 

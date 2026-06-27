@@ -1,0 +1,19 @@
+{
+  "name": "Test Vehicle No Params",
+  "isMock": false,
+  "frames": [
+    {
+      "canId": "0x002",
+      "fields": [
+        {
+          "target": "STEERING",
+          "startByte": 0,
+          "byteCount": 2,
+          "byteOrder": "BE",
+          "dataType": "INT16",
+          "formula": "NONE"
+        }
+      ]
+    }
+  ]
+}

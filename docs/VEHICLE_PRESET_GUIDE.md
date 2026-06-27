@@ -16,6 +16,15 @@ A vehicle preset is a JSON file that tells the ESP32 how to decode CAN frames fr
 {
   "name": "Make Model Year",
   "isMock": false,
+  "vehicleParams": {
+    "steerScale": 300,
+    "steerOffset": 100,
+    "steerInvert": true,
+    "indTimeout": null,
+    "rpmDiv": null,
+    "tankCap": null,
+    "dteDiv": null
+  },
   "frames": [
     {
       "canId": "0x180",
@@ -45,6 +54,7 @@ A vehicle preset is a JSON file that tells the ESP32 how to decode CAN frames fr
 |-------|------|-------------|
 | `name` | string | Vehicle name (displayed in logs) |
 | `isMock` | boolean | `true` = simulate data, `false` = read real CAN |
+| `vehicleParams` | object (optional) | Calibration overrides for this model — see [Vehicle Parameters](#vehicle-parameters-vehicleparams) |
 | `frames` | array | List of CAN frames to decode |
 
 ### Frame Object
@@ -65,6 +75,67 @@ A vehicle preset is a JSON file that tells the ESP32 how to decode CAN frames fr
 | `dataType` | string | How to interpret bytes (see [Data Types](#data-types)) |
 | `formula` | string | Conversion formula (see [Formulas](#formulas)) |
 | `params` | array | Formula parameters |
+
+---
+
+## Vehicle Parameters (`vehicleParams`)
+
+The optional `vehicleParams` object embeds vehicle-specific calibration directly in the preset file. When a new vehicle is loaded, these values are applied automatically and saved to persistent storage (NVS).
+
+### Null semantics
+
+Each field is independently nullable:
+
+| Value | Behaviour |
+|-------|-----------|
+| Concrete value (`300`, `true`, …) | Overrides the in-memory config and is saved to NVS |
+| `null` or key absent | No change — current NVS value or firmware default is kept |
+
+### Priority
+
+```
+NVS (same vehicle loaded again)  ← highest priority
+  vehicleParams (vehicle switch)
+    firmware defaults             ← lowest priority
+```
+
+When the **same vehicle file** is loaded again (e.g., on reboot), NVS values are preserved and `vehicleParams` is **not** re-applied. This ensures user calibrations made via `CFG SET` survive reboots.
+
+When a **different vehicle file** is loaded, NVS is reset to firmware defaults first, then `vehicleParams` is applied and saved. Use `CFG SAVE` after any further tuning to persist your customisations.
+
+### Supported keys
+
+| Key | Type | Range | `CFG SET` param | Description |
+|-----|------|-------|-----------------|-------------|
+| `steerScale` | integer | 1–20000 (unit x0.0001) | `steerScale` | Steering angle scale factor |
+| `steerOffset` | integer | -500 to +500 | `steerOffset` | Steering centre offset |
+| `steerInvert` | boolean | `true` / `false` | `steerInvert` | Reverse steering direction |
+| `indTimeout` | integer | 100–2000 ms | `indTimeout` | Indicator blink detection timeout |
+| `rpmDiv` | integer | 1–20 | `rpmDiv` | RPM raw value divisor |
+| `tankCap` | integer | 20–100 L | `tankCap` | Fuel tank capacity in litres |
+| `dteDiv` | integer | 100–500 | `dteDiv` | DTE divisor × 100 |
+
+### Note on `rpmDiv`, `tankCap`, `dteDiv`
+
+For most vehicles, these values are already encoded in the formula `params` of individual frame fields (e.g., `"params": [1, 7, 0]` for RPM). Setting them to `null` in `vehicleParams` avoids duplication and potential inconsistency. Define them here only if your vehicle requires a post-processing adjustment independent of the frame-level formula.
+
+The steering parameters (`steerScale`, `steerOffset`, `steerInvert`) have **no frame-level equivalent** — they are applied during radio output in `RadioSend.cpp` and must be set here or via `CFG SET`.
+
+### Lifecycle example
+
+```
+1. Load NissanJukeF15.json for the first time
+   → NVS reset → steerScale=300, steerOffset=100, steerInvert=true applied and saved
+
+2. Fine-tune via app: CFG SET steerScale 320, CFG SAVE
+   → NVS now holds steerScale=320
+
+3. Reboot — same vehicle file reloaded
+   → vehicleParams NOT applied → NVS value 320 preserved ✓
+
+4. Load a different vehicle (OtherVehicle.json)
+   → NVS reset → OtherVehicle vehicleParams applied
+```
 
 ---
 

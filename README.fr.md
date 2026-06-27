@@ -20,7 +20,7 @@ Le projet a démarré comme une solution dédiée à la **Nissan Juke F15**, mai
 **Points clés :**
 - **Support multi-véhicules** — Les mappings CAN spécifiques à chaque véhicule sont définis dans des fichiers de configuration JSON, facilitant l'ajout de nouvelles voitures
 - **Traduction de protocoles** — Convertit les données CAN constructeur vers les protocoles autoradio (Toyota RAV4, Raise/RZC)
-- **Sans recompilation** — Changez de véhicule ou ajustez la calibration via commandes USB
+- **Sans recompilation** — Changez de véhicule, ajustez la calibration via commandes USB, ou intégrez les paramètres de calibration directement dans le fichier JSON du véhicule (`vehicleParams`)
 
 > **Important :** Dans les paramètres de votre autoradio, configurez le protocole CAN sur **"Toyota RAV4"** pour que cela fonctionne.
 
@@ -201,7 +201,7 @@ Le système est conçu pour être 100% autonome et résistant aux parasites éle
 
 1. **[Capture CAN](docs/technical/CAN_CAPTURE.md)** : Décode les trames selon la configuration JSON et met à jour les variables globales
 2. **[Envoi Radio](docs/technical/RADIO_SEND.md)** : Formate et transmet les données au poste à plusieurs intervalles (200ms pour direction, 333ms pour RPM, 500ms pour vitesse, etc.)
-3. **ConfigManager** : Stockage persistant des paramètres de calibration (NVS)
+3. **ConfigManager** : Stockage persistant des paramètres de calibration (NVS). Les fichiers JSON de véhicule peuvent intégrer `vehicleParams` pour fournir des valeurs par défaut spécifiques au modèle, appliquées automatiquement au premier chargement ; les ajustements utilisateur via `CFG SET` sont préservés entre les redémarrages sur le même véhicule
 4. **SerialCommand** : Interface de configuration USB
 5. **Watchdog Matériel** : Redémarrage automatique si le programme gèle plus de 5 secondes
 6. **Watchdog CAN** : Force un reboot si aucune donnée CAN reçue pendant 30s alors que batterie > 11V

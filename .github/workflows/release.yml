@@ -36,6 +36,9 @@ jobs:
           python -m pip install --upgrade pip
           pip install platformio esptool
 
+      - name: Run Unit Tests (native)
+        run: pio test -e native
+
       - name: Build Project
         run: |
           # Create include directory and version.h manually before build

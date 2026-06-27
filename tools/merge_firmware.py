@@ -33,5 +33,11 @@ def post_build_merged_bin(source, target, env):
     print(f"\n[POST-BUILD] Generating merged binary for easy flashing: {merged_bin}")
     env.Execute(" ".join(cmd))
 
+    # Copie du firmware applicatif avec extension .ota (pour mise à jour OTA via USB série)
+    ota_bin = os.path.join(build_dir, "firmware.ota")
+    import shutil
+    shutil.copy2(firmware, ota_bin)
+    print(f"[POST-BUILD] OTA firmware: {ota_bin}")
+
 # Lancer le script après la création du firmware.bin
 env.AddPostAction("$BUILD_DIR/${PROGNAME}.bin", post_build_merged_bin)
