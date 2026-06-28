@@ -3,6 +3,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <string>
+#include <vector>
 
 // Arduino String type — minimal stub for native builds
 class String {
@@ -29,6 +30,18 @@ struct SerialClass {
 };
 
 extern SerialClass Serial;
+
+// HardwareSerial — captures written bytes for test assertions
+class HardwareSerial {
+public:
+    std::vector<uint8_t> captured;
+    void begin(int) {}
+    size_t write(uint8_t b)                        { captured.push_back(b); return 1; }
+    size_t write(const uint8_t* buf, size_t len)   { for (size_t i=0;i<len;i++) captured.push_back(buf[i]); return len; }
+    int    available()                             { return 0; }
+    int    read()                                  { return -1; }
+    void   clear()                                 { captured.clear(); }
+};
 
 // Arduino type aliases
 typedef unsigned char  byte;
