@@ -1,0 +1,40 @@
+#include <stdint.h>
+#include "Arduino.h"
+#include "LittleFS.h"
+
+int16_t  currentSteer       = 0;
+uint16_t engineRPM          = 0;
+uint8_t  vehicleSpeed       = 0;
+uint8_t  currentDoors       = 0;
+uint8_t  fuelLevel          = 0;
+float    voltBat             = 0.0f;
+int16_t  dteValue           = 0;
+float    fuelConsoMoy        = 0.0f;
+int8_t   tempExt             = 0;
+int8_t   coolantTemp         = 0;
+uint32_t currentOdo          = 0;
+
+bool         indicatorLeft           = false;
+bool         indicatorRight          = false;
+bool         headlightsOn            = false;
+bool         highBeamOn              = false;
+bool         parkingLightsOn         = false;
+unsigned long lastLeftIndicatorTime  = 0;
+unsigned long lastRightIndicatorTime = 0;
+
+uint16_t fuelConsumptionInst = 0;
+uint16_t fuelConsumptionAvg  = 0;
+uint16_t averageSpeed        = 0;
+uint16_t elapsedTime         = 0;
+
+SerialClass Serial;
+EspClass    ESP;
+FS          LittleFS;
+
+void resetVehicleData() {
+    currentSteer = 0; engineRPM = 0; vehicleSpeed = 0;
+    currentDoors = 0; fuelLevel = 0; voltBat = 0.0f;
+    dteValue = 0; tempExt = 0; coolantTemp = 0; currentOdo = 0;
+    headlightsOn = false; highBeamOn = false; parkingLightsOn = false;
+    fuelConsumptionInst = 0; fuelConsumptionAvg = 0;
+}

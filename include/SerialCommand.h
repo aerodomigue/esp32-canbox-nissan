@@ -63,4 +63,9 @@ bool isOtaInProgress();
  */
 void serialCommandCheckOtaTimeout();
 
+#ifdef UNIT_TEST
+/** Test-only entry point — calls the internal processCommand() directly */
+void testProcessCommand(const char* line);
+#endif
+
 #endif // SERIAL_COMMAND_H
