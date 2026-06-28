@@ -12,6 +12,7 @@ float    voltBat             = 0.0f;
 int16_t  dteValue           = 0;
 float    fuelConsoMoy        = 0.0f;
 int8_t   tempExt             = 0;
+int8_t   coolantTemp         = 0;
 uint32_t currentOdo          = 0;
 
 bool         indicatorLeft           = false;

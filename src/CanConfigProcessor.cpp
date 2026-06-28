@@ -499,6 +499,9 @@ void CanConfigProcessor::writeToGlobalData(OutputField target, int32_t value) {
         case OutputField::PARKING_LIGHTS:
             parkingLightsOn = (value != 0);
             break;
+        case OutputField::COOLANT_TEMP:
+            coolantTemp = (int8_t)value;
+            break;
 
         default:
             // Unknown field - ignore

@@ -120,6 +120,9 @@ enum class OutputField : uint8_t {
     HIGH_BEAM,          // High beam on
     PARKING_LIGHTS,     // Parking/position lights on
 
+    // Additional temperature
+    COOLANT_TEMP,       // Engine coolant temperature (°C)
+
     // End marker for array sizing
     FIELD_COUNT
 };
@@ -247,6 +250,7 @@ inline OutputField parseOutputField(const char* str) {
     if (strcmp(str, "HEADLIGHTS") == 0) return OutputField::HEADLIGHTS;
     if (strcmp(str, "HIGH_BEAM") == 0) return OutputField::HIGH_BEAM;
     if (strcmp(str, "PARKING_LIGHTS") == 0) return OutputField::PARKING_LIGHTS;
+    if (strcmp(str, "COOLANT_TEMP") == 0) return OutputField::COOLANT_TEMP;
 
     return OutputField::STEERING; // Default fallback
 }

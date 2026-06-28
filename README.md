@@ -48,8 +48,8 @@ The project started as a custom solution for the **Nissan Juke F15**, but has si
 | Door Status | ✅ Working | All 4 doors + trunk |
 | Indicators | ✅ Working | Left/right turn signals |
 | Lights | ✅ Working | Headlights, high beam, parking lights |
-| Handbrake | 📋 Planned | CAN data not yet extracted |
-| External Temperature | 📋 Planned | CAN data not yet extracted |
+| Handbrake | ❌ Not supported | Toyota RAV4 protocol does not define this command (marked TBD in spec) |
+| External Temperature | ✅ Working | From CAN 0x551 (BCM ambient sensor) |
 | Instant Fuel Consumption | ✅ Working | From CAN 0x580 |
 | Average Fuel Consumption | ✅ Working | From CAN 0x580 |
 | Distance to Empty | ✅ Working | From CAN 0x54C |
@@ -274,7 +274,8 @@ Once flashed, connect the ESP32 to your Android head unit's USB port. All furthe
 | Vehicle Speed | 0x284 | 500ms | Wheel speed sensor |
 | Fuel Level | 0x5C5 | — | Mapped to 45L (Juke F15 tank capacity) |
 | Battery Voltage | 0x6F6 | — | Alternator output |
-| Temperature | 0x551 | 5000ms | Coolant (used as exterior) |
+| External Temperature | 0x551 | 5000ms | BCM ambient air sensor |
+| Coolant Temperature | 0x551 | — | Decoded only, not transmitted (no protocol command defined) |
 | Door Status | 0x60D | 250ms | All doors + trunk (or on change) |
 | Distance to Empty | 0x54C | 5000ms | Estimated range |
 | Instant Fuel Consumption | 0x580 | 1000ms | 0.1 L/100km units |
