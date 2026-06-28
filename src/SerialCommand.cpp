@@ -1195,3 +1195,7 @@ static void printError(const char* msg) {
     Serial.print("ERROR: ");
     Serial.println(msg);
 }
+
+#ifdef UNIT_TEST
+void testProcessCommand(const char* line) { processCommand(line); }
+#endif

@@ -1,4 +1,3 @@
-// Stub definitions for GlobalData globals used by CanConfigProcessor::writeToGlobalData()
 #include <stdint.h>
 #include "Arduino.h"
 #include "LittleFS.h"
@@ -28,6 +27,14 @@ uint16_t fuelConsumptionAvg  = 0;
 uint16_t averageSpeed        = 0;
 uint16_t elapsedTime         = 0;
 
-// Arduino and filesystem globals (SerialClass and FS are defined in Arduino.h/LittleFS.h mocks)
 SerialClass Serial;
-FS LittleFS;
+EspClass    ESP;
+FS          LittleFS;
+
+void resetVehicleData() {
+    currentSteer = 0; engineRPM = 0; vehicleSpeed = 0;
+    currentDoors = 0; fuelLevel = 0; voltBat = 0.0f;
+    dteValue = 0; tempExt = 0; coolantTemp = 0; currentOdo = 0;
+    headlightsOn = false; highBeamOn = false; parkingLightsOn = false;
+    fuelConsumptionInst = 0; fuelConsumptionAvg = 0;
+}

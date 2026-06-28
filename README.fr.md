@@ -48,8 +48,8 @@ Le projet a démarré comme une solution dédiée à la **Nissan Juke F15**, mai
 | État des Portes | ✅ Fonctionnel | 4 portes + coffre |
 | Clignotants | ✅ Fonctionnel | Gauche/droite |
 | Feux | ✅ Fonctionnel | Phares, feux de route, veilleuses |
-| Frein à Main | 📋 Prévu | Données CAN pas encore extraites |
-| Température Extérieure | 📋 Prévu | Données CAN pas encore extraites |
+| Frein à Main | ❌ Non supporté | Le protocole Toyota RAV4 ne définit pas cette commande (marqué TBD dans le spec) |
+| Température Extérieure | ✅ Fonctionnel | Depuis CAN 0x551 (capteur ambiance BCM) |
 | Conso. Instantanée | ✅ Fonctionnel | Depuis CAN 0x580 |
 | Conso. Moyenne | ✅ Fonctionnel | Depuis CAN 0x580 |
 | Autonomie Restante | ✅ Fonctionnel | Depuis CAN 0x54C |
@@ -274,7 +274,8 @@ Une fois flashé, branchez l'ESP32 sur un port USB de votre autoradio Android. T
 | Vitesse Véhicule | 0x284 | 500ms | Capteur roue |
 | Niveau Essence | 0x5C5 | — | Mappé sur 45L (capacité réservoir Juke F15) |
 | Tension Batterie | 0x6F6 | — | Sortie alternateur |
-| Température | 0x551 | 5000ms | LDR (utilisé comme ext.) |
+| Température Extérieure | 0x551 | 5000ms | Capteur ambiance BCM |
+| Température Eau Moteur | 0x551 | — | Décodée uniquement, non transmise (pas de commande protocole définie) |
 | État Portes | 0x60D | 250ms | Toutes portes + coffre (ou sur changement) |
 | Autonomie | 0x54C | 5000ms | Distance estimée |
 | Conso. Instantanée | 0x580 | 1000ms | Unités 0.1 L/100km |

@@ -12,7 +12,6 @@
 | Fuel Tank Level | Calibrated 45L |
 | Battery Voltage | |
 | Door Status | All 4 doors + trunk |
-| Handbrake | |
 | Indicators | Left / Right |
 | Lights | Headlights, high beam, parking |
 
@@ -39,8 +38,8 @@
 
 | Task | Status | Notes |
 |------|--------|-------|
-| External Temperature | 🔲 | CAN data not yet extracted |
-| Handbrake | 🔲 | CAN data not yet extracted |
+| External Temperature | ✅ | CAN 0x551 (BCM ambient sensor), formula corrected |
+| Handbrake | ❌ Not possible | Toyota RAV4 protocol marks this as TBD — no standardized command exists |
 | CAN Frame Recorder | 🔲 | For debugging |
 | Steering Auto-Calibration | 🔲 | Auto-detect center offset |
 

@@ -59,6 +59,7 @@ const uint8_t MASK_LIGHT_HIGH_BEAM   = 0x20;  // High beam
 const uint8_t MASK_LIGHT_HEADLIGHTS  = 0x40;  // Headlights (low beam)
 const uint8_t MASK_LIGHT_PARKING     = 0x80;  // Parking lights
 
+
 // Indicator timeout loaded from ConfigManager
 
 // =============================================================================
@@ -120,11 +121,20 @@ void sendCanboxMessage(uint8_t cmd, const uint8_t* data, uint8_t len) {
 }
 
 /**
- * @brief Send door status
+ * @brief Send door status and ignition state
  * @param doorMask Bitmask of open doors
+ * @param igOn     true if ignition is ON (engineRPM > 0)
+ *
+ * Per Chinese spec (V2.21): CMD 0x24 length = 0x02
+ * Data0: door bitmask
+ * Data1: key status — Bit1 = IG ON/OFF
  */
-void sendDoorCommand(uint8_t doorMask) {
-    sendCanboxMessage(CMD_DOOR_STATUS, &doorMask, 1);
+void sendDoorCommand(uint8_t doorMask, bool igOn) {
+    uint8_t payload[2] = {
+        doorMask,
+        (uint8_t)(igOn ? 0x02 : 0x00)
+    };
+    sendCanboxMessage(CMD_DOOR_STATUS, payload, 2);
 }
 
 /**
@@ -197,16 +207,22 @@ void sendOdometerMessage(uint32_t odo) {
 }
 
 /**
- * @brief Send outside temperature
- * @param temp Temperature in °C
+ * @brief Send outside and coolant temperatures
+ * @param tempExternal Ambient air temperature in °C
+ * @param tempCoolant  Engine coolant temperature in °C
  *
- * Encoding: (temp + 40) × 2 at byte [5]
- * Per PDF: 12-byte payload, all zeros except byte 5
+ * Encoding: (temp + 40) × 2
+ * Per RAV4 spec (PDF chinois + anglais): seul byte[5] = temp extérieure est défini.
+ * Les autres bytes doivent être 0x00 selon le spec.
+ * INCONNU: aucune source ne confirme quel byte utiliser pour la temp moteur
+ * dans ce protocole — payload[0] est une hypothèse non vérifiée.
  */
-void sendOutsideTempMessage(int8_t temp) {
-    uint8_t encoded = (uint8_t)((temp + 40) * 2);
+void sendOutsideTempMessage(int8_t tempExternal, int8_t tempCoolant) {
     uint8_t payload[12] = {0};
-    payload[5] = encoded;
+    // TODO: byte position pour coolant temp non documentée dans le protocole RAV4
+    // payload[0] = hypothèse — à confirmer par capture UART d'une vraie RAV4
+    payload[0] = (uint8_t)((tempCoolant + 40) * 2);
+    payload[5] = (uint8_t)((tempExternal + 40) * 2);  // seul byte documenté
     sendCanboxMessage(CMD_OUTSIDE_TEMP, payload, 12);
 }
 
@@ -352,7 +368,7 @@ void processRadioUpdates() {
     if (currentDoors & 0x08) doorStatus |= MASK_DOOR_BOOT;       // Trunk
 
     if (doorStatus != lastSentDoors || (now - lastDoorTime >= DOOR_INTERVAL_MS)) {
-        sendDoorCommand(doorStatus);
+        sendDoorCommand(doorStatus, engineRPM > 0);
         lastSentDoors = doorStatus;
         lastDoorTime = now;
     }
@@ -418,9 +434,9 @@ void processRadioUpdates() {
     // =========================================================================
     // 7. OUTSIDE TEMPERATURE (CMD 0x28) - 5s interval
     // =========================================================================
-    // Note: Using coolant temp as substitute (no exterior sensor on Juke CAN)
+    // byte[5] = ambient air temp (0x540), byte[0] = coolant temp (0x551, hypothesis)
     if (now - lastTempTime >= TEMP_INTERVAL_MS) {
-        sendOutsideTempMessage(tempExt);
+        sendOutsideTempMessage(tempExt, coolantTemp);
         lastTempTime = now;
     }
 

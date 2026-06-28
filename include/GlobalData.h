@@ -43,8 +43,11 @@ extern int16_t dteValue;
 /** Average fuel consumption (L/100km) - reserved for future use */
 extern float fuelConsoMoy;
 
-/** External temperature in °C (actually coolant temp, used as substitute) */
+/** External/ambient temperature in °C (from BCM sensor 0x551) */
 extern int8_t tempExt;
+
+/** Engine coolant temperature in °C (from 0x551) */
+extern int8_t coolantTemp;
 
 /** Odometer (Total Mileage) in km - 0 = unknown */
 extern uint32_t currentOdo;

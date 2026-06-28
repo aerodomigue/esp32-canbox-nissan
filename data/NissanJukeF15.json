@@ -88,10 +88,24 @@
       ]
     },
     {
-      "canId": "0x551",
+      "canId": "0x540",
       "fields": [
         {
           "target": "TEMPERATURE",
+          "startByte": 0,
+          "byteCount": 1,
+          "byteOrder": "BE",
+          "dataType": "UINT8",
+          "formula": "SCALE",
+          "params": [1, 1, -40]
+        }
+      ]
+    },
+    {
+      "canId": "0x551",
+      "fields": [
+        {
+          "target": "COOLANT_TEMP",
           "startByte": 0,
           "byteCount": 1,
           "byteOrder": "BE",
@@ -206,7 +220,7 @@
           "byteOrder": "BE",
           "dataType": "UINT16",
           "formula": "SCALE",
-          "params": [100, 283, 0]
+          "params": [100, 338, 0]
         }
       ]
     },
@@ -215,12 +229,11 @@
       "fields": [
         {
           "target": "FUEL_CONS_INST",
-          "startByte": 2,
+          "startByte": 3,
           "byteCount": 1,
           "byteOrder": "BE",
           "dataType": "UINT8",
-          "formula": "BITMASK_EXTRACT",
-          "params": [127, 0]
+          "formula": "NONE"
         },
         {
           "target": "FUEL_CONS_AVG",
