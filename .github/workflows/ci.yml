@@ -59,7 +59,7 @@ jobs:
           pip install platformio
 
       - name: Run Unit Tests
-        run: pio test -e native
+        run: pio test -e native -e native_radio -e native_serial
 
   build:
     name: Build ESP32 Firmware
