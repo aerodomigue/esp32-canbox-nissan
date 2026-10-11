@@ -1,6 +1,7 @@
 /**
  * Replay authentic historical CAN captures through the production decoder.
- * The January 2026 capture has no synchronized dashboard readings or timestamps;
+ * The capture archived in January 2026 has no confirmed capture date,
+ * synchronized dashboard readings or timestamps;
  * these tests establish decoding results, not physical signal calibration.
  *
  * Optional full capture replay:
@@ -111,29 +112,33 @@ void setUp() {
 
 void tearDown() {}
 
-void test_authentic_excerpt_decodes_reviewed_values() {
+void test_authentic_excerpt_decodes_active_original_preset() {
     const ReplayStats stats = replayFile(EXCERPT);
     TEST_ASSERT_EQUAL_UINT32(14, stats.parsed);
     TEST_ASSERT_EQUAL_UINT32(1, stats.rejected);  // Original invalid ID 0x3FC91000.
-    TEST_ASSERT_EQUAL_UINT32(13, stats.handled);
-    TEST_ASSERT_EQUAL_UINT32(1, stats.unknown);  // Unconfigured 0x182.
+    TEST_ASSERT_EQUAL_UINT32(12, stats.handled);
+    TEST_ASSERT_EQUAL_UINT32(2, stats.unknown);  // Unconfigured 0x182 and 0x2DE.
     TEST_ASSERT_EQUAL_UINT32(0, stats.decoderRejected);
     TEST_ASSERT_EQUAL_UINT32(stats.handled, proc.getFramesProcessed());
     TEST_ASSERT_EQUAL_UINT32(stats.unknown, proc.getUnknownFrames());
 
     // Authentic frames: bytes unchanged from the original file.
-    TEST_ASSERT_EQUAL_UINT16(159, engineRPM);  // 0x04FB / 8, implausible idle RPM.
-    TEST_ASSERT_EQUAL_UINT8(23, fuelLevel);   // 0x40 -> MAP_RANGE[255,-70,0,40].
+    TEST_ASSERT_EQUAL_UINT16(182, engineRPM);  // 0x04FB / 7, implausible idle RPM.
+    TEST_ASSERT_EQUAL_UINT8(33, fuelLevel);   // 0x40 -> active MAP_RANGE[255,0,0,45].
     TEST_ASSERT_EQUAL_UINT32(239944, currentOdo);  // 0x03A948, independent of fuel.
-    TEST_ASSERT_EQUAL_INT16(375, dteValue);   // 0x0EAC / 10, fractional part dropped.
-    TEST_ASSERT_EQUAL_UINT16(60, fuelConsumptionInst);
+    TEST_ASSERT_EQUAL_INT16(0, dteValue);  // Active 0x54C absent, not a DTE reading.
+    TEST_ASSERT_EQUAL_UINT16(6, fuelConsumptionInst);  // Active byte3 counter-like.
     TEST_ASSERT_EQUAL_UINT16(111, fuelConsumptionAvg);
     TEST_ASSERT_EQUAL_UINT8(0, vehicleSpeed);  // 0x284 is absent, not a speed reading.
     TEST_ASSERT_EQUAL_UINT32(0, stats.ids.count(0x284));
     TEST_ASSERT_EQUAL_UINT32(0, stats.ids.count(0x54C));
 }
 
-void test_consumption_replay_follows_signal_instead_of_counter() {
+static void checkConsumptionReplay(bool deferred) {
+    if (deferred) {
+        LittleFS.basePath = "test/fixtures";
+        TEST_ASSERT_TRUE(proc.loadFromJson("/proposed_anyzlo_mappings.json"));
+    }
     std::ifstream input(EXCERPT);
     TEST_ASSERT_TRUE(input.is_open());
     const uint16_t expected[] = {20, 30, 30, 30, 46, 60, 60, 60, 60, 60};
@@ -147,11 +152,37 @@ void test_consumption_replay_follows_signal_instead_of_counter() {
         TEST_ASSERT_LESS_THAN_UINT32(10, index);
         TEST_ASSERT_EQUAL_UINT8(counters[index], frame.data[3]);
         TEST_ASSERT_TRUE(proc.processFrame(frame));
-        TEST_ASSERT_EQUAL_UINT16(expected[index], fuelConsumptionInst);
+        TEST_ASSERT_EQUAL_UINT16(deferred ? expected[index] : counters[index],
+                                 fuelConsumptionInst);
         TEST_ASSERT_EQUAL_UINT16(111, fuelConsumptionAvg);
         ++index;
     }
     TEST_ASSERT_EQUAL_UINT32(10, index);
+}
+
+void test_active_consumption_replay_uses_byte3() {
+    // Preserve the original preset, even though byte3 looks like a counter.
+    checkConsumptionReplay(false);
+}
+
+void test_deferred_consumption_replay_uses_byte1() {
+    // Candidate proposal is tested separately; it is not a flashed profile.
+    checkConsumptionReplay(true);
+}
+
+void test_authentic_excerpt_decodes_deferred_proposals_separately() {
+    LittleFS.basePath = "test/fixtures";
+    TEST_ASSERT_TRUE(proc.loadFromJson("/proposed_anyzlo_mappings.json"));
+    const ReplayStats stats = replayFile(EXCERPT);
+    TEST_ASSERT_EQUAL_UINT32(13, stats.handled);
+    TEST_ASSERT_EQUAL_UINT32(1, stats.unknown);
+    TEST_ASSERT_EQUAL_UINT32(0, stats.decoderRejected);
+    TEST_ASSERT_EQUAL_UINT16(159, engineRPM);
+    TEST_ASSERT_EQUAL_UINT8(23, fuelLevel);
+    TEST_ASSERT_EQUAL_UINT32(239944, currentOdo);
+    TEST_ASSERT_EQUAL_INT16(375, dteValue);
+    TEST_ASSERT_EQUAL_UINT16(60, fuelConsumptionInst);
+    TEST_ASSERT_EQUAL_UINT16(111, fuelConsumptionAvg);
 }
 
 void test_replay_parser_rejects_incomplete_or_invalid_records() {
@@ -192,7 +223,7 @@ void test_short_known_frame_is_distinct_from_unknown_frame() {
     vehicleSpeed = 88;
     // A self-consistent export can still omit bytes required by the preset.
     TEST_ASSERT_TRUE(parseHistoricalLine(
-        "RX ID: 0x284 | DLC: 4 | Data: 00 00 00 00", frame) == ParseResult::FRAME);
+        "RX ID: 0x284 | DLC: 1 | Data: 00", frame) == ParseResult::FRAME);
     processParsedFrame(stats, frame);
     TEST_ASSERT_EQUAL_UINT32(1, stats.parsed);
     TEST_ASSERT_EQUAL_UINT32(1, stats.decoderRejected);
@@ -231,9 +262,9 @@ void test_optional_external_log_replay() {
            stats.parsed, stats.rejected, stats.handled, stats.unknown,
            stats.decoderRejected);
     printf("Capture ID counts: RPM[0x180]=%u speed[0x284]=%u fuel[0x5C5]=%u "
-           "DTE[0x2DE]=%u old_DTE[0x54C]=%u consumption[0x580]=%u\n",
+           "DTE[0x54C]=%u deferred_DTE[0x2DE]=%u consumption[0x580]=%u\n",
            stats.ids[0x180], stats.ids[0x284], stats.ids[0x5C5],
-           stats.ids[0x2DE], stats.ids[0x54C], stats.ids[0x580]);
+           stats.ids[0x54C], stats.ids[0x2DE], stats.ids[0x580]);
     printf("Last decoded values: RPM=%u speed=%u fuel=%uL odo=%u "
            "DTE=%dkm instant_raw=%u average_raw=%u\n",
            engineRPM, vehicleSpeed, fuelLevel, currentOdo, dteValue,
@@ -243,8 +274,10 @@ void test_optional_external_log_replay() {
 
 int main() {
     UNITY_BEGIN();
-    RUN_TEST(test_authentic_excerpt_decodes_reviewed_values);
-    RUN_TEST(test_consumption_replay_follows_signal_instead_of_counter);
+    RUN_TEST(test_authentic_excerpt_decodes_active_original_preset);
+    RUN_TEST(test_active_consumption_replay_uses_byte3);
+    RUN_TEST(test_deferred_consumption_replay_uses_byte1);
+    RUN_TEST(test_authentic_excerpt_decodes_deferred_proposals_separately);
     RUN_TEST(test_replay_parser_rejects_incomplete_or_invalid_records);
     RUN_TEST(test_replay_parser_accepts_comments_and_complete_records);
     RUN_TEST(test_short_known_frame_is_distinct_from_unknown_frame);

@@ -416,7 +416,7 @@ void processRadioUpdates() {
     // =========================================================================
     // 6. INSTANTANEOUS FUEL CONSUMPTION (CMD 0x22) - 1s interval
     // =========================================================================
-    // Instantaneous consumption from Nissan CAN 0x580 byte[1]
+    // Instantaneous consumption from active preset 0x580 byte[3] (unit unverified).
     if (now - lastFuelConsTime >= FUEL_CONS_INTERVAL_MS) {
         sendFuelConsumptionMessage(fuelConsumptionInst);
         lastFuelConsTime = now;
@@ -445,7 +445,7 @@ void processRadioUpdates() {
     // =========================================================================
     // Contains: Average Speed, Elapsed Time, Distance to Empty
     // Average speed/elapsed time from trip computer (if available on CAN)
-    // Distance to Empty from Nissan CAN 0x2DE
+    // Distance to Empty from active Nissan preset CAN 0x54C (not yet calibrated).
     if (now - lastRangeTime >= RANGE_INTERVAL_MS) {
         sendTripInfoMessage(dteValue, averageSpeed, elapsedTime);
         lastRangeTime = now;

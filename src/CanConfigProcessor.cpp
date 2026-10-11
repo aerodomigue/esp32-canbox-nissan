@@ -304,7 +304,8 @@ const FrameConfig* CanConfigProcessor::findFrameConfig(uint16_t canId) const {
  * 3. Write to GlobalData
  */
 bool CanConfigProcessor::processFrame(const CanFrame& frame) {
-    if (frame.data_length_code > sizeof(frame.data)) {
+    if (frame.extd || frame.rtr || frame.identifier > 0x7FF ||
+        frame.data_length_code > sizeof(frame.data)) {
         return false;
     }
 
@@ -393,9 +394,9 @@ int32_t CanConfigProcessor::extractRawValue(const uint8_t* data, const FieldConf
  * Formula Types:
  * - NONE: Return raw value unchanged
  * - SCALE: (value * multiplier / divisor) + offset
- *          Example: RPM raw 20000 with params[1,8,0] → 2500
+ *          Example: raw 20000 with params[1,8,0] → 2500
  * - MAP_RANGE: Arduino map() function
- *          Example: Juke fuel params[255,-70,0,40], UINT8 raw 255→0 gives 0→31 liters
+ *          Example: active Juke fuel params[255,0,0,45], raw 255→0 gives 0→45
  * - BITMASK_EXTRACT: (value & mask) >> shift
  *          Example: Extract bit 20 from 24-bit status word
  */
