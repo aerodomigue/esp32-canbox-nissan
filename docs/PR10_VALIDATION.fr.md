@@ -8,8 +8,10 @@ décodeur sont conservées et renforcées. `LOG ON` ajoute les lectures OBD-II
 service 01 et leurs résultats pour comparer les références aux trames CAN.
 Toutes les lignes de diagnostic portent le préfixe exact **`ODB`**.
 
-Les changements sont sur la branche locale `review/pr-10-anyzlo`. L’état
-précédent reste accessible sur `archive/pr10-anyzlo-mappings`. Aucun push,
+Les changements sont sur la branche dédiée `feat/obd-calibration-logging`,
+sans suivi de la branche distante de la PR. La branche locale
+`review/pr-10-anyzlo` est remise sur `origin/feat/can-decoding-fixes` (`495f346`).
+L’état précédent reste accessible sur `archive/pr10-anyzlo-mappings`. Aucun push,
 commentaire GitHub ni modification distante de la PR n’a été effectué.
 
 ## Preset actif et propositions conservées
