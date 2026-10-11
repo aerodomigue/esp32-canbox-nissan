@@ -103,7 +103,7 @@ void setup() {
 
         // H. CAN Bus Initialization - TWAI controller setup (only in real mode)
         ESP32Can.setPins(CAN_TX, CAN_RX);
-        ESP32Can.setSpeed(ESP32Can.convertSpeed(500000)); // 500kbps (Nissan Juke standard)
+        ESP32Can.setSpeed(ESP32Can.convertSpeed(500)); // API uses kbps (Nissan Juke: 500 kbps)
 
         // Attempt CAN startup with immediate error handling
         if (!ESP32Can.begin()) {
