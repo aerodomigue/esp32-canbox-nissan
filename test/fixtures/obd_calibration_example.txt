@@ -1,0 +1,15 @@
+# Synthetic protocol example, not a vehicle capture.
+ODB STATE t_ms=0 enabled=1 status=discovery
+ODB TX t_ms=0 seq=1 can_id=0x7DF service=0x01 pid=0x00 status=queued data=02 01 00 00 00 00 00 00
+ODB RAW_RX 0x7E8 [8]: 06 41 00 00 18 00 00 00 | t_ms=8 ext=0 rtr=0
+ODB SUPPORTED t_ms=8 seq=1 request_id=0x7DF ecu=0x7E8 pid=0x00 bitmap=0x00180000
+ODB TX t_ms=500 seq=2 can_id=0x7E0 service=0x01 pid=0x0C status=queued data=02 01 0C 00 00 00 00 00
+RX 0x180 [8]: 14 18 00 00 00 00 00 00 | t_ms=508 ext=0 rtr=0
+ODB RAW_RX 0x7E8 [8]: 04 41 0C 0A 0C 00 00 00 | t_ms=508 ext=0 rtr=0
+ODB RX t_ms=508 seq=2 request_id=0x7E0 ecu=0x7E8 pid=0x0C name=rpm value=643.000 unit=rpm latency_ms=8
+ODB TX t_ms=1000 seq=3 can_id=0x7E0 service=0x01 pid=0x0D status=queued data=02 01 0D 00 00 00 00 00
+RX 0x284 [8]: 00 00 00 00 13 88 00 00 | t_ms=1008 ext=0 rtr=0
+ODB RAW_RX 0x7E8 [8]: 03 41 0D 32 00 00 00 00 | t_ms=1008 ext=0 rtr=0
+ODB RX t_ms=1008 seq=3 request_id=0x7E0 ecu=0x7E8 pid=0x0D name=speed value=50.000 unit=km/h latency_ms=8
+ODB DRIVER t_ms=1008 rx_missed=0 tx_failed=0 rx_queue=0 rx_errors=0 bus_errors=0 state=1
+ODB STATE t_ms=1500 enabled=0 status=stopped

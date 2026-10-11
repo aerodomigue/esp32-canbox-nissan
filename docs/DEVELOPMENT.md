@@ -1,7 +1,8 @@
 # Local development and validation
 
 Run these commands from the repository root. Python 3.10+ with `venv`, Git, and a
-native C++ compiler (`g++`) are required. Dependencies and PlatformIO packages
+native C++ compiler (`g++`) are required. The project pins PlatformIO's core
+directory to `.pio-core` in `platformio.ini`. Dependencies and PlatformIO packages
 stay inside the project; no system Python packages are modified.
 
 ```bash
@@ -15,7 +16,7 @@ mkdir -p .local-validation
 
 ```bash
 .venv/bin/pio test -e native -e native_radio -e native_serial
-.venv/bin/python -B -m unittest discover -s tools -p test_analyze_can_log.py -v
+.venv/bin/python -B -m unittest discover -s tools -p 'test_*can*.py' -v
 ```
 
 The suites use host mocks and the production CAN decoder, radio encoder, and
@@ -23,7 +24,8 @@ serial command implementation. The CAN suites load `data/NissanJukeF15.json`
 directly. The serial environment generates `include/version.h` using the same
 script as the firmware build, so it works on a fresh clone.
 
-CI runs all three environments and the Python capture analysis tests.
+CI runs all three environments, including the OBD calibration and raw formatter
+tests, and the Python capture analysis/comparison tests.
 Native test success checks software behavior;
 it does not establish that a mapping matches the dashboard of a particular car.
 
@@ -46,6 +48,17 @@ It accepts historical and current RX serial records, and CSV columns
 rejects malformed records, preserves missing timestamps, and reports numeric
 hypotheses without asserting physical calibration. The historical export has
 a logger provenance defect; see [the vehicle analysis](JUKE_2011_CAN_ANALYSIS.fr.md).
+
+For a new `LOG ON` capture containing `ODB RX` references, run:
+
+```bash
+.venv/bin/python -B tools/compare_obd_can.py path/to/capture.log \
+  --preset data/NissanJukeF15.json --max-delay-ms 200
+```
+
+It keeps session/ECU/PID/unit streams separate and writes `comparison.json` plus
+`matches.csv`. No mapping is changed automatically. See
+[ODB calibration logging](OBD_CALIBRATION.fr.md) for the protocol and limitations.
 
 ## ESP32-C3 build
 

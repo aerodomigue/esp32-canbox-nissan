@@ -219,8 +219,8 @@ Linear conversion: `result = (value × mult ÷ div) + offset`
 **Examples:**
 
 ```json
-// RPM: raw / 8
-"params": [1, 8, 0]
+// Initial Juke RPM hypothesis: raw / 7
+"params": [1, 7, 0]
 
 // Speed: raw / 100
 "params": [1, 100, 0]
@@ -228,8 +228,8 @@ Linear conversion: `result = (value × mult ÷ div) + offset`
 // Temperature: raw - 40
 "params": [1, 1, -40]
 
-// DTE: raw / 10
-"params": [1, 10, 0]
+// Initial Juke DTE hypothesis: raw * 100 / 338
+"params": [100, 338, 0]
 ```
 
 ### MAP_RANGE
@@ -244,12 +244,13 @@ Map value from one range to another: `map(value, inMin, inMax, outMin, outMax)`
 **Example:**
 
 ```json
-// Juke empirical fuel calibration: raw 255 -> 0 L, raw 0 -> 31 L
-"params": [255, -70, 0, 40]
+// Initial Juke fuel hypothesis: raw 255 -> 0, raw 0 -> 45
+"params": [255, 0, 0, 45]
 ```
 
-The theoretical 40 L endpoint is at raw -70, outside the UINT8 input range.
-This formula does not describe the physical tank capacity.
+This is the restored initial mapping, not a validated physical tank capacity.
+The PR alternatives are deferred in `test/fixtures/proposed_anyzlo_mappings.json`.
+Use [ODB calibration logging](OBD_CALIBRATION.fr.md) to collect reference measurements.
 
 ### BITMASK_EXTRACT
 

@@ -35,7 +35,7 @@ jobs:
         with:
           path: |
             ~/.cache/pip
-            ~/.platformio
+            .pio-core
             .pio
           key: ${{ runner.os }}-pio-native-${{ hashFiles('**/platformio.ini') }}
           restore-keys: |
@@ -47,7 +47,7 @@ jobs:
         with:
           path: |
             ~/.cache/pip
-            ~/.platformio
+            .pio-core
             .pio
           key: ${{ runner.os }}-pio-native-${{ hashFiles('**/platformio.ini') }}
           restore-keys: |
@@ -61,8 +61,8 @@ jobs:
       - name: Run Unit Tests
         run: pio test -e native -e native_radio -e native_serial
 
-      - name: Test CAN analysis importer
-        run: python -B -m unittest discover -s tools -p test_analyze_can_log.py -v
+      - name: Test CAN analysis and OBD comparison
+        run: python -B -m unittest discover -s tools -p 'test_*can*.py' -v
 
   build:
     name: Build ESP32 Firmware
@@ -82,7 +82,7 @@ jobs:
         with:
           path: |
             ~/.cache/pip
-            ~/.platformio
+            .pio-core
             .pio
           key: ${{ runner.os }}-pio-esp32-${{ hashFiles('**/platformio.ini') }}
           restore-keys: |
@@ -94,7 +94,7 @@ jobs:
         with:
           path: |
             ~/.cache/pip
-            ~/.platformio
+            .pio-core
             .pio
           key: ${{ runner.os }}-pio-esp32-${{ hashFiles('**/platformio.ini') }}
           restore-keys: |

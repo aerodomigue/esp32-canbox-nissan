@@ -41,8 +41,8 @@ Le projet a démarré comme une solution dédiée à la **Nissan Juke F15**, mai
 | Fonctionnalité | Statut | Notes |
 | --- | --- | --- |
 | Régime Moteur (RPM) | Calibration à vérifier | Décodeur implémenté ; valeur de ralenti incohérente dans l'ancien log |
-| Vitesse Véhicule | Calibration à vérifier | Offset corrigé ; aucune vitesse non nulle de référence dans l'ancien log |
-| Niveau Essence | Mapping contesté | Formule proposée limitée à 0–31 L ; l'octet 0 pourrait contenir des états |
+| Vitesse Véhicule | Calibration à vérifier | Preset initial restauré ; comparaison avec les références ODB |
+| Niveau Essence | Mapping contesté | Formule initiale 0–45 restaurée ; l'octet 0 pourrait contenir des états |
 | Tension Batterie | ✅ Fonctionnel | |
 | Direction / Lignes Dynamiques | ✅ Fonctionnel | Calibré pour Juke F15 |
 | État des Portes | ✅ Fonctionnel | 4 portes + coffre |
@@ -52,7 +52,7 @@ Le projet a démarré comme une solution dédiée à la **Nissan Juke F15**, mai
 | Température Extérieure | ✅ Fonctionnel | Depuis CAN 0x540 (température ambiante) |
 | Conso. Instantanée | Unité à vérifier | Depuis CAN 0x580 ; référence véhicule nécessaire pour l'unité CAN |
 | Conso. Moyenne | Unité à vérifier | Depuis CAN 0x580 ; référence véhicule nécessaire pour l'unité CAN |
-| Autonomie Restante | Unité à vérifier | Depuis CAN 0x2DE ; unité du combiné à confirmer |
+| Autonomie Restante | Unité à vérifier | Mapping initial CAN 0x54C restauré ; référence du combiné nécessaire |
 
 > **Note :** La documentation du protocole Raise/Toyota RAV4 utilisé par les autoradios Android est rare. Certaines fonctionnalités sont encore en cours de reverse-engineering par manque de spécifications officielles du protocole.
 
@@ -239,9 +239,13 @@ La LED (GPIO 8) permet un diagnostic rapide sans connexion PC :
 
 Pour compiler et tester localement, voir [Développement](docs/DEVELOPMENT.md).
 Le [rapport de validation de la PR #10](docs/PR10_VALIDATION.fr.md) décrit les
-nouveaux mappings Juke et les limites de vérification avec les données CAN historiques.
+correctifs de décodage, les propositions différées et les vérifications réalisées.
 L'[analyse CAN du DIG-T 2011](docs/JUKE_2011_CAN_ANALYSIS.fr.md) documente le
 défaut de l'ancien enregistreur, les mappings contradictoires et le parseur reproductible.
+Les propositions de la PR sont mises de côté hors du preset déployé. `LOG ON`
+enregistre maintenant les trames CAN brutes horodatées et lance les lectures
+OBD service 01 supportées ; chaque ligne de diagnostic commence par `ODB`.
+Voir [la capture pour calibration OBD](docs/OBD_CALIBRATION.fr.md).
 
 L'installation de votre pont CAN ESP32 se déroule en deux étapes simples :
 
@@ -276,16 +280,16 @@ Une fois flashé, branchez l'ESP32 sur un port USB de votre autoradio Android. T
 | Donnée | ID CAN | Fréq. envoi | Notes |
 | --- | --- | --- | --- |
 | Angle Volant | 0x002 | 200ms | Pour lignes caméra |
-| Régime Moteur | 0x180 | 333ms | Octets 0–1, big endian, brut / 8 |
-| Vitesse Véhicule | 0x284 | 500ms | Octets 4–5, big endian, brut / 100 |
-| Niveau Essence | 0x5C5 | — | MAP_RANGE [255, -70, 0, 40] ; octet 0 décodé de 0 à 31 L |
+| Régime Moteur | 0x180 | 333ms | Octets initiaux 0–1, big endian, brut / 7 ; calibration à vérifier |
+| Vitesse Véhicule | 0x284 | 500ms | Octets initiaux 0–1, big endian, brut / 100 ; calibration à vérifier |
+| Niveau Essence | 0x5C5 | — | Formule initiale MAP_RANGE [255, 0, 0, 45] ; mapping contesté |
 | Tension Batterie | 0x6F6 | — | Sortie alternateur |
 | Température Extérieure | 0x540 | 5000ms | Température ambiante |
 | Température Eau Moteur | 0x551 | 5000ms | Envoyée dans l’octet 0 de CMD 0x28 ; hypothèse non documentée et non vérifiée |
 | État Portes | 0x60D | 250ms | Toutes portes + coffre (ou sur changement) |
-| Autonomie | 0x2DE | 5000ms | Octets 6–7, big endian, brut / 10 km |
-| Conso. Instantanée | 0x580 | 1000ms | Octet 1, sans masque ; unités 0.1 L/100km |
-| Conso. Moyenne | 0x580 | 5000ms | Unités 0.1 L/100km |
+| Autonomie | 0x54C | 5000ms | Octets initiaux 6–7, big endian, brut × 100 / 338 ; calibration à vérifier |
+| Conso. Instantanée | 0x580 | 1000ms | Octet initial 3, sans masque ; unité CAN inconnue, UART en 0.1 L/100km |
+| Conso. Moyenne | 0x580 | 5000ms | Unité CAN inconnue, UART en 0.1 L/100km |
 | Compteur km | 0x5C5 | 10000ms | Total km (24-bit) |
 
 ---

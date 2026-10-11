@@ -22,6 +22,7 @@
 #include "RadioSend.h"
 #include "CanConfigProcessor.h"
 #include "MockDataGenerator.h"
+#include "ObdCalibration.h"
 
 // ==============================================================================
 // SAFETY CONFIGURATION
@@ -45,6 +46,16 @@ HardwareSerial RadioSerial(1);
 // Configurable CAN processor and mock data generator
 CanConfigProcessor canProcessor;
 MockDataGenerator mockGenerator;
+
+static bool sendObdReference(const CanFrame& frame, void*) {
+    return ESP32Can.writeFrame(frame, 0);  // Queued, not a bus acknowledgement.
+}
+
+static void printObdReference(const char* line, void*) {
+    Serial.println(line);  // Every diagnostic line begins with the requested ODB prefix.
+}
+
+ObdCalibration obdCalibration(sendObdReference, printObdReference);
 
 /**
  * @brief System initialization
@@ -104,6 +115,7 @@ void setup() {
         // H. CAN Bus Initialization - TWAI controller setup (only in real mode)
         ESP32Can.setPins(CAN_TX, CAN_RX);
         ESP32Can.setSpeed(ESP32Can.convertSpeed(500)); // API uses kbps (Nissan Juke: 500 kbps)
+        ESP32Can.setRxQueueSize(128);
 
         // Attempt CAN startup with immediate error handling
         if (!ESP32Can.begin()) {
@@ -140,12 +152,14 @@ void loop() {
     // Skip during OTA for maximum throughput
     // ==========================================================================
     if (isOtaInProgress()) {
+        obdCalibration.setEnabled(false, millis());
         serialCommandCheckOtaTimeout();
         vTaskDelay(pdMS_TO_TICKS(1));  // yield to USB CDC FreeRTOS tasks
         return;
     }
 
     if (canProcessor.isMockMode()) {
+        obdCalibration.setEnabled(false, millis());
         // MOCK MODE: Generate simulated data
         mockGenerator.update();
         lastCanMessageTime = now;  // Prevent timeout in mock mode
@@ -157,17 +171,13 @@ void loop() {
             lastMockBlink = now;
         }
     } else {
+        obdCalibration.setEnabled(isCanLogEnabled(), millis());
         // REAL MODE: Read from CAN bus
-        CanFrame rxFrame;
+        CanFrame rxFrame = {};
 
         // CAN BUS ERROR MONITORING
         uint32_t rxErr = ESP32Can.rxErrorCounter();
         uint32_t busErr = ESP32Can.busErrCounter();
-
-        if (isCanLogEnabled() && (rxErr > 0 || busErr > 0)) {
-            Serial.printf("Errors RX: %d | Bus: %d | State: %d\n",
-                          rxErr, busErr, ESP32Can.canState());
-        }
 
         if (rxErr > MAX_CAN_ERRORS || busErr > MAX_CAN_ERRORS || ESP32Can.canState() == TWAI_STATE_BUS_OFF) {
             Serial.printf("\n!!! CAN BUS CRASH DETECTED !!!\n");
@@ -178,10 +188,29 @@ void loop() {
         }
 
         // CAN BUS READING
-        if (ESP32Can.readFrame(rxFrame)) {
-            handleCanCapture(rxFrame);
-            lastCanMessageTime = now;
-        } else {
+        bool received = false;
+        for (uint8_t n = 0; n < 32 && ESP32Can.readFrame(rxFrame, 0); ++n) {
+            const uint32_t receivedAt = millis();
+            received = true;
+            handleCanCapture(rxFrame, receivedAt);
+            obdCalibration.receive(rxFrame, receivedAt);
+            lastCanMessageTime = receivedAt;
+        }
+        obdCalibration.tick(millis());
+        // Expose actual driver losses; an enlarged queue does not guarantee a lossless capture.
+        static uint32_t lastStats = 0;
+        if (isCanLogEnabled() && uint32_t(millis() - lastStats) >= 1000) {
+            lastStats = millis();
+            Serial.printf("ODB DRIVER t_ms=%lu rx_missed=%lu tx_failed=%lu rx_queue=%lu rx_errors=%lu bus_errors=%lu state=%d\n",
+                          static_cast<unsigned long>(lastStats),
+                          static_cast<unsigned long>(ESP32Can.rxMissedCounter()),
+                          static_cast<unsigned long>(ESP32Can.txFailedCounter()),
+                          static_cast<unsigned long>(ESP32Can.inRxQueue()),
+                          static_cast<unsigned long>(rxErr),
+                          static_cast<unsigned long>(busErr),
+                          static_cast<int>(ESP32Can.canState()));
+        }
+        if (!received) {
             // Slow heartbeat when no messages (indicates silent bus)
             static unsigned long lastHeartbeat = 0;
             if (now - lastCanMessageTime > 200 && now - lastHeartbeat > 1000) {
@@ -191,7 +220,7 @@ void loop() {
         }
 
         // SAFETY: GLOBAL TIMEOUT (Engine off or wire disconnected)
-        if (now - lastCanMessageTime > CAN_TIMEOUT && voltBat > 11.0) {
+        if (uint32_t(millis() - lastCanMessageTime) > CAN_TIMEOUT && voltBat > 11.0) {
             Serial.println("CAN SILENCE TIMEOUT -> SAFETY REBOOT");
             delay(100);
             ESP.restart();

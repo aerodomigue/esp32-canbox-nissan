@@ -3,7 +3,9 @@
 
 Supports historical ``RX ID: ... | DLC: ... | Data: ...`` records, current
 ``RX 0x180 [8]: ...`` records, and CANBox CSV (timestamp_ms,RX,id,dlc,data).
-Only valid 11-bit classic CAN frames enter the analysis. Sample order is not time.
+Timestamped RX and ``ODB RAW_RX`` records may carry explicit ext/rtr flags.
+Extended and remote frames are retained separately; hypotheses use standard
+data frames only. Sample order is not time; t_ms is firmware dequeue time.
 """
 
 from __future__ import annotations
@@ -22,7 +24,8 @@ import re
 HISTORICAL = re.compile(
     r"RX ID:\s*(0x[0-9a-f]+)\s*\|\s*DLC:\s*(\d+)\s*\|\s*Data:\s*(.*)", re.I
 )
-CURRENT = re.compile(r"RX\s+(0x[0-9a-f]+)\s*\[(\d+)\]:\s*(.*)", re.I)
+CURRENT = re.compile(r"(RX|ODB RAW_RX)\s+(0x[0-9a-f]+)\s*\[(\d+)\]:\s*(.*)", re.I)
+FRAME_METADATA = re.compile(r"t_ms=(\d+)\s+ext=([01])\s+rtr=([01])")
 BYTE = re.compile(r"[0-9a-f]{2}", re.I)
 
 
@@ -32,6 +35,14 @@ class Frame:
     can_id: int
     data: bytes
     timestamp_ms: float | None = None
+    dlc: int | None = None
+    extended: bool = False
+    rtr: bool = False
+    origin: str = "RX"
+
+    def __post_init__(self):
+        if self.dlc is None:
+            object.__setattr__(self, "dlc", len(self.data))
 
 
 def parse_line(line: str, number: int) -> Frame | None:
@@ -39,10 +50,26 @@ def parse_line(line: str, number: int) -> Frame | None:
     line = line.strip()
     if not line or line.startswith("#"):
         return None
+    # Diagnostics are a distinct record family. Only RAW_RX contains a CAN frame.
+    if line.startswith("ODB ") and not line.startswith("ODB RAW_RX "):
+        return None
     timestamp = None
-    match = HISTORICAL.fullmatch(line) or CURRENT.fullmatch(line)
-    if match:
-        identifier, dlc_text, payload = match.groups()
+    extended, rtr, origin = False, False, "RX"
+    historical, current = HISTORICAL.fullmatch(line), CURRENT.fullmatch(line)
+    if historical:
+        identifier, dlc_text, payload = historical.groups()
+    elif current:
+        origin, identifier, dlc_text, payload = current.groups()
+        origin = origin.upper()
+        if "|" in payload:
+            payload, metadata = payload.split("|", 1)
+            flags = FRAME_METADATA.fullmatch(metadata.strip())
+            if not flags:
+                raise ValueError("expected t_ms=<uint32> ext=0|1 rtr=0|1")
+            timestamp = int(flags[1])
+            if timestamp > 0xFFFFFFFF:
+                raise ValueError("t_ms outside uint32 millis range")
+            extended, rtr = bool(int(flags[2])), bool(int(flags[3]))
     elif "," in line:
         try:
             row = next(csv.reader([line], strict=True))
@@ -50,27 +77,39 @@ def parse_line(line: str, number: int) -> Frame | None:
             raise ValueError(f"malformed CSV: {exc}") from exc
         if row and row[0].strip().lower() in {"timestamp", "timestamp_ms"}:
             return None
-        if len(row) not in {5, 6} or row[1].strip().upper() != "RX":
+        if len(row) not in {5, 6, 8, 9} or row[1].strip().upper() != "RX":
             raise ValueError("expected timestamp_ms,RX,can_id,dlc,data")
         if row[0].strip():
             timestamp = float(row[0])
             if not math.isfinite(timestamp) or timestamp < 0:
                 raise ValueError("timestamp must be a finite nonnegative millisecond value")
         identifier, dlc_text, payload = (part.strip() for part in row[2:5])
+        if len(row) >= 8:
+            if row[6].strip() not in {"0", "1"} or row[7].strip() not in {"0", "1"}:
+                raise ValueError("CSV ext/rtr flags must be 0 or 1")
+            extended, rtr = row[6].strip() == "1", row[7].strip() == "1"
+        if len(row) == 9:
+            origin = row[8].strip()
+            if origin not in {"RX", "ODB RAW_RX"}:
+                raise ValueError("unsupported CSV frame origin")
     else:
         raise ValueError("unsupported or incomplete CAN record")
     if not re.fullmatch(r"0x[0-9a-f]+", identifier, re.I):
         raise ValueError("CAN ID must use hexadecimal 0x notation")
     can_id = int(identifier, 16)
     dlc = int(dlc_text)
-    if not 0 <= can_id <= 0x7FF:
-        raise ValueError("CAN ID outside standard 11-bit range")
+    if not 0 <= can_id <= (0x1FFFFFFF if extended else 0x7FF):
+        raise ValueError("CAN ID outside explicit extended 29-bit range" if extended
+                         else "CAN ID outside standard 11-bit range")
     if not 0 <= dlc <= 8:
         raise ValueError("DLC outside classic CAN range 0..8")
     tokens = payload.split()
-    if len(tokens) != dlc or any(not BYTE.fullmatch(token) for token in tokens):
+    if rtr and tokens:
+        raise ValueError("RTR record must not contain a data payload")
+    if (not rtr and len(tokens) != dlc) or any(not BYTE.fullmatch(token) for token in tokens):
         raise ValueError("payload bytes do not match DLC or contain invalid hex")
-    return Frame(number, can_id, bytes(int(token, 16) for token in tokens), timestamp)
+    return Frame(number, can_id, bytes(int(token, 16) for token in tokens), timestamp,
+                 dlc, extended, rtr, origin)
 
 
 def read_capture(path: Path) -> tuple[list[Frame], list[dict]]:
@@ -126,10 +165,13 @@ def word(data: bytes, start: int, length: int = 2, order: str = "big") -> int:
 
 def inspect_capture(frames: list[Frame], rejected: list[dict]) -> dict:
     groups = defaultdict(list)
+    physical_groups = defaultdict(list)
     for frame in frames:
-        groups[frame.can_id].append(frame)
+        groups[(frame.can_id, frame.extended, frame.rtr)].append(frame)
+        if not frame.extended and not frame.rtr:
+            physical_groups[frame.can_id].append(frame)
     per_id = {}
-    for identifier, records in sorted(groups.items()):
+    for (identifier, extended, rtr), records in sorted(groups.items()):
         byte_stats, windows = [], []
         for offset in range(max(map(lambda f: len(f.data), records))):
             values = [f.data[offset] for f in records if len(f.data) > offset]
@@ -145,15 +187,18 @@ def inspect_capture(frames: list[Frame], rejected: list[dict]) -> dict:
                 if values:
                     windows.append({"offset": offset, "length": 2,
                                     "order": order, **series_stats(values)})
-        per_id[f"0x{identifier:03X}"] = {
-            "count": len(records), "dlcs": dict(Counter(len(f.data) for f in records)),
+        key = f"0x{identifier:03X}" + ("/ext" if extended else "") + ("/rtr" if rtr else "")
+        per_id[key] = {
+            "count": len(records), "dlcs": dict(Counter(f.dlc for f in records)),
+            "extended": extended, "rtr": rtr,
+            "origins": dict(Counter(f.origin for f in records)),
             "first_line": records[0].line, "last_line": records[-1].line,
             "bytes": byte_stats, "unsigned_16bit_windows": windows,
         }
 
     def signal(identifier, start, length=2, transform=lambda v: v):
         return series_stats([transform(word(f.data, start, length))
-                             for f in groups[identifier]
+                             for f in physical_groups[identifier]
                              if len(f.data) >= start + length])
 
     # Explicit numeric hypotheses. Names do not assert vehicle signal semantics.
@@ -176,6 +221,8 @@ def inspect_capture(frames: list[Frame], rejected: list[dict]) -> dict:
     # Match preceding frames in capture order, without inventing timestamps.
     matches, compared, last160 = 0, 0, None
     for frame in frames:
+        if frame.extended or frame.rtr:
+            continue
         if frame.can_id == 0x160 and len(frame.data) >= 3:
             last160 = word(frame.data, 1) & 0xFFF
         elif frame.can_id == 0x180 and len(frame.data) >= 4 and last160 is not None:
@@ -205,15 +252,23 @@ def write_outputs(path: Path, destination: Path) -> dict:
     if not frames:
         raise ValueError("capture contains no valid standard CAN frames")
     report = inspect_capture(frames, rejected)
+    report["diagnostic_metadata"] = [
+        {"line": number, "kind": line.split()[1], "text": line}
+        for number, line in enumerate(path.read_text(encoding="utf-8-sig").splitlines(), 1)
+        if line.startswith("ODB ") and not line.startswith("ODB RAW_RX ")
+        and len(line.split()) >= 2
+    ]
     report["source"] = {"path": str(path), "sha256": hashlib.sha256(path.read_bytes()).hexdigest()}
     destination.mkdir(parents=True, exist_ok=True)
     (destination / "analysis.json").write_text(json.dumps(report, indent=2) + "\n")
     with (destination / "frames.csv").open("w", newline="") as stream:
         writer = csv.writer(stream)
-        writer.writerow(["timestamp_ms", "direction", "can_id", "dlc", "data", "source_line"])
+        writer.writerow(["timestamp_ms", "direction", "can_id", "dlc", "data", "source_line",
+                         "ext", "rtr", "origin"])
         for frame in frames:
             writer.writerow([frame.timestamp_ms, "RX", f"0x{frame.can_id:03X}",
-                             len(frame.data), frame.data.hex(" ").upper(), frame.line])
+                             frame.dlc, frame.data.hex(" ").upper(), frame.line,
+                             int(frame.extended), int(frame.rtr), frame.origin])
     return report
 
 
@@ -228,7 +283,7 @@ def main() -> int:
     except (OSError, ValueError) as exc:
         parser.error(str(exc))
     print(f"Accepted {report['accepted']} frames; rejected {len(report['rejected'])}; "
-          f"observed {len(report['ids'])} CAN IDs.")
+          f"observed {len(report['ids'])} ID/ext/rtr groups.")
     print(f"Numeric analysis: {args.output_dir / 'analysis.json'}")
     print(f"Canonical frames: {args.output_dir / 'frames.csv'}")
     print(report["calibration_note"])

@@ -20,6 +20,65 @@ class CaptureAnalysisTests(unittest.TestCase):
         self.assertEqual(frame.timestamp_ms, 1706277052156)
         self.assertEqual(frame.line, 7)
 
+    def test_timestamped_can_and_diagnostic_raw_preserve_flags_and_bytes(self):
+        regular = parse_line("RX 0x180 [2]: 04 FB | t_ms=4294967295 ext=0 rtr=0", 1)
+        diagnostic = parse_line("ODB RAW_RX 0x7E8 [8]: 04 41 0C 14 18 00 00 00 | t_ms=0 ext=0 rtr=0", 2)
+        self.assertEqual(regular.timestamp_ms, 0xFFFFFFFF)
+        self.assertEqual(regular.data, b"\x04\xfb")
+        self.assertEqual(diagnostic.data, bytes.fromhex("04 41 0C 14 18 00 00 00"))
+        self.assertEqual(diagnostic.origin, "ODB RAW_RX")
+        self.assertEqual(diagnostic.dlc, 8)
+        self.assertFalse(diagnostic.extended)
+        self.assertFalse(diagnostic.rtr)
+
+    def test_diagnostic_metadata_does_not_count_as_malformed_can(self):
+        for kind in ["RX", "TX", "SUPPORTED", "TIMEOUT", "NEGATIVE", "STATE", "DRIVER"]:
+            self.assertIsNone(parse_line(f"ODB {kind} t_ms=100 seq=2", 1))
+
+    def test_remote_frame_preserves_dlc_without_fabricating_bytes(self):
+        remote = parse_line("ODB RAW_RX 0x180 [8]: | t_ms=1234 ext=0 rtr=1", 1)
+        data = parse_line("RX 0x180 [2]: 04 FB | t_ms=1235 ext=0 rtr=0", 2)
+        extended = parse_line("RX 0x180 [2]: FF FF | t_ms=1236 ext=1 rtr=0", 3)
+        report = inspect_capture([remote, data, extended], [])
+        self.assertEqual(remote.data, b"")
+        self.assertEqual(remote.dlc, 8)
+        self.assertEqual(report["ids"]["0x180/rtr"]["dlcs"], {8: 1})
+        self.assertEqual(report["ids"]["0x180/rtr"]["bytes"], [])
+        self.assertEqual(report["ids"]["0x180/ext"]["count"], 1)
+        self.assertEqual(report["hypotheses"]["0x180_bytes_0_1_BE_raw"]["samples"], 1)
+        self.assertEqual(report["hypotheses"]["0x180_bytes_0_1_BE_raw"]["first"], 1275)
+
+    def test_extended_identifiers_require_explicit_valid_flags(self):
+        frame = parse_line("RX 0x1FFFFFFF [0]: | t_ms=1 ext=1 rtr=0", 1)
+        self.assertTrue(frame.extended)
+        self.assertEqual(frame.can_id, 0x1FFFFFFF)
+        for line in ["RX 0x180 [1]: FF | t_ms=1 ext=0 rtr=1",
+                     "RX 0x1FFFFFFF [0]:", "RX 0x20000000 [0]: | t_ms=1 ext=1 rtr=0",
+                     "RX 0x180 [0]: | t_ms=4294967296 ext=0 rtr=0",
+                     "RX 0x180 [0]: | t_ms=-1 ext=0 rtr=0",
+                     "RX 0x180 [0]: | t_ms=1 ext=2 rtr=0"]:
+            with self.subTest(line=line), self.assertRaises(ValueError):
+                parse_line(line, 1)
+
+    def test_timestamped_flags_round_trip_in_canonical_csv(self):
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "capture.log"
+            source.write_text("ODB RAW_RX 0x180 [8]: | t_ms=99 ext=0 rtr=1\n"
+                              "RX 0x1FFFFFFF [2]: 01 02 | t_ms=100 ext=1 rtr=0\n"
+                              "ODB TIMEOUT t_ms=150 seq=2\n")
+            expected, rejected = read_capture(source)
+            self.assertFalse(rejected)
+            out = Path(directory) / "output"
+            report = write_outputs(source, out)
+            self.assertEqual(report["diagnostic_metadata"],
+                             [{"line": 3, "kind": "TIMEOUT", "text": "ODB TIMEOUT t_ms=150 seq=2"}])
+            frames, rejected = read_capture(out / "frames.csv")
+            self.assertFalse(rejected)
+            self.assertEqual([(f.can_id, f.data, f.timestamp_ms, f.dlc, f.extended, f.rtr, f.origin)
+                              for f in frames],
+                             [(f.can_id, f.data, f.timestamp_ms, f.dlc, f.extended, f.rtr, f.origin)
+                              for f in expected])
+
     def test_comments_and_csv_header_are_skipped(self):
         for line in ["", " # source", "timestamp_ms,direction,id,dlc,data"]:
             self.assertIsNone(parse_line(line, 1))

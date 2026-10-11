@@ -141,7 +141,7 @@ void serialCommandProcess() {
         if (c == '\b' || c == 127) {
             if (cmdIndex > 0) {
                 cmdIndex--;
-                if (!otaInProgress) Serial.print("\b \b");
+                if (!otaInProgress && !canLogEnabled) Serial.print("\b \b");
             }
             continue;
         }
@@ -160,7 +160,8 @@ void serialCommandProcess() {
         // Add character to buffer (with overflow protection)
         if (cmdIndex < CMD_BUFFER_SIZE - 1) {
             cmdBuffer[cmdIndex++] = c;
-            if (!otaInProgress) Serial.print(c);
+            // Partial command echo must not prefix/interleave a raw or ODB log line.
+            if (!otaInProgress && !canLogEnabled) Serial.print(c);
         }
     }
 }
@@ -1172,7 +1173,7 @@ static void handleHelpCommand() {
     Serial.println("OTA ABORT               Cancel update");
     Serial.println("OTA STATUS              Update status");
     Serial.println();
-    Serial.println("LOG ON|OFF            CAN frame logging");
+    Serial.println("LOG ON|OFF            Raw CAN logging + ODB service 01 reference polling");
     Serial.println();
     Serial.println("SYS INFO              System information");
     Serial.println("SYS DATA              Live vehicle data");

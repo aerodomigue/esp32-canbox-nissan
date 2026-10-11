@@ -1,6 +1,6 @@
 # CAN Capture - Technical Documentation
 
-This module handles passive listening on the vehicle **High Speed CAN bus** (Cabin network). It delegates frame processing to the `CanConfigProcessor`, which uses JSON configuration files to decode binary vehicle frames into normalized variables.
+This module reads the vehicle **High Speed CAN bus**. It delegates frame processing to the `CanConfigProcessor`, which uses JSON configuration files to decode binary vehicle frames into normalized variables. With `LOG ON`, the main loop also sends supported OBD service 01 queries for reference measurements; `LOG OFF` stops new queries.
 
 ---
 
@@ -30,21 +30,21 @@ The actual decoding logic (byte extraction, formulas, target mapping) is defined
 
 ## Decoded CAN Frames (Nissan Juke F15)
 
-The following table describes the CAN frames decoded by the default `NissanJukeF15.json` configuration:
+The following table describes the initial PR-head mappings restored in the default `NissanJukeF15.json`. Physical calibration remains unverified. The proposed replacements are preserved outside the deployed preset in `test/fixtures/proposed_anyzlo_mappings.json`.
 
 ### 1. Steering & Dynamics
 
 | CAN ID | Signal | Bytes | Formula | Unit | Notes |
 | --- | --- | --- | --- | --- | --- |
 | **0x002** | Steering Angle | [1-2] | NONE (raw INT16) | 0.1° | Signed, Big Endian. Center offset applied by ConfigManager |
-| **0x180** | Engine RPM | [0-1] | SCALE [1, 8, 0] | RPM | `raw / 8` |
-| **0x284** | Vehicle Speed | [4-5] | SCALE [1, 100, 0] | km/h | `raw / 100` (wheel speed sensor) |
+| **0x180** | Engine RPM | [0-1] | SCALE [1, 7, 0] | RPM | Initial `raw / 7` hypothesis |
+| **0x284** | Vehicle Speed | [0-1] | SCALE [1, 100, 0] | km/h | Initial offset, to compare with OBD |
 
 ### 2. Instrument Cluster (CAN ID 0x5C5)
 
 | Byte | Signal | Formula | Notes |
 | --- | --- | --- | --- |
-| **[0]** | Fuel Level | MAP_RANGE [255, -70, 0, 40] | Empirical calibration: raw 255 → 0 L, raw 0 → 31 L (integer arithmetic); -70 is outside UINT8 range |
+| **[0]** | Fuel Level | MAP_RANGE [255, 0, 0, 45] | Initial mapping hypothesis; byte may contain status flags |
 | **[1-3]** | Odometer | NONE (UINT24) | Total km (24-bit Big Endian) |
 
 ### 3. Power Management
@@ -90,18 +90,18 @@ Bytes [0-2] form a **24-bit status word** (Big Endian BITMASK). Individual bits 
 - `headlightsOn`, `highBeamOn`, `parkingLightsOn`
 - `lastLeftIndicatorTime`, `lastRightIndicatorTime` (timestamps)
 
-### 5. Trip Computer (CAN ID 0x2DE)
+### 5. Trip Computer (CAN ID 0x54C)
 
 | Byte | Signal | Formula | Notes |
 | --- | --- | --- | --- |
-| **[6-7]** | Distance to Empty | SCALE [1, 10, 0] | `raw / 10` → estimated range in km; 0x54C no longer updates DTE |
+| **[6-7]** | Distance to Empty | SCALE [100, 338, 0] | Initial `raw * 100 / 338` hypothesis; 0x2DE replacement deferred |
 
 ### 6. Fuel Consumption (CAN ID 0x580)
 
 | Byte | Signal | Formula | Notes |
 | --- | --- | --- | --- |
-| **[1]** | Instant. Consumption | SCALE [1, 1, 0] | No bitmask, 0.1 L/100km units |
-| **[4]** | Average Consumption | NONE (UINT8) | 0.1 L/100km units |
+| **[3]** | Instant. Consumption | NONE (UINT8) | Initial byte; observed counter pattern, CAN units unverified |
+| **[4]** | Average Consumption | NONE (UINT8) | CAN units unverified; UART expects 0.1 L/100km |
 
 ---
 
@@ -151,7 +151,8 @@ CanCapture.handleCanCapture()
 
 ### Non-blocking Design
 
-- The `handleCanCapture()` function processes one frame at a time to avoid blocking the main loop.
+- The main loop uses `readFrame(frame, 0)`, drains at most 32 frames per iteration and uses a 128-frame receive queue. USB output can still block; driver missed-frame counters are logged.
+- Standard 11-bit data frames are decoded only after all configured fields pass DLC validation. Extended and RTR frames remain visible in the raw log without updating decoded vehicle data.
 - All decoded values are stored in global variables (defined in `GlobalData.cpp`) for access by the radio transmission module.
 
 ### Debug Logging
@@ -159,10 +160,16 @@ CanCapture.handleCanCapture()
 When CAN logging is enabled (`LOG ON` via serial), the system outputs each received CAN frame:
 
 ```
-RX 0x180 [8]: 00 00 45 6A 7A 00 32 10
-RX 0x284 [8]: 00 00 00 2D 00 00 D6 5C
-RX 0x60D [8]: 08 06 00 00 00 00 00 00
+ODB TX t_ms=1000 seq=2 can_id=0x7E0 service=0x01 pid=0x0C status=queued data=02 01 0C 00 00 00 00 00
+RX 0x180 [8]: 14 18 00 00 00 00 00 00 | t_ms=1008 ext=0 rtr=0
+ODB RAW_RX 0x7E8 [8]: 04 41 0C 0A 0C 00 00 00 | t_ms=1008 ext=0 rtr=0
+ODB RX t_ms=1008 seq=2 request_id=0x7E0 ecu=0x7E8 pid=0x0C name=rpm value=643.000 unit=rpm latency_ms=8
 ```
+
+The example is synthetic. Payload bytes are unchanged; `t_ms` is software
+dequeue time, not a hardware bus timestamp. All diagnostic records begin with
+the requested `ODB` prefix. See [calibration capture and comparison](../OBD_CALIBRATION.fr.md)
+for capabilities discovery, units, timeouts and host analysis commands.
 
 ---
 
@@ -181,7 +188,7 @@ RX 0x60D [8]: 08 06 00 00 00 00 00 00
      0x551
      0x60D            Output variables:
      0x6F6            currentSteer, engineRPM, vehicleSpeed,
-     0x2DE            fuelLevel, currentOdo, voltBat, tempExt,
+     0x54C            fuelLevel, currentOdo, voltBat, tempExt,
      0x580            currentDoors, headlightsOn, highBeamOn,
                       parkingLightsOn, dteValue,
                       fuelConsumptionInst, fuelConsumptionAvg, coolantTemp,

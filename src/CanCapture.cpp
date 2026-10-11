@@ -12,6 +12,7 @@
 #include "GlobalData.h"
 #include "ConfigManager.h"
 #include "SerialCommand.h"
+#include "CanLogFormatter.h"
 
 #define LED_HEARTBEAT 8
 
@@ -21,8 +22,9 @@ extern CanConfigProcessor canProcessor;
 /**
  * @brief Process a received CAN frame using the configured processor
  * @param rxFrame Reference to the received CAN frame
+ * @param receivedAt Software dequeue timestamp in milliseconds
  */
-void handleCanCapture(CanFrame &rxFrame) {
+void handleCanCapture(const CanFrame& rxFrame, uint32_t receivedAt) {
     // Process frame through configurable processor
     bool processed = canProcessor.processFrame(rxFrame);
 
@@ -34,11 +36,9 @@ void handleCanCapture(CanFrame &rxFrame) {
 
     // Log CAN frame if enabled via serial command
     if (isCanLogEnabled()) {
-        Serial.printf("RX 0x%03X [%d]: ", rxFrame.identifier, rxFrame.data_length_code);
-        for (int i = 0; i < rxFrame.data_length_code; i++) {
-            Serial.printf("%02X ", rxFrame.data[i]);
-        }
-        Serial.println();
+        // Format a complete line before output; neither decoder nor logger mutates the frame.
+        char line[160];
+        if (formatCanFrameLog(rxFrame, receivedAt, line, sizeof(line))) Serial.println(line);
     }
 
     // Optional: Debug logging for unknown frames
