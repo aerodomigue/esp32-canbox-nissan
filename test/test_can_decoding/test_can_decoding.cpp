@@ -4,7 +4,7 @@
  *
  * Loads production config (data/NissanJukeF15.json) via LittleFS mock,
  * feeds raw CAN frames into processFrame(), and asserts GlobalData values.
- * Values validated against real Nissan Juke F15 dashboard readings.
+ * Covers captured values and regression vectors for reviewed Juke F15 mappings.
  *
  * Run: pio test -e native
  */
@@ -57,7 +57,7 @@ void setUp() {
     mockReset();
     LittleFS.basePath = "data";  // use production config file
     resetGlobalData();
-    proc.loadFromJson("/NissanJukeF15.json");
+    TEST_ASSERT_TRUE(proc.loadFromJson("/NissanJukeF15.json"));
 }
 
 void tearDown() {}
@@ -108,43 +108,62 @@ void test_coolant_operating_temp() {
 }
 
 // =============================================================================
-// DISTANCE TO EMPTY — 0x54C bytes 6-7 BE, raw*100/338
-// Validated: dashboard showed 305km, raw=0x0408=1032, 1032*100/338=305
+// DISTANCE TO EMPTY — 0x2DE bytes 6-7 BE, raw/10
 // =============================================================================
 
 void test_dte_305km() {
-    uint8_t d[] = {0x00, 0x00, 0x00, 0x00, 0x00, 0x80, 0x04, 0x08};
-    CanFrame f = makeFrame(0x54C, d, 8);
+    // 305 km -> 3050 = 0x0BEA; other byte pairs deliberately disagree.
+    uint8_t d[] = {0x12, 0x34, 0x56, 0x78, 0x9A, 0xBC, 0x0B, 0xEA};
+    CanFrame f = makeFrame(0x2DE, d, 8);
     proc.processFrame(f);
     TEST_ASSERT_EQUAL_INT16(305, dteValue);
 }
 
 void test_dte_zero() {
     uint8_t d[] = {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
-    CanFrame f = makeFrame(0x54C, d, 8);
+    CanFrame f = makeFrame(0x2DE, d, 8);
     proc.processFrame(f);
     TEST_ASSERT_EQUAL_INT16(0, dteValue);
 }
 
 void test_dte_100km() {
-    // 100km → need raw = 100*338/100 = 338 = 0x0152
-    uint8_t d[] = {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x52};
-    CanFrame f = makeFrame(0x54C, d, 8);
+    // 100 km -> 1000 = 0x03E8
+    uint8_t d[] = {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x03, 0xE8};
+    CanFrame f = makeFrame(0x2DE, d, 8);
     proc.processFrame(f);
-    TEST_ASSERT_EQUAL_INT16(100, dteValue);  // 338*100/338=100
+    TEST_ASSERT_EQUAL_INT16(100, dteValue);
+}
+
+void test_dte_old_source_does_not_overwrite() {
+    uint8_t current[] = {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x03, 0xE8};
+    CanFrame currentFrame = makeFrame(0x2DE, current, 8);
+    TEST_ASSERT_TRUE(proc.processFrame(currentFrame));
+    TEST_ASSERT_EQUAL_INT16(100, dteValue);
+
+    // The old formula would decode this 0x54C payload as 305 km.
+    uint8_t obsolete[] = {0x00, 0x00, 0x00, 0x00, 0x00, 0x80, 0x04, 0x08};
+    CanFrame obsoleteFrame = makeFrame(0x54C, obsolete, 8);
+    TEST_ASSERT_FALSE(proc.processFrame(obsoleteFrame));
+    TEST_ASSERT_EQUAL_INT16(100, dteValue);
 }
 
 // =============================================================================
-// ENGINE RPM — 0x180 bytes 0-1 BE, raw/7
-// Expected at idle: raw~7200 → 7200/7=1028 RPM
+// ENGINE RPM — 0x180 bytes 0-1 BE, raw/8
 // =============================================================================
 
 void test_rpm_idle() {
     uint8_t d[] = {0x1C, 0x39, 0x33, 0x43, 0x09, 0x00, 0x31, 0x05};
     CanFrame f = makeFrame(0x180, d, 8);
     proc.processFrame(f);
-    // 0x1C39 = 7225, 7225/7 = 1032
-    TEST_ASSERT_EQUAL_UINT16(1032, engineRPM);
+    // Captured 0x1C39 = 7225, integer 7225/8 = 903 RPM.
+    TEST_ASSERT_EQUAL_UINT16(903, engineRPM);
+}
+
+void test_rpm_6000() {
+    uint8_t d[] = {0xBB, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
+    CanFrame f = makeFrame(0x180, d, 8);
+    proc.processFrame(f);
+    TEST_ASSERT_EQUAL_UINT16(6000, engineRPM);  // 0xBB80 = 48000
 }
 
 void test_rpm_zero() {
@@ -155,11 +174,12 @@ void test_rpm_zero() {
 }
 
 // =============================================================================
-// VEHICLE SPEED — 0x284 bytes 0-1 BE, raw/100
+// VEHICLE SPEED — 0x284 bytes 4-5 BE, raw/100
 // =============================================================================
 
 void test_speed_zero() {
-    uint8_t d[] = {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
+    // The old bytes 0-1 indicate 100 km/h while corrected bytes 4-5 are zero.
+    uint8_t d[] = {0x27, 0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
     CanFrame f = makeFrame(0x284, d, 8);
     proc.processFrame(f);
     TEST_ASSERT_EQUAL_UINT8(0, vehicleSpeed);
@@ -167,10 +187,57 @@ void test_speed_zero() {
 
 void test_speed_100kmh() {
     // 100 km/h → raw = 100*100 = 10000 = 0x2710
-    uint8_t d[] = {0x27, 0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
+    // Bytes 0-1 deliberately indicate 50 km/h.
+    uint8_t d[] = {0x13, 0x88, 0x00, 0x00, 0x27, 0x10, 0x00, 0x00};
     CanFrame f = makeFrame(0x284, d, 8);
     proc.processFrame(f);
     TEST_ASSERT_EQUAL_UINT8(100, vehicleSpeed);
+}
+
+// =============================================================================
+// FUEL LEVEL — 0x5C5 byte0, map(raw, 255, -70, 0, 40), integer liters
+// The -70 endpoint is outside UINT8: representable raw values reach 0..31 L.
+// =============================================================================
+
+void test_fuel_level_empty() {
+    uint8_t d[] = {0xFF, 0x03, 0xBA, 0x2C, 0x00, 0x00, 0x00, 0x00};
+    CanFrame f = makeFrame(0x5C5, d, 8);
+    proc.processFrame(f);
+    TEST_ASSERT_EQUAL_UINT8(0, fuelLevel);
+}
+
+void test_fuel_level_max_representable() {
+    uint8_t d[] = {0x00, 0x03, 0xBA, 0x2C, 0x00, 0x00, 0x00, 0x00};
+    CanFrame f = makeFrame(0x5C5, d, 8);
+    proc.processFrame(f);
+    TEST_ASSERT_EQUAL_UINT8(31, fuelLevel);  // 255*40/325 = 31, truncated
+}
+
+void test_fuel_level_captured_23_liters() {
+    uint8_t d[] = {0x40, 0x03, 0xBA, 0x2C, 0x00, 0x0C, 0x00, 0x7F};
+    CanFrame f = makeFrame(0x5C5, d, 8);
+    proc.processFrame(f);
+    TEST_ASSERT_EQUAL_UINT8(23, fuelLevel);  // (255-64)*40/325 = 23
+    TEST_ASSERT_EQUAL_UINT32(244268, currentOdo);
+}
+
+void test_fuel_level_midpoint() {
+    uint8_t d[] = {0x7D, 0x03, 0xBA, 0x2C, 0x00, 0x00, 0x00, 0x00};
+    CanFrame f = makeFrame(0x5C5, d, 8);
+    proc.processFrame(f);
+    TEST_ASSERT_EQUAL_UINT8(16, fuelLevel);  // (255-125)*40/325 = 16 exactly
+}
+
+void test_fuel_level_integer_threshold() {
+    uint8_t below[] = {0xF7, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
+    CanFrame belowFrame = makeFrame(0x5C5, below, 8);
+    proc.processFrame(belowFrame);
+    TEST_ASSERT_EQUAL_UINT8(0, fuelLevel);  // (255-247)*40/325 = 0
+
+    uint8_t above[] = {0xF6, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
+    CanFrame aboveFrame = makeFrame(0x5C5, above, 8);
+    proc.processFrame(aboveFrame);
+    TEST_ASSERT_EQUAL_UINT8(1, fuelLevel);  // (255-246)*40/325 = 1
 }
 
 // =============================================================================
@@ -224,22 +291,30 @@ void test_steering_left() {
 }
 
 // =============================================================================
-// FUEL CONSUMPTION — 0x580 byte3 (inst), byte4 (avg), formula NONE
+// FUEL CONSUMPTION — 0x580 byte1 (inst, raw*1/1), byte4 (avg, direct)
 // =============================================================================
 
 void test_fuel_cons_inst() {
     uint8_t d[] = {0x00, 0xBE, 0x80, 0x04, 0x62, 0x00, 0x00, 0x54};
     CanFrame f = makeFrame(0x580, d, 8);
     proc.processFrame(f);
-    TEST_ASSERT_EQUAL_UINT16(4, fuelConsumptionInst);   // byte3=0x04
+    TEST_ASSERT_EQUAL_UINT16(190, fuelConsumptionInst); // byte1=0xBE, not byte3=4
     TEST_ASSERT_EQUAL_UINT16(98, fuelConsumptionAvg);   // byte4=0x62=98
 }
 
 void test_fuel_cons_inst_zero() {
-    uint8_t d[] = {0x00, 0xBE, 0x80, 0x00, 0x62, 0x00, 0x00, 0x05};
+    uint8_t d[] = {0x00, 0x00, 0x80, 0x04, 0x62, 0x00, 0x00, 0x05};
     CanFrame f = makeFrame(0x580, d, 8);
     proc.processFrame(f);
     TEST_ASSERT_EQUAL_UINT16(0, fuelConsumptionInst);
+}
+
+void test_fuel_cons_inst_preserves_full_byte() {
+    uint8_t d[] = {0x00, 0xFF, 0x80, 0x04, 0x62, 0x00, 0x00, 0x05};
+    CanFrame f = makeFrame(0x580, d, 8);
+    proc.processFrame(f);
+    TEST_ASSERT_EQUAL_UINT16(255, fuelConsumptionInst);
+    TEST_ASSERT_EQUAL_UINT16(98, fuelConsumptionAvg);
 }
 
 // =============================================================================
@@ -288,15 +363,118 @@ void test_indicator_left_fires() {
 }
 
 // =============================================================================
+// FRAME LENGTH — incomplete fields must not consume padding or update outputs
+// =============================================================================
+
+void test_speed_short_frame_preserves_previous_value() {
+    uint8_t valid[] = {0x00, 0x00, 0x00, 0x00, 0x1F, 0x40};
+    CanFrame validFrame = makeFrame(0x284, valid, 6);
+    TEST_ASSERT_TRUE(proc.processFrame(validFrame));
+    TEST_ASSERT_EQUAL_UINT8(80, vehicleSpeed);
+    const uint32_t processedBefore = proc.getFramesProcessed();
+    const uint32_t unknownBefore = proc.getUnknownFrames();
+
+    uint8_t truncated[] = {0x27, 0x10, 0x00, 0x00};
+    CanFrame truncatedFrame = makeFrame(0x284, truncated, 4);
+    TEST_ASSERT_FALSE(proc.processFrame(truncatedFrame));
+    TEST_ASSERT_EQUAL_UINT8(80, vehicleSpeed);
+    TEST_ASSERT_EQUAL_UINT32(processedBefore, proc.getFramesProcessed());
+    TEST_ASSERT_EQUAL_UINT32(unknownBefore, proc.getUnknownFrames());
+}
+
+void test_speed_six_byte_frame_accepted() {
+    uint8_t d[] = {0x13, 0x88, 0x00, 0x00, 0x27, 0x10};
+    CanFrame f = makeFrame(0x284, d, 6);
+    const uint32_t processedBefore = proc.getFramesProcessed();
+    const uint32_t unknownBefore = proc.getUnknownFrames();
+    TEST_ASSERT_TRUE(proc.processFrame(f));
+    TEST_ASSERT_EQUAL_UINT8(100, vehicleSpeed);
+    TEST_ASSERT_EQUAL_UINT32(processedBefore + 1, proc.getFramesProcessed());
+    TEST_ASSERT_EQUAL_UINT32(unknownBefore, proc.getUnknownFrames());
+}
+
+void test_dte_short_frame_preserves_previous_value() {
+    uint8_t valid[] = {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0B, 0xEA};
+    CanFrame validFrame = makeFrame(0x2DE, valid, 8);
+    TEST_ASSERT_TRUE(proc.processFrame(validFrame));
+    TEST_ASSERT_EQUAL_INT16(305, dteValue);
+    const uint32_t processedBefore = proc.getFramesProcessed();
+    const uint32_t unknownBefore = proc.getUnknownFrames();
+
+    CanFrame truncatedFrame = makeFrame(0x2DE, valid, 6);
+    TEST_ASSERT_FALSE(proc.processFrame(truncatedFrame));
+    TEST_ASSERT_EQUAL_INT16(305, dteValue);
+    TEST_ASSERT_EQUAL_UINT32(processedBefore, proc.getFramesProcessed());
+    TEST_ASSERT_EQUAL_UINT32(unknownBefore, proc.getUnknownFrames());
+}
+
+void test_fuel_short_frame_rejected_atomically() {
+    uint8_t valid[] = {0x7D, 0x03, 0xBA, 0x2C};
+    CanFrame validFrame = makeFrame(0x5C5, valid, 4);
+    TEST_ASSERT_TRUE(proc.processFrame(validFrame));
+    TEST_ASSERT_EQUAL_UINT8(16, fuelLevel);
+    TEST_ASSERT_EQUAL_UINT32(244268, currentOdo);
+    const uint32_t processedBefore = proc.getFramesProcessed();
+    const uint32_t unknownBefore = proc.getUnknownFrames();
+
+    // Fuel byte is present, odometer is missing: neither field may be written.
+    uint8_t truncated[] = {0x00};
+    CanFrame truncatedFrame = makeFrame(0x5C5, truncated, 1);
+    TEST_ASSERT_FALSE(proc.processFrame(truncatedFrame));
+    TEST_ASSERT_EQUAL_UINT8(16, fuelLevel);
+    TEST_ASSERT_EQUAL_UINT32(244268, currentOdo);
+    TEST_ASSERT_EQUAL_UINT32(processedBefore, proc.getFramesProcessed());
+    TEST_ASSERT_EQUAL_UINT32(unknownBefore, proc.getUnknownFrames());
+}
+
+void test_oversized_dlc_rejected() {
+    engineRPM = 903;
+    // makeFrame copies at most eight bytes even though the DLC is invalid.
+    uint8_t d[] = {0xBB, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
+    CanFrame f = makeFrame(0x180, d, 9);
+    const uint32_t processedBefore = proc.getFramesProcessed();
+    const uint32_t unknownBefore = proc.getUnknownFrames();
+    TEST_ASSERT_FALSE(proc.processFrame(f));
+    TEST_ASSERT_EQUAL_UINT16(903, engineRPM);
+    TEST_ASSERT_EQUAL_UINT32(processedBefore, proc.getFramesProcessed());
+    TEST_ASSERT_EQUAL_UINT32(unknownBefore, proc.getUnknownFrames());
+}
+
+void test_invalid_field_lengths_rejected() {
+    LittleFS.basePath = "test/test_can_decoding";
+    TEST_ASSERT_TRUE(proc.loadFromJson("/invalid_field_lengths.json"));
+    engineRPM = 903;
+    vehicleSpeed = 80;
+    const uint32_t processedBefore = proc.getFramesProcessed();
+    const uint32_t unknownBefore = proc.getUnknownFrames();
+    uint8_t d[] = {0x27, 0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
+
+    CanFrame emptyFieldFrame = makeFrame(0x180, d, 8);
+    TEST_ASSERT_FALSE(proc.processFrame(emptyFieldFrame));
+    TEST_ASSERT_EQUAL_UINT16(903, engineRPM);
+
+    // startByte=255 plus byteCount=2 must not wrap around to a valid offset.
+    CanFrame overflowingFieldFrame = makeFrame(0x284, d, 8);
+    TEST_ASSERT_FALSE(proc.processFrame(overflowingFieldFrame));
+    TEST_ASSERT_EQUAL_UINT8(80, vehicleSpeed);
+    TEST_ASSERT_EQUAL_UINT32(processedBefore, proc.getFramesProcessed());
+    TEST_ASSERT_EQUAL_UINT32(unknownBefore, proc.getUnknownFrames());
+}
+
+// =============================================================================
 // UNKNOWN FRAME — processFrame returns false for unconfigured IDs
 // =============================================================================
 
 void test_unknown_frame_ignored() {
     uint8_t d[] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
     CanFrame f = makeFrame(0x999, d, 8);
+    const uint32_t processedBefore = proc.getFramesProcessed();
+    const uint32_t unknownBefore = proc.getUnknownFrames();
     bool result = proc.processFrame(f);
     TEST_ASSERT_FALSE(result);
     TEST_ASSERT_EQUAL_INT8(0, tempExt);  // GlobalData unchanged
+    TEST_ASSERT_EQUAL_UINT32(processedBefore, proc.getFramesProcessed());
+    TEST_ASSERT_EQUAL_UINT32(unknownBefore + 1, proc.getUnknownFrames());
 }
 
 // =============================================================================
@@ -319,14 +497,23 @@ int main(int argc, char** argv) {
     RUN_TEST(test_dte_305km);
     RUN_TEST(test_dte_zero);
     RUN_TEST(test_dte_100km);
+    RUN_TEST(test_dte_old_source_does_not_overwrite);
 
     // Engine RPM
     RUN_TEST(test_rpm_idle);
+    RUN_TEST(test_rpm_6000);
     RUN_TEST(test_rpm_zero);
 
     // Vehicle speed
     RUN_TEST(test_speed_zero);
     RUN_TEST(test_speed_100kmh);
+
+    // Fuel level
+    RUN_TEST(test_fuel_level_empty);
+    RUN_TEST(test_fuel_level_max_representable);
+    RUN_TEST(test_fuel_level_captured_23_liters);
+    RUN_TEST(test_fuel_level_midpoint);
+    RUN_TEST(test_fuel_level_integer_threshold);
 
     // Odometer
     RUN_TEST(test_odometer_244268km);
@@ -342,6 +529,7 @@ int main(int argc, char** argv) {
     // Fuel consumption
     RUN_TEST(test_fuel_cons_inst);
     RUN_TEST(test_fuel_cons_inst_zero);
+    RUN_TEST(test_fuel_cons_inst_preserves_full_byte);
 
     // Doors & lights
     RUN_TEST(test_doors_all_closed);
@@ -349,6 +537,14 @@ int main(int argc, char** argv) {
     RUN_TEST(test_headlights_on);
     RUN_TEST(test_high_beam_on);
     RUN_TEST(test_indicator_left_fires);
+
+    // Frame length validation
+    RUN_TEST(test_speed_short_frame_preserves_previous_value);
+    RUN_TEST(test_speed_six_byte_frame_accepted);
+    RUN_TEST(test_dte_short_frame_preserves_previous_value);
+    RUN_TEST(test_fuel_short_frame_rejected_atomically);
+    RUN_TEST(test_oversized_dlc_rejected);
+    RUN_TEST(test_invalid_field_lengths_rejected);
 
     // Unknown frame
     RUN_TEST(test_unknown_frame_ignored);

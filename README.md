@@ -42,17 +42,17 @@ The project started as a custom solution for the **Nissan Juke F15**, but has si
 | --- | --- | --- |
 | Engine RPM | ✅ Working | |
 | Vehicle Speed | ✅ Working | |
-| Fuel Tank Level | ✅ Working | Calibrated for Juke F15 (45L tank) |
+| Fuel Tank Level | ✅ Working | Empirical Juke F15 calibration; decoded range 0–31 L |
 | Battery Voltage | ✅ Working | |
 | Steering / Dynamic Guidelines | ✅ Working | Calibrated for Juke F15 |
 | Door Status | ✅ Working | All 4 doors + trunk |
 | Indicators | ✅ Working | Left/right turn signals |
 | Lights | ✅ Working | Headlights, high beam, parking lights |
 | Handbrake | ❌ Not supported | Toyota RAV4 protocol does not define this command (marked TBD in spec) |
-| External Temperature | ✅ Working | From CAN 0x551 (BCM ambient sensor) |
+| External Temperature | ✅ Working | From CAN 0x540 (ambient temperature) |
 | Instant Fuel Consumption | ✅ Working | From CAN 0x580 |
 | Average Fuel Consumption | ✅ Working | From CAN 0x580 |
-| Distance to Empty | ✅ Working | From CAN 0x54C |
+| Distance to Empty | ✅ Working | From CAN 0x2DE |
 
 > **Note:** Documentation for the Raise/Toyota RAV4 protocol used by Android head units is scarce. Some features are still being reverse-engineered due to lack of official protocol specifications.
 
@@ -237,6 +237,10 @@ The LED (GPIO 8) provides quick diagnostics without requiring a PC connection:
 
 ## Installation & Setup
 
+For local builds and tests, see [Development](docs/DEVELOPMENT.md).
+The [PR #10 validation report](docs/PR10_VALIDATION.fr.md) records the updated
+Juke mappings and the limits of verification against historical CAN data.
+
 Setting up your ESP32 CANBox Bridge follows a simple two-step process:
 
 ### 1. Initial Firmware Flash
@@ -270,15 +274,15 @@ Once flashed, connect the ESP32 to your Android head unit's USB port. All furthe
 | Data | CAN ID | Send Rate | Notes |
 | --- | --- | --- | --- |
 | Steering Angle | 0x002 | 200ms | For camera guidelines |
-| Engine RPM | 0x180 | 333ms | |
-| Vehicle Speed | 0x284 | 500ms | Wheel speed sensor |
-| Fuel Level | 0x5C5 | — | Mapped to 45L (Juke F15 tank capacity) |
+| Engine RPM | 0x180 | 333ms | Bytes 0–1, big endian, raw / 8 |
+| Vehicle Speed | 0x284 | 500ms | Bytes 4–5, big endian, raw / 100 |
+| Fuel Level | 0x5C5 | — | MAP_RANGE [255, -70, 0, 40]; byte 0 decodes to 0–31 L |
 | Battery Voltage | 0x6F6 | — | Alternator output |
-| External Temperature | 0x551 | 5000ms | BCM ambient air sensor |
-| Coolant Temperature | 0x551 | — | Decoded only, not transmitted (no protocol command defined) |
+| External Temperature | 0x540 | 5000ms | Ambient air temperature |
+| Coolant Temperature | 0x551 | 5000ms | Sent in CMD 0x28 byte 0 as an undocumented, unverified hypothesis |
 | Door Status | 0x60D | 250ms | All doors + trunk (or on change) |
-| Distance to Empty | 0x54C | 5000ms | Estimated range |
-| Instant Fuel Consumption | 0x580 | 1000ms | 0.1 L/100km units |
+| Distance to Empty | 0x2DE | 5000ms | Bytes 6–7, big endian, raw / 10 km |
+| Instant Fuel Consumption | 0x580 | 1000ms | Byte 1, no mask; 0.1 L/100km units |
 | Average Fuel Consumption | 0x580 | 5000ms | 0.1 L/100km units |
 | Odometer | 0x5C5 | 10000ms | Total km (24-bit) |
 

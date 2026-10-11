@@ -445,7 +445,7 @@ void processRadioUpdates() {
     // =========================================================================
     // Contains: Average Speed, Elapsed Time, Distance to Empty
     // Average speed/elapsed time from trip computer (if available on CAN)
-    // Distance to Empty from Nissan CAN 0x54C
+    // Distance to Empty from Nissan CAN 0x2DE
     if (now - lastRangeTime >= RANGE_INTERVAL_MS) {
         sendTripInfoMessage(dteValue, averageSpeed, elapsedTime);
         lastRangeTime = now;

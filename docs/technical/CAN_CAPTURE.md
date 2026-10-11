@@ -37,14 +37,14 @@ The following table describes the CAN frames decoded by the default `NissanJukeF
 | CAN ID | Signal | Bytes | Formula | Unit | Notes |
 | --- | --- | --- | --- | --- | --- |
 | **0x002** | Steering Angle | [1-2] | NONE (raw INT16) | 0.1° | Signed, Big Endian. Center offset applied by ConfigManager |
-| **0x180** | Engine RPM | [0-1] | SCALE [1, 7, 0] | RPM | `raw / 7` |
-| **0x284** | Vehicle Speed | [0-1] | SCALE [1, 100, 0] | km/h | `raw / 100` (wheel speed sensor) |
+| **0x180** | Engine RPM | [0-1] | SCALE [1, 8, 0] | RPM | `raw / 8` |
+| **0x284** | Vehicle Speed | [4-5] | SCALE [1, 100, 0] | km/h | `raw / 100` (wheel speed sensor) |
 
 ### 2. Instrument Cluster (CAN ID 0x5C5)
 
 | Byte | Signal | Formula | Notes |
 | --- | --- | --- | --- |
-| **[0]** | Fuel Level | MAP_RANGE [255, 0, 0, 45] | Inverted scale (255=empty, 0=full) mapped to 0-45L |
+| **[0]** | Fuel Level | MAP_RANGE [255, -70, 0, 40] | Empirical calibration: raw 255 → 0 L, raw 0 → 31 L (integer arithmetic); -70 is outside UINT8 range |
 | **[1-3]** | Odometer | NONE (UINT24) | Total km (24-bit Big Endian) |
 
 ### 3. Power Management
@@ -52,7 +52,8 @@ The following table describes the CAN frames decoded by the default `NissanJukeF
 | CAN ID | Signal | Bytes | Formula | Unit | Notes |
 | --- | --- | --- | --- | --- | --- |
 | **0x6F6** | Battery Voltage | [0] | NONE (UINT8) | 0.1V | Raw value in decivolts (e.g., 141 = 14.1V). Converted to float by `writeToGlobalData()` |
-| **0x551** | Coolant Temp | [0] | SCALE [1, 1, -40] | °C | Used as exterior temp substitute |
+| **0x540** | External Temp | [0] | SCALE [1, 1, -40] | °C | Ambient temperature |
+| **0x551** | Coolant Temp | [0] | SCALE [1, 1, -40] | °C | Separate from ambient temperature |
 
 ### 4. Body Control Module (CAN ID 0x60D)
 
@@ -89,17 +90,17 @@ Bytes [0-2] form a **24-bit status word** (Big Endian BITMASK). Individual bits 
 - `headlightsOn`, `highBeamOn`, `parkingLightsOn`
 - `lastLeftIndicatorTime`, `lastRightIndicatorTime` (timestamps)
 
-### 5. Trip Computer (CAN ID 0x54C)
+### 5. Trip Computer (CAN ID 0x2DE)
 
 | Byte | Signal | Formula | Notes |
 | --- | --- | --- | --- |
-| **[6-7]** | Distance to Empty | SCALE [100, 283, 0] | `raw * 100 / 283` → estimated range in km |
+| **[6-7]** | Distance to Empty | SCALE [1, 10, 0] | `raw / 10` → estimated range in km; 0x54C no longer updates DTE |
 
 ### 6. Fuel Consumption (CAN ID 0x580)
 
 | Byte | Signal | Formula | Notes |
 | --- | --- | --- | --- |
-| **[2]** | Instant. Consumption | BITMASK_EXTRACT [127, 0] | Mask 0x7F, 0.1 L/100km units |
+| **[1]** | Instant. Consumption | SCALE [1, 1, 0] | No bitmask, 0.1 L/100km units |
 | **[4]** | Average Consumption | NONE (UINT8) | 0.1 L/100km units |
 
 ---
@@ -176,13 +177,14 @@ RX 0x60D [8]: 08 06 00 00 00 00 00 00
      0x180            Delegates to               defines how           variables
      0x284            processor                  to decode             Sends to radio
      0x5C5                                       each frame
+     0x540
      0x551
      0x60D            Output variables:
      0x6F6            currentSteer, engineRPM, vehicleSpeed,
-     0x54C            fuelLevel, currentOdo, voltBat, tempExt,
+     0x2DE            fuelLevel, currentOdo, voltBat, tempExt,
      0x580            currentDoors, headlightsOn, highBeamOn,
                       parkingLightsOn, dteValue,
-                      fuelConsumptionInst, fuelConsumptionAvg,
+                      fuelConsumptionInst, fuelConsumptionAvg, coolantTemp,
                       lastLeftIndicatorTime, lastRightIndicatorTime
 ```
 

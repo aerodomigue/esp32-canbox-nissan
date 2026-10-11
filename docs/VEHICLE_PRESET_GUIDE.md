@@ -36,7 +36,7 @@ A vehicle preset is a JSON file that tells the ESP32 how to decode CAN frames fr
           "byteOrder": "BE",
           "dataType": "UINT16",
           "formula": "SCALE",
-          "params": [1, 7, 0]
+          "params": [1, 8, 0]
         }
       ]
     }
@@ -117,7 +117,10 @@ When a **different vehicle file** is loaded, NVS is reset to firmware defaults f
 
 ### Note on `rpmDiv`, `tankCap`, `dteDiv`
 
-For most vehicles, these values are already encoded in the formula `params` of individual frame fields (e.g., `"params": [1, 7, 0]` for RPM). Setting them to `null` in `vehicleParams` avoids duplication and potential inconsistency. Define them here only if your vehicle requires a post-processing adjustment independent of the frame-level formula.
+These values are stored in NVS but are not currently used for post-processing
+in the CAN decoder or radio encoder. Set conversions in the formula `params`
+of individual frame fields (e.g., `"params": [1, 8, 0]` for RPM). The Juke preset
+leaves these `vehicleParams` values at `null`.
 
 The steering parameters (`steerScale`, `steerOffset`, `steerInvert`) have **no frame-level equivalent** — they are applied during radio output in `RadioSend.cpp` and must be set here or via `CFG SET`.
 
@@ -216,8 +219,8 @@ Linear conversion: `result = (value × mult ÷ div) + offset`
 **Examples:**
 
 ```json
-// RPM: raw / 7
-"params": [1, 7, 0]
+// RPM: raw / 8
+"params": [1, 8, 0]
 
 // Speed: raw / 100
 "params": [1, 100, 0]
@@ -225,8 +228,8 @@ Linear conversion: `result = (value × mult ÷ div) + offset`
 // Temperature: raw - 40
 "params": [1, 1, -40]
 
-// DTE: raw × 100 / 283
-"params": [100, 283, 0]
+// DTE: raw / 10
+"params": [1, 10, 0]
 ```
 
 ### MAP_RANGE
@@ -241,9 +244,12 @@ Map value from one range to another: `map(value, inMin, inMax, outMin, outMax)`
 **Example:**
 
 ```json
-// Fuel: 255=empty, 0=full → map to 0-45 liters
-"params": [255, 0, 0, 45]
+// Juke empirical fuel calibration: raw 255 -> 0 L, raw 0 -> 31 L
+"params": [255, -70, 0, 40]
 ```
+
+The theoretical 40 L endpoint is at raw -70, outside the UINT8 input range.
+This formula does not describe the physical tank capacity.
 
 ### BITMASK_EXTRACT
 
@@ -287,7 +293,7 @@ CAN Frame 0x180: [0x44, 0x7E, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
                   ^^^^  ^^^^
                   Bytes 0-1 = 0x447E = 17534 (raw)
 
-RPM = 17534 / 7 = 2504 RPM
+RPM = 17534 / 8 = 2191 RPM (integer division)
 ```
 
 ```json
@@ -301,7 +307,7 @@ RPM = 17534 / 7 = 2504 RPM
       "byteOrder": "BE",
       "dataType": "UINT16",
       "formula": "SCALE",
-      "params": [1, 7, 0]
+      "params": [1, 8, 0]
     }
   ]
 }

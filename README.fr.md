@@ -42,17 +42,17 @@ Le projet a démarré comme une solution dédiée à la **Nissan Juke F15**, mai
 | --- | --- | --- |
 | Régime Moteur (RPM) | ✅ Fonctionnel | |
 | Vitesse Véhicule | ✅ Fonctionnel | |
-| Niveau Essence | ✅ Fonctionnel | Calibré pour Juke F15 (réservoir 45L) |
+| Niveau Essence | ✅ Fonctionnel | Calibration empirique Juke F15 ; plage décodée de 0 à 31 L |
 | Tension Batterie | ✅ Fonctionnel | |
 | Direction / Lignes Dynamiques | ✅ Fonctionnel | Calibré pour Juke F15 |
 | État des Portes | ✅ Fonctionnel | 4 portes + coffre |
 | Clignotants | ✅ Fonctionnel | Gauche/droite |
 | Feux | ✅ Fonctionnel | Phares, feux de route, veilleuses |
 | Frein à Main | ❌ Non supporté | Le protocole Toyota RAV4 ne définit pas cette commande (marqué TBD dans le spec) |
-| Température Extérieure | ✅ Fonctionnel | Depuis CAN 0x551 (capteur ambiance BCM) |
+| Température Extérieure | ✅ Fonctionnel | Depuis CAN 0x540 (température ambiante) |
 | Conso. Instantanée | ✅ Fonctionnel | Depuis CAN 0x580 |
 | Conso. Moyenne | ✅ Fonctionnel | Depuis CAN 0x580 |
-| Autonomie Restante | ✅ Fonctionnel | Depuis CAN 0x54C |
+| Autonomie Restante | ✅ Fonctionnel | Depuis CAN 0x2DE |
 
 > **Note :** La documentation du protocole Raise/Toyota RAV4 utilisé par les autoradios Android est rare. Certaines fonctionnalités sont encore en cours de reverse-engineering par manque de spécifications officielles du protocole.
 
@@ -237,6 +237,10 @@ La LED (GPIO 8) permet un diagnostic rapide sans connexion PC :
 
 ## Installation et Configuration
 
+Pour compiler et tester localement, voir [Développement](docs/DEVELOPMENT.md).
+Le [rapport de validation de la PR #10](docs/PR10_VALIDATION.fr.md) décrit les
+nouveaux mappings Juke et les limites de vérification avec les données CAN historiques.
+
 L'installation de votre pont CAN ESP32 se déroule en deux étapes simples :
 
 ### 1. Flash Initial du Firmware
@@ -270,15 +274,15 @@ Une fois flashé, branchez l'ESP32 sur un port USB de votre autoradio Android. T
 | Donnée | ID CAN | Fréq. envoi | Notes |
 | --- | --- | --- | --- |
 | Angle Volant | 0x002 | 200ms | Pour lignes caméra |
-| Régime Moteur | 0x180 | 333ms | |
-| Vitesse Véhicule | 0x284 | 500ms | Capteur roue |
-| Niveau Essence | 0x5C5 | — | Mappé sur 45L (capacité réservoir Juke F15) |
+| Régime Moteur | 0x180 | 333ms | Octets 0–1, big endian, brut / 8 |
+| Vitesse Véhicule | 0x284 | 500ms | Octets 4–5, big endian, brut / 100 |
+| Niveau Essence | 0x5C5 | — | MAP_RANGE [255, -70, 0, 40] ; octet 0 décodé de 0 à 31 L |
 | Tension Batterie | 0x6F6 | — | Sortie alternateur |
-| Température Extérieure | 0x551 | 5000ms | Capteur ambiance BCM |
-| Température Eau Moteur | 0x551 | — | Décodée uniquement, non transmise (pas de commande protocole définie) |
+| Température Extérieure | 0x540 | 5000ms | Température ambiante |
+| Température Eau Moteur | 0x551 | 5000ms | Envoyée dans l’octet 0 de CMD 0x28 ; hypothèse non documentée et non vérifiée |
 | État Portes | 0x60D | 250ms | Toutes portes + coffre (ou sur changement) |
-| Autonomie | 0x54C | 5000ms | Distance estimée |
-| Conso. Instantanée | 0x580 | 1000ms | Unités 0.1 L/100km |
+| Autonomie | 0x2DE | 5000ms | Octets 6–7, big endian, brut / 10 km |
+| Conso. Instantanée | 0x580 | 1000ms | Octet 1, sans masque ; unités 0.1 L/100km |
 | Conso. Moyenne | 0x580 | 5000ms | Unités 0.1 L/100km |
 | Compteur km | 0x5C5 | 10000ms | Total km (24-bit) |
 

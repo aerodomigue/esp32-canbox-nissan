@@ -66,10 +66,12 @@ public:
      * @brief Process a received CAN frame
      *
      * Looks up the frame's CAN ID in the configuration, extracts all defined
-     * fields, applies conversion formulas, and writes to GlobalData.
+     * fields, applies conversion formulas, and writes to GlobalData. Frames
+     * with an invalid DLC or incomplete fields are rejected before any writes.
      *
      * @param frame Reference to received CAN frame from TWAI
-     * @return true if frame was handled (CAN ID found in config)
+     * @return true if the CAN ID is configured and all fields were processed;
+     *         false for unknown IDs, invalid DLC, or incomplete/empty fields.
      */
     bool processFrame(const CanFrame& frame);
 

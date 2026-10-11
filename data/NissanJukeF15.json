@@ -34,7 +34,7 @@
           "byteOrder": "BE",
           "dataType": "UINT16",
           "formula": "SCALE",
-          "params": [1, 7, 0]
+          "params": [1, 8, 0]
         }
       ]
     },
@@ -43,7 +43,7 @@
       "fields": [
         {
           "target": "VEHICLE_SPEED",
-          "startByte": 0,
+          "startByte": 4,
           "byteCount": 2,
           "byteOrder": "BE",
           "dataType": "UINT16",
@@ -62,7 +62,7 @@
           "byteOrder": "BE",
           "dataType": "UINT8",
           "formula": "MAP_RANGE",
-          "params": [255, 0, 0, 45]
+          "params": [255, -70, 0, 40]
         },
         {
           "target": "ODOMETER",
@@ -211,7 +211,7 @@
       ]
     },
     {
-      "canId": "0x54C",
+      "canId": "0x2DE",
       "fields": [
         {
           "target": "DTE",
@@ -220,7 +220,7 @@
           "byteOrder": "BE",
           "dataType": "UINT16",
           "formula": "SCALE",
-          "params": [100, 338, 0]
+          "params": [1, 10, 0]
         }
       ]
     },
@@ -229,11 +229,12 @@
       "fields": [
         {
           "target": "FUEL_CONS_INST",
-          "startByte": 3,
+          "startByte": 1,
           "byteCount": 1,
           "byteOrder": "BE",
           "dataType": "UINT8",
-          "formula": "NONE"
+          "formula": "SCALE",
+          "params": [1, 1, 0]
         },
         {
           "target": "FUEL_CONS_AVG",

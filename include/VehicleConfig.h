@@ -22,7 +22,7 @@
  * │           "target": "ENGINE_RPM",                               │
  * │           "startByte": 0, "byteCount": 2,                       │
  * │           "byteOrder": "BE", "dataType": "UINT16",              │
- * │           "formula": "SCALE", "params": [1, 7, 0]               │
+ * │           "formula": "SCALE", "params": [1, 8, 0]               │
  * │         }                                                       │
  * │       ]                                                         │
  * │     }                                                           │
@@ -78,7 +78,7 @@ enum class ByteOrder : uint8_t {
  * @brief Formula types for data conversion
  *
  * After extracting the raw value, these formulas convert it to standard units.
- * Example: RPM raw value 17500 with SCALE(1, 7, 0) → 2500 RPM
+ * Example: RPM raw value 20000 with SCALE(1, 8, 0) → 2500 RPM
  */
 enum class FormulaType : uint8_t {
     NONE,           // No conversion - use raw value as-is
