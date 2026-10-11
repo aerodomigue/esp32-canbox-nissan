@@ -15,6 +15,7 @@ mkdir -p .local-validation
 
 ```bash
 .venv/bin/pio test -e native -e native_radio -e native_serial
+.venv/bin/python -B -m unittest discover -s tools -p test_analyze_can_log.py -v
 ```
 
 The suites use host mocks and the production CAN decoder, radio encoder, and
@@ -22,7 +23,8 @@ serial command implementation. The CAN suites load `data/NissanJukeF15.json`
 directly. The serial environment generates `include/version.h` using the same
 script as the firmware build, so it works on a fresh clone.
 
-CI runs all three environments. Native test success checks software behavior;
+CI runs all three environments and the Python capture analysis tests.
+Native test success checks software behavior;
 it does not establish that a mapping matches the dashboard of a particular car.
 
 The replay suite uses an authentic historical excerpt by default. To replay
@@ -30,6 +32,20 @@ the complete archived capture through the production decoder, use the commands
 in [the PR #10 validation report](PR10_VALIDATION.fr.md#reproduire-la-relecture-complète).
 The optional `CAN_LOG_PATH` input expects `RX ID: 0x180 | DLC: 8 | Data: ...`
 records and reports parser errors separately from incomplete configured frames.
+
+For byte statistics, BE/LE candidates, counter patterns and canonical CSV
+export, run the standard-library-only analysis tool:
+
+```bash
+.venv/bin/python -B tools/analyze_can_log.py path/to/capture.txt \
+  --output-dir .local-validation/deep-analysis
+```
+
+It accepts historical and current RX serial records, and CSV columns
+`timestamp_ms,RX,can_id,dlc,data`. It writes `analysis.json` and `frames.csv`,
+rejects malformed records, preserves missing timestamps, and reports numeric
+hypotheses without asserting physical calibration. The historical export has
+a logger provenance defect; see [the vehicle analysis](JUKE_2011_CAN_ANALYSIS.fr.md).
 
 ## ESP32-C3 build
 

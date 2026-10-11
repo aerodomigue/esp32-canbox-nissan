@@ -40,9 +40,9 @@ Le projet a démarré comme une solution dédiée à la **Nissan Juke F15**, mai
 
 | Fonctionnalité | Statut | Notes |
 | --- | --- | --- |
-| Régime Moteur (RPM) | ✅ Fonctionnel | |
-| Vitesse Véhicule | ✅ Fonctionnel | |
-| Niveau Essence | ✅ Fonctionnel | Calibration empirique Juke F15 ; plage décodée de 0 à 31 L |
+| Régime Moteur (RPM) | Calibration à vérifier | Décodeur implémenté ; valeur de ralenti incohérente dans l'ancien log |
+| Vitesse Véhicule | Calibration à vérifier | Offset corrigé ; aucune vitesse non nulle de référence dans l'ancien log |
+| Niveau Essence | Mapping contesté | Formule proposée limitée à 0–31 L ; l'octet 0 pourrait contenir des états |
 | Tension Batterie | ✅ Fonctionnel | |
 | Direction / Lignes Dynamiques | ✅ Fonctionnel | Calibré pour Juke F15 |
 | État des Portes | ✅ Fonctionnel | 4 portes + coffre |
@@ -50,9 +50,9 @@ Le projet a démarré comme une solution dédiée à la **Nissan Juke F15**, mai
 | Feux | ✅ Fonctionnel | Phares, feux de route, veilleuses |
 | Frein à Main | ❌ Non supporté | Le protocole Toyota RAV4 ne définit pas cette commande (marqué TBD dans le spec) |
 | Température Extérieure | ✅ Fonctionnel | Depuis CAN 0x540 (température ambiante) |
-| Conso. Instantanée | ✅ Fonctionnel | Depuis CAN 0x580 |
-| Conso. Moyenne | ✅ Fonctionnel | Depuis CAN 0x580 |
-| Autonomie Restante | ✅ Fonctionnel | Depuis CAN 0x2DE |
+| Conso. Instantanée | Unité à vérifier | Depuis CAN 0x580 ; référence véhicule nécessaire pour l'unité CAN |
+| Conso. Moyenne | Unité à vérifier | Depuis CAN 0x580 ; référence véhicule nécessaire pour l'unité CAN |
+| Autonomie Restante | Unité à vérifier | Depuis CAN 0x2DE ; unité du combiné à confirmer |
 
 > **Note :** La documentation du protocole Raise/Toyota RAV4 utilisé par les autoradios Android est rare. Certaines fonctionnalités sont encore en cours de reverse-engineering par manque de spécifications officielles du protocole.
 
@@ -240,6 +240,8 @@ La LED (GPIO 8) permet un diagnostic rapide sans connexion PC :
 Pour compiler et tester localement, voir [Développement](docs/DEVELOPMENT.md).
 Le [rapport de validation de la PR #10](docs/PR10_VALIDATION.fr.md) décrit les
 nouveaux mappings Juke et les limites de vérification avec les données CAN historiques.
+L'[analyse CAN du DIG-T 2011](docs/JUKE_2011_CAN_ANALYSIS.fr.md) documente le
+défaut de l'ancien enregistreur, les mappings contradictoires et le parseur reproductible.
 
 L'installation de votre pont CAN ESP32 se déroule en deux étapes simples :
 

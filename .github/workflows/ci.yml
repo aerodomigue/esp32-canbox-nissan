@@ -61,6 +61,9 @@ jobs:
       - name: Run Unit Tests
         run: pio test -e native -e native_radio -e native_serial
 
+      - name: Test CAN analysis importer
+        run: python -B -m unittest discover -s tools -p test_analyze_can_log.py -v
+
   build:
     name: Build ESP32 Firmware
     runs-on: ubuntu-latest

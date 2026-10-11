@@ -7,6 +7,15 @@ commentaires de revue supplémentaires. Les cinq propositions d’`anyzlo` ont
 Les changements sont préparés sur la branche locale `review/pr-10-anyzlo`.
 Aucun push ni modification de la PR sur GitHub n’a été effectué.
 
+**Complément après recherche sur le Juke 2011 DIG-T manuel :** le code de
+l'ancien enregistreur affichait `rxFrame` avant sa lecture CAN. La fiabilité
+physique de l'export historique n'est donc pas établie, même pour ses lignes
+syntaxiquement valides. Les résultats ci-dessous valident le comportement
+logiciel, pas la calibration sur le véhicule. La nature carburant de
+`0x5C5[0]`, l'unité de l'autonomie et celle de la consommation sont également
+contestées par les sources comparées. Voir
+[l'analyse approfondie et ses références](JUKE_2011_CAN_ANALYSIS.fr.md).
+
 ## Changements du preset
 
 | Signal | Avant | Après | Proposition |
@@ -38,7 +47,8 @@ clone ni dans les pièces jointes des commentaires. Un autre export authentique
 a été retrouvé dans l’historique Git :
 
 - Fichier : `tools/data/nissan trame export.txt`.
-- Révision : `009f032dc395895bc8dd0eab34d55633301aed0a`, du 19 janvier 2026.
+- Révision disponible : `009f032dc395895bc8dd0eab34d55633301aed0a`.
+- Présence dans l'historique Git en janvier 2026 ; date de capture inconnue.
 - Blob : `6c7faf62b99c09df014bda638e737fa1dad308fe`.
 - SHA-256 : `35de3a33b22716b88b28a2adfa1e6d6ed916b230cbbe2bba569b2206700df5c6`.
 - [Source historique](https://github.com/aerodomigue/esp32-canbox-nissan/blob/009f032dc395895bc8dd0eab34d55633301aed0a/tools/data/nissan%20trame%20export.txt).
@@ -59,14 +69,14 @@ Sur **1 016 enregistrements**, le lecteur accepte **1 013 trames**, rejette
 | --- | ---: | --- | --- |
 | Régime `0x180` | 114 | **159 tr/min constants** (`0x04FB / 8`) | Valeur suspecte pour un moteur en marche. Le log ne confirme pas ce mapping. Les octets 2–3 varient, mais cela ne suffit pas à choisir une autre source. |
 | Vitesse `0x284` | 0 | Aucun relevé | Correction couverte par tests synthétiques uniquement. |
-| Carburant `0x5C5` | 12 | **23 L** (`0x40`) | Valeur plausible, sans mesure réelle de carburant. Compteur associé : 239 944 km. |
-| Autonomie `0x2DE` | 120 | **375 km** (`0x0EAC / 10`) | Valeur plausible. Pas de relevé du tableau de bord ; `0x54C` absent. |
-| Consommation `0x580` | 10 | Valeurs brutes **20 à 60** | Soit 2 à 6 L/100 km sous l’hypothèse d’unité de 0,1. L’ancien octet 3 suit le motif cyclique `2, 4, 6, 0`, ce qui suggère un compteur. |
+| Carburant `0x5C5` | 12 | **23** sous l'hypothèse litres (`0x40`) | Les sources Nissan proches décrivent des bits d'état dans cet octet. Candidat kilométrage associé : 239 944. Aucun niveau réel validé. |
+| Autonomie `0x2DE` | 120 | **375** sous l'hypothèse km (`0x0EAC / 10`) | Pas de relevé du tableau de bord ; le bit d'unité décrit sur Qashqai vaut zéro ici. `0x54C` absent. |
+| Consommation `0x580` | 10 | Valeurs brutes **20 à 60** | Unité inconnue. L'ancien octet 3 suit le motif cyclique `2, 4, 6, 0`, ce qui suggère un compteur. Le format UART ne prouve pas l'unité CAN. |
 
-Cette capture n’a pas de mesures synchronisées du tableau de bord ni de
-contexte moteur fiable. **La cohérence du décodage logiciel est vérifiée,
-mais la calibration physique reste partielle et le régime moteur doit être
-vérifié sur véhicule.** Les trames de janvier ne peuvent pas confirmer les
+Cette capture n'a pas de mesures synchronisées du tableau de bord ; le
+propriétaire pense qu'elle a été faite au ralenti, à l'arrêt, sans certitude.
+**La cohérence du décodage logiciel est vérifiée, mais cette capture ne
+valide pas la calibration physique.** L'export historique ne peut pas confirmer les
 305 km annoncés pour la capture de juin dans la PR.
 
 ## Environnement et vérifications

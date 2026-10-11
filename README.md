@@ -40,9 +40,9 @@ The project started as a custom solution for the **Nissan Juke F15**, but has si
 
 | Feature | Status | Notes |
 | --- | --- | --- |
-| Engine RPM | ✅ Working | |
-| Vehicle Speed | ✅ Working | |
-| Fuel Tank Level | ✅ Working | Empirical Juke F15 calibration; decoded range 0–31 L |
+| Engine RPM | Calibration pending | Decoder implemented; historical log gives an implausible idle value |
+| Vehicle Speed | Calibration pending | Corrected byte offset; no nonzero speed reference in the historical log |
+| Fuel Tank Level | Mapping disputed | Proposed formula gives 0–31 L; byte 0 may contain status flags |
 | Battery Voltage | ✅ Working | |
 | Steering / Dynamic Guidelines | ✅ Working | Calibrated for Juke F15 |
 | Door Status | ✅ Working | All 4 doors + trunk |
@@ -50,9 +50,9 @@ The project started as a custom solution for the **Nissan Juke F15**, but has si
 | Lights | ✅ Working | Headlights, high beam, parking lights |
 | Handbrake | ❌ Not supported | Toyota RAV4 protocol does not define this command (marked TBD in spec) |
 | External Temperature | ✅ Working | From CAN 0x540 (ambient temperature) |
-| Instant Fuel Consumption | ✅ Working | From CAN 0x580 |
-| Average Fuel Consumption | ✅ Working | From CAN 0x580 |
-| Distance to Empty | ✅ Working | From CAN 0x2DE |
+| Instant Fuel Consumption | Unit unverified | From CAN 0x580; CAN units require a vehicle reference |
+| Average Fuel Consumption | Unit unverified | From CAN 0x580; CAN units require a vehicle reference |
+| Distance to Empty | Unit unverified | From CAN 0x2DE; dashboard unit needs confirmation |
 
 > **Note:** Documentation for the Raise/Toyota RAV4 protocol used by Android head units is scarce. Some features are still being reverse-engineered due to lack of official protocol specifications.
 
@@ -240,6 +240,8 @@ The LED (GPIO 8) provides quick diagnostics without requiring a PC connection:
 For local builds and tests, see [Development](docs/DEVELOPMENT.md).
 The [PR #10 validation report](docs/PR10_VALIDATION.fr.md) records the updated
 Juke mappings and the limits of verification against historical CAN data.
+The [2011 DIG-T CAN analysis](docs/JUKE_2011_CAN_ANALYSIS.fr.md) documents the
+historical logger defect, conflicting mappings, and a reproducible analysis tool.
 
 Setting up your ESP32 CANBox Bridge follows a simple two-step process:
 
@@ -276,14 +278,14 @@ Once flashed, connect the ESP32 to your Android head unit's USB port. All furthe
 | Steering Angle | 0x002 | 200ms | For camera guidelines |
 | Engine RPM | 0x180 | 333ms | Bytes 0–1, big endian, raw / 8 |
 | Vehicle Speed | 0x284 | 500ms | Bytes 4–5, big endian, raw / 100 |
-| Fuel Level | 0x5C5 | — | MAP_RANGE [255, -70, 0, 40]; byte 0 decodes to 0–31 L |
+| Fuel Level | 0x5C5 | — | Proposed MAP_RANGE [255, -70, 0, 40]; 0–31 under the litre hypothesis; mapping disputed |
 | Battery Voltage | 0x6F6 | — | Alternator output |
 | External Temperature | 0x540 | 5000ms | Ambient air temperature |
 | Coolant Temperature | 0x551 | 5000ms | Sent in CMD 0x28 byte 0 as an undocumented, unverified hypothesis |
 | Door Status | 0x60D | 250ms | All doors + trunk (or on change) |
-| Distance to Empty | 0x2DE | 5000ms | Bytes 6–7, big endian, raw / 10 km |
-| Instant Fuel Consumption | 0x580 | 1000ms | Byte 1, no mask; 0.1 L/100km units |
-| Average Fuel Consumption | 0x580 | 5000ms | 0.1 L/100km units |
+| Distance to Empty | 0x2DE | 5000ms | Bytes 6–7, big endian, raw / 10; km unit unverified |
+| Instant Fuel Consumption | 0x580 | 1000ms | Byte 1, no mask; CAN unit unknown; UART expects 0.1 L/100km |
+| Average Fuel Consumption | 0x580 | 5000ms | CAN unit unknown; UART expects 0.1 L/100km |
 | Odometer | 0x5C5 | 10000ms | Total km (24-bit) |
 
 ---
