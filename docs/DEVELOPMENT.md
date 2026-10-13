@@ -26,8 +26,11 @@ script as the firmware build, so it works on a fresh clone.
 
 CI runs all three environments, including the OBD calibration and raw formatter
 tests, and the Python capture analysis/comparison tests.
-Native test success checks software behavior;
-it does not establish that a mapping matches the dashboard of a particular car.
+The validation after removing the rejected experiments passed **152 C++
+tests and 34 Python tests**, with the complete archived capture supplied.
+Without `CAN_LOG_PATH`, the one optional full-capture test is skipped.
+Native test success checks software behavior; it does not establish that a
+mapping matches the dashboard of a particular car.
 
 The replay suite uses an authentic historical excerpt by default. To replay
 the complete archived capture through the production decoder, use the commands
@@ -43,10 +46,14 @@ export, run the standard-library-only analysis tool:
   --output-dir .local-validation/deep-analysis
 ```
 
-It accepts historical and current RX serial records, and CSV columns
-`timestamp_ms,RX,can_id,dlc,data`. It writes `analysis.json` and `frames.csv`,
-rejects malformed records, preserves missing timestamps, and reports numeric
-hypotheses without asserting physical calibration. The historical export has
+It accepts historical/current `RX` records and timestamped `ODB RAW_RX`
+records. CSV imports can use the original five columns
+`timestamp_ms,RX,can_id,dlc,data` or the exported nine-column header
+`timestamp_ms,direction,can_id,dlc,data,source_line,ext,rtr,origin`. Extended
+29-bit IDs require explicit `ext=1`; RTR records retain DLC without payload.
+It writes `analysis.json` and `frames.csv`, preserves timestamps/flags/origin,
+rejects malformed records and reports hypotheses from standard data frames
+without asserting physical calibration. The historical export has
 a logger provenance defect; see [the vehicle analysis](JUKE_2011_CAN_ANALYSIS.fr.md).
 
 For a new `LOG ON` capture containing `ODB RX` references, run:
@@ -58,7 +65,7 @@ For a new `LOG ON` capture containing `ODB RX` references, run:
 
 It keeps session/ECU/PID/unit streams separate and writes `comparison.json` plus
 `matches.csv`. No mapping is changed automatically. See
-[ODB calibration logging](OBD_CALIBRATION.fr.md) for the protocol and limitations.
+[OBD reference capture](OBD_CALIBRATION.fr.md) for the protocol and limitations.
 
 ## ESP32-C3 build
 

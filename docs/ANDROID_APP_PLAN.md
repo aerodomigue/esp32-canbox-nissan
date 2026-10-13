@@ -329,16 +329,35 @@ data class Asset(
 **Note:** Tab "CAN Poste" (Toyota RAV4 TX) sera ajouté plus tard côté ESP32
 
 ### Commandes USB utilisées
-- `LOG ON` - Active le logging CAN
-- `LOG OFF` - Désactive le logging
-- Parse les lignes `RX 0xXXX [N]: XX XX XX...`
+
+- `LOG ON` : capture CAN brute horodatée et lectures OBD service 01 annoncées
+  par les calculateurs, en mode réel.
+- `LOG OFF` : arrête la capture et les nouvelles requêtes OBD.
+- Parser `RX 0xXXX [N]: ... | t_ms=... ext=0|1 rtr=0|1` et
+  `ODB RAW_RX 0x7E8 [8]: ... | t_ms=... ext=0 rtr=0` comme trames reçues.
+- Conserver séparément `ODB TX` (mise en file, statut `queued` ou `failed`) et
+  `ODB RX` (référence décodée, PID, ECU, séquence, valeur, unité, latence).
+  `ODB RX` n'est pas une ligne de payload CAN brut.
+- Conserver aussi `ODB SUPPORTED`, `ODB NEGATIVE`, `ODB TIMEOUT`, `ODB STATE`
+  et `ODB DRIVER` dans l'export original pour analyser la capture.
+
+`t_ms` est un compteur logiciel de retrait de la file, pas une heure absolue.
+L'export doit conserver les lignes complètes sans préfixe d'heure/couleur ajouté
+par l'application. Les requêtes sont suspendues pendant l'OTA et absentes en
+mock ; les références OBD ne changent pas les valeurs de l'autoradio.
+Voir [le protocole USB](protocols/USB_SERIAL_PROTOCOL.md#log---raw-can-capture-and-obd-reference-polling)
+et [la capture pour calibration](OBD_CALIBRATION.fr.md).
 
 ### Data Model
 ```kotlin
 data class CanFrame(
-    val timestamp: Long,
+    val timestamp: Long,  // Heure de réception par l'application
+    val firmwareTimestampMs: Long?,  // t_ms ; absent dans les anciens exports
     val direction: Direction,  // RX or TX
     val canId: Int,
+    val dlc: Int,
+    val extended: Boolean,
+    val remote: Boolean,  // RTR : aucune donnée même si DLC > 0
     val data: ByteArray,
     val source: Source  // VEHICLE or HEADUNIT
 )

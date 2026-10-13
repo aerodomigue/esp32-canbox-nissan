@@ -22,10 +22,11 @@ Commands follow an AT-style format:
 COMMAND [SUBCOMMAND] [PARAMETERS]\n
 ```
 
-- Commands are **case-insensitive** (converted to uppercase internally)
+- Command and subcommand names are **case-insensitive**; filenames and encoded payloads retain their case
 - Parameters are separated by spaces
-- Responses always start with `OK` or `ERROR:`
-- Multi-line responses are delimited by `===` markers
+- Acknowledgments use `OK` or `ERROR:`; value reads such as `CFG GET` can return a value without either marker
+- Status/list responses have command-specific `===` headers and footers
+- When logging is enabled, asynchronous `RX` and `ODB` records share the connection with command responses
 
 ## Response Format
 
@@ -111,6 +112,12 @@ Configuration reset to defaults
 | `tankCap` | uint8 | 20-100 | 45 | Tank capacity (liters) |
 | `dteDiv` | uint16 | 100-500 | 283 | DTE divisor (x100) |
 
+`rpmDiv`, `tankCap` and `dteDiv` are stored settings, but the current JSON
+decoder does not use them for conversion. The active preset supplies its own
+formulas; changing these three NVS values does not change decoded RPM, fuel
+level or DTE. In particular, the active Juke preset uses DTE divisor 338,
+while the stored factory default above remains 283.
+
 ---
 
 ### CAN - CAN Configuration Files (LittleFS Storage)
@@ -123,6 +130,7 @@ Display current CAN configuration status.
 ```
 > CAN STATUS
 === CAN Configuration Status ===
+Config: NissanJukeF15.json
 Mode: REAL (CAN bus)
 Profile: Nissan Juke F15
 Frames processed: 12345
@@ -360,9 +368,11 @@ Unchanged from v1. See [`docs/protocols/OTA_PROTOCOL.md`](OTA_PROTOCOL.md) for f
 
 ---
 
-### LOG - CAN Frame Logging
+### LOG - Raw CAN Capture and OBD Reference Polling
 
-Enable/disable real-time CAN frame logging for debugging.
+In real vehicle mode, `LOG ON` enables raw CAN capture and read-only OBD-II
+service 01 polling for calibration. Reference measurements remain separate
+from the active preset and the values sent to the head unit.
 
 #### LOG ON
 ```
@@ -371,11 +381,53 @@ OK
 CAN logging enabled
 ```
 
-After enabling, each received CAN frame is printed:
+The following firmware output is **synthetic**, showing a vehicle that
+advertises RPM only. It illustrates discovery, a physical request and its
+response; it is not a captured or calibrated Juke measurement.
+
+```text
+ODB STATE t_ms=1000 enabled=1 status=discovery
+ODB TX t_ms=1000 seq=1 can_id=0x7DF service=0x01 pid=0x00 status=queued data=02 01 00 00 00 00 00 00
+ODB RAW_RX 0x7E8 [8]: 06 41 00 00 10 00 00 00 | t_ms=1008 ext=0 rtr=0
+ODB SUPPORTED t_ms=1008 seq=1 request_id=0x7DF ecu=0x7E8 pid=0x00 bitmap=0x00100000
+ODB TX t_ms=1500 seq=2 can_id=0x7E0 service=0x01 pid=0x0C status=queued data=02 01 0C 00 00 00 00 00
+RX 0x180 [8]: 11 95 00 00 00 00 00 00 | t_ms=1507 ext=0 rtr=0
+ODB RAW_RX 0x7E8 [8]: 04 41 0C 0A 0C 00 00 00 | t_ms=1508 ext=0 rtr=0
+ODB RX t_ms=1508 seq=2 request_id=0x7E0 ecu=0x7E8 pid=0x0C name=rpm value=643.000 unit=rpm latency_ms=8
 ```
-RX 0x002 [8]: 00 0B 60 00 00 00 00 00
-RX 0x180 [8]: 45 E0 00 00 00 00 00 00
-```
+
+All OBD diagnostic records start with the exact prefix **`ODB`**, including
+`ODB TX`, `ODB RAW_RX`, `ODB SUPPORTED`, `ODB RX`, `ODB NEGATIVE`,
+`ODB TIMEOUT`, `ODB STATE` and `ODB DRIVER`. Standard raw frames outside
+IDs `0x7DF`–`0x7EF` start with `RX`;
+extended frames also keep that prefix. Command acknowledgments retain their
+existing formats. Client applications must route these record families
+separately rather than treat an OBD value as an `OK` response.
+
+For received frames and their decoded references, `t_ms` is the uint32
+`millis()` value when the frame leaves the software receive queue, before
+printing. `ODB TX` carries the attempt time; reference latency includes
+software and queue delays. These are not hardware bus timestamps. Timestamps
+reset after reboot and wrap after about 49.7 days. Raw logs preserve ID, DLC,
+bytes and `ext`/`rtr` flags. RTR records have no data payload; an invalid DLC is
+printed as declared, but the logger reads at most eight bytes.
+
+The client discovers supported PIDs with `00`, then `20` and `40` only when
+the preceding page announces them. It queries supported RPM (`0C`), speed
+(`0D`), coolant (`05`), fuel level (`2F`), module voltage (`42`), ambient
+temperature (`46`), manifold absolute pressure (`0B`) and fuel rate (`5E`).
+Availability depends on the ECU. Fuel level is in percent and fuel rate in
+L/h; the firmware does not convert either into tank liters or L/100 km.
+
+Discovery collects replies from `0x7E8`–`0x7EF` separately. Measurement
+requests target the lowest-address ECU that advertises the PID, using
+`0x7E0`–`0x7E7`. There is one request at a time, at least 500 ms between
+attempts, and a 250 ms response window. Responses must be standard, non-RTR,
+DLC 8 ISO-TP single frames with the expected service, PID and length.
+Unsupported parameters are skipped; missing replies produce a timeout,
+not a zero measurement. After three unsuccessful discovery requests, the
+client waits five seconds before trying again. `queued` means the driver
+accepted a request for transmission, not that the ECU acknowledged it.
 
 #### LOG OFF
 ```
@@ -383,6 +435,24 @@ RX 0x180 [8]: 45 E0 00 00 00 00 00 00
 OK
 CAN logging disabled
 ```
+
+`LOG OFF` stops capture and new OBD requests, clears the pending request and
+emits `ODB STATE ... enabled=0 status=stopped` when calibration was active.
+A request already queued in the CAN controller cannot be cancelled by this
+command. Repeated `LOG ON` commands do not restart an active discovery.
+
+Mock mode does not poll OBD. OTA suspends capture processing and polling;
+after an OTA abort or timeout, polling restarts with discovery if logging is
+still enabled and the device is in real mode. A successful OTA reboots the
+device, so a new `LOG ON` is required. Partial command echo is suppressed
+while logging to keep raw and diagnostic lines intact.
+
+RX is nonblocking, with a 128-frame queue and at most 32 frames drained per
+loop. `ODB DRIVER` reports counters and queue occupancy once per second;
+USB throughput can still cause losses. Save captures without terminal color
+or timestamp prefixes, for example with
+`.venv/bin/pio device monitor --filter direct`. See the
+[calibration guide](../OBD_CALIBRATION.fr.md) for analysis and limitations.
 
 ---
 
@@ -408,13 +478,15 @@ Display current vehicle data values.
 ```
 > SYS DATA
 === Live Vehicle Data ===
+Config:   NissanJukeF15.json
+Mode:     REAL (Nissan Juke F15)
 RPM:      2500
 Speed:    60 km/h
 Steering: -150
 Fuel:     30 L
 Battery:  14.1 V
 DTE:      350 km
-Temp:     85 C
+Temp:     28 C
 Doors:    0x00
 Lights:   H=1 P=0 HB=0 L=0 R=0
 =========================
@@ -464,13 +536,13 @@ CAN DELETE <file>     Delete config file
 CAN UPLOAD START/DATA/END  Upload config
 CAN RELOAD            Reload configuration
 
-OTA START <size> [md5]  Start firmware update
-OTA DATA <base64>       Send firmware chunk
-OTA END                 Finalize update
+OTA START <size> [md5]       Start firmware update
+OTA DATA <base64> [crc32]    Send firmware chunk
+OTA END                      Finalize and reboot
 OTA ABORT               Cancel update
 OTA STATUS              Show OTA status
 
-LOG ON|OFF            CAN frame logging
+LOG ON|OFF            Raw CAN logging + ODB service 01 reference polling
 
 SYS INFO              System information
 SYS DATA              Live vehicle data
@@ -484,6 +556,12 @@ HELP                  This message
 ---
 
 ## Android Integration Example (Kotlin)
+
+This simplified example covers transactions terminated by `OK` or `ERROR:`.
+An application also needs a persistent serial reader that separates command
+echo, raw `RX` records and `ODB` diagnostics from responses. Status/list
+commands such as `CAN STATUS` finish at their documented footer rather than
+an `OK` line. Stop logging before configuration or firmware uploads.
 
 ```kotlin
 class CanBoxSerial(private val usbConnection: UsbDeviceConnection) {
@@ -538,11 +616,6 @@ class CanBoxSerial(private val usbConnection: UsbDeviceConnection) {
         return response.startsWith("OK")
     }
 
-    fun getStatus(): CanStatus {
-        val response = sendCommand("CAN STATUS")
-        // Parse response...
-        return CanStatus(...)
-    }
 }
 ```
 

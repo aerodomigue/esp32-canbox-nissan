@@ -3,7 +3,8 @@
 `LOG ON` active en mode véhicule réel deux fonctions : l'enregistrement de
 toutes les trames lues, avec leurs octets bruts inchangés, et les lectures
 OBD-II **service 01** pour disposer de références indépendantes. Chaque ligne
-de diagnostic commence par **`ODB`**, selon le préfixe demandé. `LOG OFF`
+de diagnostic commence par **`ODB`**, selon le préfixe demandé. OBD-II est
+le nom du protocole ; `ODB` est le libellé exact des lignes du journal. `LOG OFF`
 arrête les nouvelles requêtes et la capture ; une transmission déjà mise en
 file dans le contrôleur ne peut pas être annulée par cette commande.
 
@@ -95,9 +96,11 @@ ODB RX t_ms=508 seq=2 request_id=0x7E0 ecu=0x7E8 pid=0x0C name=rpm value=643.000
 `queued` signifie que TWAI a accepté la mise en file, pas que la voiture a
 acquitté la requête. C'est le comportement de
 [l'API TWAI Espressif](https://docs.espressif.com/projects/esp-idf/en/v5.4.4/esp32/api-reference/peripherals/twai.html).
-`t_ms` vient de `millis()` au moment où le logiciel retire la trame de la
-file, avant son affichage. Ce n'est pas l'heure matérielle de réception sur
-le bus. Les timestamps reviennent à zéro après un redémarrage et débordent
+Pour les trames reçues et les références associées, `t_ms` vient de `millis()`
+au retrait de la file, avant l'affichage. `ODB TX` porte l'instant de tentative
+de mise en file ; la latence inclut donc les délais logiciels et de file.
+Ce n'est pas l'heure matérielle des échanges sur le bus. Les timestamps
+reviennent à zéro après un redémarrage et débordent
 après environ 49,7 jours.
 
 La réception est non bloquante, avec une file de 128 trames et un drainage
@@ -125,6 +128,11 @@ les sorties du preset actif et plusieurs hypothèses, notamment RPM `/7`,
 listés dans le rapport. Des unités différentes ne produisent pas d'erreur
 numérique ; une capture constante ne permet pas de confirmer une échelle.
 Les mappings ne sont jamais modifiés automatiquement.
+
+Les messages de démarrage, échos et réponses aux commandes peuvent aussi
+figurer dans l'export complet. Le lecteur les signale comme enregistrements
+non reconnus ; lire les raisons de rejet pour les distinguer d'un ID, DLC ou
+payload CAN invalide. Conserver les marqueurs de session dans le fichier.
 
 Les changements `ODB STATE enabled=0/1` et les marqueurs de démarrage
 séparent les sessions : aucune référence n'est rapprochée d'une autre session.

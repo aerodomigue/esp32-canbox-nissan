@@ -36,7 +36,7 @@ A vehicle preset is a JSON file that tells the ESP32 how to decode CAN frames fr
           "byteOrder": "BE",
           "dataType": "UINT16",
           "formula": "SCALE",
-          "params": [1, 8, 0]
+          "params": [1, 7, 0]
         }
       ]
     }
@@ -119,7 +119,7 @@ When a **different vehicle file** is loaded, NVS is reset to firmware defaults f
 
 These values are stored in NVS but are not currently used for post-processing
 in the CAN decoder or radio encoder. Set conversions in the formula `params`
-of individual frame fields (e.g., `"params": [1, 8, 0]` for RPM). The Juke preset
+of individual frame fields (e.g., `"params": [1, 7, 0]` for RPM). The Juke preset
 leaves these `vehicleParams` values at `null`.
 
 The steering parameters (`steerScale`, `steerOffset`, `steerInvert`) have **no frame-level equivalent** — they are applied during radio output in `RadioSend.cpp` and must be set here or via `CFG SET`.
@@ -199,11 +199,15 @@ Variables that can be updated from CAN data:
 
 ## Formulas
 
+The snippets below are field fragments with explanatory comments or symbolic
+parameters. Use numeric parameters and omit comments in the final JSON file.
+The complete file examples elsewhere in this guide are valid JSON.
+
 ### NONE
 
 No conversion, use raw value as-is.
 
-```json
+```text
 "formula": "NONE"
 ```
 
@@ -211,14 +215,14 @@ No conversion, use raw value as-is.
 
 Linear conversion: `result = (value × mult ÷ div) + offset`
 
-```json
+```text
 "formula": "SCALE",
 "params": [mult, div, offset]
 ```
 
 **Examples:**
 
-```json
+```text
 // Initial Juke RPM hypothesis: raw / 7
 "params": [1, 7, 0]
 
@@ -236,34 +240,34 @@ Linear conversion: `result = (value × mult ÷ div) + offset`
 
 Map value from one range to another: `map(value, inMin, inMax, outMin, outMax)`
 
-```json
+```text
 "formula": "MAP_RANGE",
 "params": [inMin, inMax, outMin, outMax]
 ```
 
 **Example:**
 
-```json
+```text
 // Initial Juke fuel hypothesis: raw 255 -> 0, raw 0 -> 45
 "params": [255, 0, 0, 45]
 ```
 
 This is the restored initial mapping, not a validated physical tank capacity.
 The proposed PR replacements and their experimental profile have been removed.
-Use [ODB calibration logging](OBD_CALIBRATION.fr.md) to collect reference measurements.
+Use [OBD reference capture](OBD_CALIBRATION.fr.md) to collect reference measurements.
 
 ### BITMASK_EXTRACT
 
 Extract specific bit(s): `result = (value & mask) >> shift`
 
-```json
+```text
 "formula": "BITMASK_EXTRACT",
 "params": [mask, shift]
 ```
 
 **Example:**
 
-```json
+```text
 // Extract bit 20 from 3-byte value (door status)
 "params": [1048576, 20]
 // 1048576 = 0x100000 = bit 20
@@ -287,14 +291,15 @@ Extract specific bit(s): `result = (value & mask) >> shift`
 
 ## Complete Example
 
-Nissan Juke F15 - Engine RPM from CAN ID 0x180:
+Nissan Juke F15 - initial active RPM mapping from CAN ID 0x180. This
+synthetic example checks the formula, not physical calibration:
 
 ```
 CAN Frame 0x180: [0x44, 0x7E, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
                   ^^^^  ^^^^
                   Bytes 0-1 = 0x447E = 17534 (raw)
 
-RPM = 17534 / 8 = 2191 RPM (integer division)
+RPM = 17534 / 7 = 2504 RPM (integer division)
 ```
 
 ```json
@@ -308,7 +313,7 @@ RPM = 17534 / 8 = 2191 RPM (integer division)
       "byteOrder": "BE",
       "dataType": "UINT16",
       "formula": "SCALE",
-      "params": [1, 8, 0]
+      "params": [1, 7, 0]
     }
   ]
 }
@@ -375,7 +380,15 @@ Shows current values for all fields.
 LOG ON
 ```
 
-Shows raw CAN frames being processed.
+Records all received CAN frames with unchanged bytes, DLC and flags, plus
+software `t_ms` timestamps. In real mode, it also starts supported OBD
+service 01 reference queries; diagnostic lines begin with `ODB`. Mock mode
+sends no OBD queries, and OTA pauses polling.
+
+Save the complete output without time/color prefixes so the comparison tools
+can read both raw frames and references. Stop with `LOG OFF`. See
+[OBD capture and comparison](OBD_CALIBRATION.fr.md). Reference values never
+modify your preset automatically.
 
 ---
 

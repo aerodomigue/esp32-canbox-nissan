@@ -2,6 +2,11 @@
 
 The `RadioSend.cpp` module communicates with the Android head unit MCU via the **Toyota RAV4 / Raise protocol** over UART.
 
+This guide describes the current implementation, including its unresolved
+differences from the protocol documents. The documented 13-byte `0x23` payload
+and proposed third `0x24` byte `0x06` are not implemented. OBD calibration runs on the
+USB logging path and does not replace the preset's values sent over UART.
+
 ## Commands Summary
 
 | Command | Name | Length | Update Rate |
@@ -9,7 +14,7 @@ The `RadioSend.cpp` module communicates with the Android head unit MCU via the *
 | 0x21 | Trip Info (Avg Speed, Time, Range) | 7 | 5000ms |
 | 0x22 | Instantaneous Fuel Consumption | 3 | 1000ms |
 | 0x23 | Average Fuel Consumption | 3 | 5000ms |
-| 0x24 | Door Status | 1 | 250ms |
+| 0x24 | Door Status + IG Proxy | 2 | 250ms |
 | 0x28 | Outside Temperature | 12 | 5000ms |
 | 0x29 | Steering Wheel Angle | 2 | 200ms |
 | 0x7D/01 | Lights & Indicators | 2 | 200ms |
@@ -44,7 +49,7 @@ All frames follow this structure:
 ### Checksum Calculation
 
 ```
-Checksum = (Command + Length + Sum(Payload bytes)) XOR 0xFF
+Checksum = ((Command + Length + Sum(Payload bytes)) & 0xFF) XOR 0xFF
 ```
 
 ---
@@ -58,7 +63,7 @@ Checksum = (Command + Length + Sum(Payload bytes)) XOR 0xFF
 | **Update Rate** | 200ms |
 | **Payload Length** | 2 bytes |
 | **Format** | Little Endian signed 16-bit |
-| **Unit** | degrees |
+| **Unit** | 0.1 degrees |
 
 **Payload Structure:**
 ```
@@ -68,7 +73,7 @@ Byte 1: Angle MSB
 
 **Notes:**
 - Range: -540 to +540 (full lock to full lock)
-- Sign is inverted from Nissan to match Toyota convention
+- Scale, offset and sign inversion come from ConfigManager settings
 - Used for reverse camera dynamic guidelines
 
 ---
@@ -78,11 +83,12 @@ Byte 1: Angle MSB
 | Field | Value |
 | --- | --- |
 | **Update Rate** | 250ms or on change |
-| **Payload Length** | 1 byte |
+| **Payload Length** | 2 bytes |
 
 **Payload Structure:**
 ```
 Byte 0: Door status bitmask
+Byte 1: IG status proxy; bit 1 (0x02) is set when engineRPM > 0, otherwise 0x00
 ```
 
 **Status Bitmask:**
@@ -93,6 +99,20 @@ Byte 0: Door status bitmask
 | 5 | Rear Right door | 0=closed, 1=open |
 | 4 | Rear Left door | 0=closed, 1=open |
 | 3 | Trunk/Boot | 0=closed, 1=open |
+
+These labels describe the firmware's current mapping. Raise V2.21 page 5
+names bit 7 as the right front door and bit 6 as the left front door, whereas
+the firmware uses them for driver/front-left and passenger/front-right.
+This left/right interpretation has not been changed by the rollback.
+
+V2.21 documents a two-byte `0x24` payload and IG at **Data1 bit 1**.
+`engineRPM > 0` is a running-engine proxy, not an independent ignition-switch
+measurement: contact ON with a stopped engine is reported as IG OFF. No
+third byte or forced `0x06` is transmitted. The proposed three-byte variant
+is a DUDU7 report without confirmation in the local V2.21 specification.
+
+**Synthetic wire examples:** closed doors/IG OFF is `2E 24 02 00 00 D9`;
+driver door open/IG proxy ON is `2E 24 02 80 02 57`.
 
 ---
 
@@ -160,8 +180,8 @@ Byte 2: RPM × 4 MSB
 Byte 0: Sub-command (0x03)
 Byte 1: Speed × 100 LSB
 Byte 2: Speed × 100 MSB
-Byte 3: 0x00 (reserved)
-Byte 4: 0x00 (reserved)
+Byte 3: Average speed LSB, currently 0x00 (unavailable)
+Byte 4: Average speed MSB, currently 0x00 (unavailable)
 ```
 
 **Example:** 45 km/h → 45 × 100 = 4500 → 0x94, 0x11
@@ -181,7 +201,10 @@ Byte 0: Sub-command (0x04)
 Byte 1: Odometer LSB
 Byte 2: Odometer Middle byte
 Byte 3: Odometer MSB
-Bytes 4-11: 0x00 (reserved)
+Byte 4: 0xF2 (existing constant, meaning unverified)
+Byte 5: 0x08 (existing constant, meaning unverified)
+Bytes 6-8: Trip 1, currently 0x00 (unavailable)
+Bytes 9-11: Trip 2, currently 0x00 (unavailable)
 ```
 
 ---
@@ -190,17 +213,27 @@ Bytes 4-11: 0x00 (reserved)
 
 | Field | Value |
 | --- | --- |
-| **Update Rate** | 5000ms (optional) |
+| **Update Rate** | 5000ms |
 | **Payload Length** | 12 bytes |
 
 **Payload Structure:**
 ```
-Bytes 0-4: 0x00 (reserved)
+Byte 0: Encoded coolant temperature = (coolant + 40) × 2, unverified hypothesis
+Bytes 1-4: 0x00
 Byte 5: Encoded temperature = (temp + 40) × 2
 Bytes 6-11: 0x00 (reserved)
 ```
 
 **Example:** 20°C → (20 + 40) × 2 = 120 → 0x78
+
+Coolant at byte 0 is an existing implementation hypothesis, not a confirmed
+Raise field. Its presence does not establish that the head unit displays
+coolant temperature.
+
+Both encoded temperatures are cast to `uint8_t` without clamping. Values
+outside 0–255 wrap on the wire; for example, coolant at 100°C encodes as
+`280 mod 256 = 24`. This limits the current temperature packet independently
+of the OBD reference, which retains the decoded Celsius value.
 
 ---
 
@@ -221,6 +254,10 @@ Byte 2: Value LSB
 **Formula:** `consumption_L100km = (Byte1 << 8 | Byte2) / 10.0`
 
 **Example:** 7.5 L/100km → 75 → 0x004B → Payload: `02 00 4B`
+
+This is the UART encoding. The active Nissan preset supplies `0x580` byte 3
+unchanged; its physical interpretation and scale still need calibration.
+OBD reference polling does not alter that value.
 
 ---
 
@@ -243,8 +280,22 @@ Byte 2: Value LSB
 **Example:** 8.2 L/100km → 82 → 0x0052 → Payload: `02 00 52`
 
 **Notes:**
-- Same format as 0x22 but for trip average consumption
-- Data from Nissan CAN 0x580 byte[4]
+
+- The current sender uses the same three-byte shape as `0x22`, sourced from
+  active-preset `0x580` byte 4. That CAN byte is not a validated trip average.
+- No average is computed or persisted by `RadioSend.cpp`, and no historical
+  trip values are appended to the packet.
+- Raise V2.21 page 5 specifies **13 payload bytes** for `0x23`: unit, current
+  trip consumption and five historical values, each BE uint16. `0xFFFF`
+  denotes an invalid value. The current three-byte implementation differs
+  from that document; the 13-byte format is not transmitted.
+- The specification gates current-trip consumption display on IG ON. The
+  firmware supplies only the RPM-derived IG proxy described under `0x24`;
+  head-unit display of this three-byte `0x23` packet is not guaranteed.
+
+**Synthetic current wire example:** 9.8 L/100km (`98`) produces the full
+seven-byte frame `2E 23 03 02 00 62 75`. This example verifies encoding,
+not the accuracy of the source CAN value or acceptance by DUDU7.
 
 ---
 
@@ -305,7 +356,7 @@ Doors      ■───────────────────■──
 │  Variables  │ ───► │  Module      │ ───► │  Head Unit  │
 └─────────────┘      └──────────────┘      └─────────────┘
   currentSteer         Formats data         Displays:
-  engineRPM            Calculates CRC       - Camera lines
+  engineRPM            Calculates checksum  - Camera lines
   vehicleSpeed         Sends frames         - RPM gauge
   currentOdo                                - Speedometer
   currentDoors                              - Door status
@@ -327,11 +378,20 @@ Doors      ■───────────────────■──
 
 The protocol does not require a handshake - data is sent proactively. Any incoming data from the head unit is discarded.
 
+`LOG ON` separately enables timestamped raw CAN logging and read-only OBD
+service 01 references on USB; OBD diagnostic lines start with the exact
+`ODB` prefix. `LOG OFF` stops new requests. Mock mode and OTA suspend OBD
+polling. These references do not update GlobalData or the UART packets.
+See the [USB LOG command](../protocols/USB_SERIAL_PROTOCOL.md#log---raw-can-capture-and-obd-reference-polling)
+and [calibration guide](../OBD_CALIBRATION.fr.md) for capture instructions.
+
 ---
 
 ## References
 
 ### Radio Protocol Documentation
-- [Mikescotland / Toyota RAV4 Protocol Analysis](../../docs/protocols/raise-toyota-rav4/RAV4_BODY_ENGINE_2018_2020.pdf) - Compiled and analyzed by Mikescotland ([Source](https://forum.dudu-auto.com/u/Mikescotland))
+
+- [Raise Toyota CAMRY/RAV4 V2.21](<../protocols/raise-toyota-rav4/睿志诚软件_丰田CAMRY & RAV4 串口通讯协议  V2.21.000 (1).pdf>) - Page 5 documents `0x23` and `0x24`; Git LFS download is needed to read the PDF.
+- [Mikescotland / Toyota RAV4 Protocol Analysis](../protocols/raise-toyota-rav4/RAV4_BODY_ENGINE_2018_2020.pdf) - Compiled and analyzed by Mikescotland ([Source](https://forum.dudu-auto.com/u/Mikescotland)); page 4 shows an older one-byte door packet.
 - [smartgauges / canbox](https://github.com/smartgauges/canbox)
 - [cxsichen / Raise Protocol](https://github.com/cxsichen/helllo-world/tree/master/%E5%8D%8F%E8%AE%AE/%E7%9D%BF%E5%BF%97%E8%AF%9A)

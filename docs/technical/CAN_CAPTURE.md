@@ -128,21 +128,21 @@ The `vehicleParams` section in the JSON file allows a preset to carry its own ca
 ### Processing Pipeline
 
 ```
-CAN Frame received
-       │
-       ▼
-CanCapture.handleCanCapture()
-       │
-       ├─► CanConfigProcessor.processFrame()
-       │       │
-       │       ├─► findFrameConfig(canId)     → lookup JSON config
-       │       ├─► extractRawValue()           → read bytes (BE/LE)
-       │       ├─► applyFormula()              → SCALE / MAP_RANGE / BITMASK
-       │       └─► writeToGlobalData()         → update global variables
-       │
-       ├─► LED toggle on 0x002 (heartbeat)
-       │
-       └─► Serial log if LOG ON
+main: readFrame(frame, 0), receivedAt = millis()
+  │
+  ├─► CanCapture.handleCanCapture(frame, receivedAt)
+  │     ├─► CanConfigProcessor.processFrame()
+  │     │     ├─► reject unsupported flags/IDs/DLC
+  │     │     ├─► findFrameConfig(), validate ALL configured field lengths
+  │     │     └─► extractRawValue(), applyFormula(), writeToGlobalData()
+  │     ├─► LED toggle on 0x002
+  │     └─► format unchanged frame: RX or ODB RAW_RX, if LOG ON
+  │
+  ├─► ObdCalibration.receive(frame, receivedAt)
+  │     └─► ODB SUPPORTED / RX / NEGATIVE for matching pending queries
+  │
+  └─► ObdCalibration.tick(millis()), after draining the receive queue
+        └─► discovery, supported service 01 queries and timeouts
 ```
 
 ### Activity Monitoring
@@ -170,6 +170,10 @@ The example is synthetic. Payload bytes are unchanged; `t_ms` is software
 dequeue time, not a hardware bus timestamp. All diagnostic records begin with
 the requested `ODB` prefix. See [calibration capture and comparison](../OBD_CALIBRATION.fr.md)
 for capabilities discovery, units, timeouts and host analysis commands.
+
+Logging is disabled at boot. `LOG OFF` stops capture and new OBD requests;
+mock mode does not query ECUs, and OTA pauses polling. OBD references are
+logged separately and never overwrite decoded vehicle data or the preset.
 
 ---
 

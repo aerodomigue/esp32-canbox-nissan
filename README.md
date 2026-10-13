@@ -41,7 +41,7 @@ The project started as a custom solution for the **Nissan Juke F15**, but has si
 | Feature | Status | Notes |
 | --- | --- | --- |
 | Engine RPM | Calibration pending | Decoder implemented; historical log gives an implausible idle value |
-| Vehicle Speed | Calibration pending | Initial preset restored; compare with ODB reference measurements |
+| Vehicle Speed | Calibration pending | Initial preset restored; compare with OBD reference measurements |
 | Fuel Tank Level | Mapping disputed | Initial 0–45 formula restored; byte 0 may contain status flags |
 | Battery Voltage | ✅ Working | |
 | Steering / Dynamic Guidelines | ✅ Working | Calibrated for Juke F15 |
@@ -126,7 +126,7 @@ Pin 16 = +12V Battery
 Pin 4/5 = Ground
 ```
 
-> **Note:** OBD-II ports have built-in termination resistors, so no additional resistor is needed on the SN65HVD230 module. If your module has a 120Ω resistor (R120), you can leave it or remove it - the bus will work either way.
+> **CAN termination:** A high-speed CAN bus normally has a 120Ω termination at each end, as described in the [Texas Instruments SN65HVD230 datasheet](https://www.ti.com/lit/ds/symlink/sn65hvd230.pdf). When tapping an existing terminated vehicle bus at OBD-II, the module is an additional node and must not add another 120Ω termination. If the module includes a 120Ω termination between CAN-H and CAN-L, disable that termination for this connection; the OBD-II connector itself does not provide termination.
 
 ### Electroheater (A/C) Connector Pinout — M25
 
@@ -180,11 +180,27 @@ The device can be configured via USB serial without recompiling. Connect to the 
 | `CAN LIST` | List vehicle config files |
 | `CAN LOAD <file>` | Load a vehicle config |
 | `CAN UPLOAD START/DATA/END` | Upload config via Base64 |
+| `LOG ON` | Timestamped raw CAN capture and supported OBD service 01 reference queries |
+| `LOG OFF` | Stop capture and new OBD queries |
 | `SYS INFO` | System information |
 | `SYS DATA` | Live vehicle data |
 | `HELP` | Full command list |
 
 See **[USB Serial Protocol Documentation](docs/protocols/USB_SERIAL_PROTOCOL.md)** for complete details.
+
+### Capture CAN and OBD references
+
+Send `LOG ON` in real vehicle mode to record raw CAN and query the OBD PIDs
+advertised by the ECUs. Diagnostic records start with the exact `ODB` prefix:
+`ODB TX` for requests, `ODB RAW_RX` for raw responses and `ODB RX` for decoded
+references. Received frames carry software dequeue time in `t_ms`; requests
+carry the attempt time. Payload bytes remain unchanged.
+
+Send `LOG OFF` to stop capture and new requests. Mock mode sends no OBD
+requests, and OTA pauses polling. References never change the active preset
+or the values sent to the radio. See the
+[capture and comparison guide](docs/OBD_CALIBRATION.fr.md) for PID units,
+timeouts, driver loss counters and recording commands.
 
 ### Multi-Vehicle Support
 
@@ -271,7 +287,7 @@ Once flashed, connect the ESP32 to your Android head unit's USB port. All furthe
 **[ESP32 CANBox Manager](https://github.com/aerodomigue/esp32-canbox-manager)** (Android App)
 - **Select Vehicle**: Load the specific `.json` config for your car.
 - **Calibrate**: Set steering wheel offsets and tank capacity.
-- **OTA Updates**: Update future firmware versions wirelessly from the app using **`firmware.ota`**.
+- **OTA Updates**: Update future firmware versions over USB serial from the app using **`firmware.ota`**. The vehicle preset is uploaded separately.
 
 ---
 

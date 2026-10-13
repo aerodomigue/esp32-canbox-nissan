@@ -41,7 +41,7 @@ Le projet a démarré comme une solution dédiée à la **Nissan Juke F15**, mai
 | Fonctionnalité | Statut | Notes |
 | --- | --- | --- |
 | Régime Moteur (RPM) | Calibration à vérifier | Décodeur implémenté ; valeur de ralenti incohérente dans l'ancien log |
-| Vitesse Véhicule | Calibration à vérifier | Preset initial restauré ; comparaison avec les références ODB |
+| Vitesse Véhicule | Calibration à vérifier | Preset initial restauré ; comparaison avec les références OBD |
 | Niveau Essence | Mapping contesté | Formule initiale 0–45 restaurée ; l'octet 0 pourrait contenir des états |
 | Tension Batterie | ✅ Fonctionnel | |
 | Direction / Lignes Dynamiques | ✅ Fonctionnel | Calibré pour Juke F15 |
@@ -126,7 +126,7 @@ Pin 16 = +12V Batterie
 Pin 4/5 = Masse
 ```
 
-> **Note :** Les ports OBD-II possèdent des résistances de terminaison intégrées, donc aucune résistance supplémentaire n'est nécessaire sur le module SN65HVD230. Si votre module a une résistance 120Ω (R120), vous pouvez la laisser ou la retirer - le bus fonctionnera dans les deux cas.
+> **Terminaison CAN :** Un bus CAN haute vitesse comporte normalement une terminaison de 120Ω à chaque extrémité, comme décrit dans la [fiche technique Texas Instruments du SN65HVD230](https://www.ti.com/lit/ds/symlink/sn65hvd230.pdf). En se branchant sur un bus véhicule déjà terminé via l’OBD-II, le module constitue un nœud supplémentaire et ne doit pas ajouter une troisième terminaison de 120Ω. Si le module comporte une terminaison de 120Ω entre CAN-H et CAN-L, désactiver cette terminaison pour ce raccordement ; le connecteur OBD-II lui-même ne fournit pas de terminaison.
 
 ### Pinout Connecteur Électrochauffant (Clim) — M25
 
@@ -180,11 +180,28 @@ Le boîtier peut être configuré via USB série sans recompilation. Connectez-v
 | `CAN LIST` | Lister les fichiers de config véhicule |
 | `CAN LOAD <fichier>` | Charger une config véhicule |
 | `CAN UPLOAD START/DATA/END` | Upload config via Base64 |
+| `LOG ON` | Capture CAN brute horodatée et lectures OBD service 01 supportées |
+| `LOG OFF` | Arrêter la capture et les nouvelles requêtes OBD |
 | `SYS INFO` | Informations système |
 | `SYS DATA` | Données véhicule en temps réel |
 | `HELP` | Liste complète des commandes |
 
 Voir la **[Documentation du Protocole USB Série](docs/protocols/USB_SERIAL_PROTOCOL.md)** pour les détails complets.
+
+### Capturer le CAN et les références OBD
+
+Envoyer `LOG ON` en mode véhicule réel pour enregistrer les trames CAN brutes
+et interroger les PIDs OBD annoncés par les calculateurs. Les lignes de
+diagnostic commencent par le préfixe exact `ODB` : `ODB TX` pour les requêtes,
+`ODB RAW_RX` pour les réponses brutes et `ODB RX` pour les références décodées.
+`t_ms` indique le retrait de la file pour les trames reçues et l’instant de
+tentative pour les requêtes. Les octets restent inchangés.
+
+`LOG OFF` arrête la capture et les nouvelles requêtes. Le mode mock n’envoie
+aucune requête OBD et l’OTA suspend les lectures. Les références ne changent
+ni le preset actif, ni les valeurs envoyées à l’autoradio. Le
+[guide de capture et comparaison](docs/OBD_CALIBRATION.fr.md) décrit les unités,
+timeouts, compteurs de pertes et commandes d’enregistrement.
 
 ### Support Multi-Véhicules
 
@@ -271,7 +288,7 @@ Une fois flashé, branchez l'ESP32 sur un port USB de votre autoradio Android. T
 **[ESP32 CANBox Manager](https://github.com/aerodomigue/esp32-canbox-manager)** (App Android)
 - **Sélection du Véhicule** : Chargez la config `.json` correspondant à votre voiture.
 - **Calibration** : Réglez les offsets du volant ou la capacité du réservoir.
-- **Mises à jour OTA** : Mettez à jour les futures versions du firmware sans fil depuis l'app avec **`firmware.ota`**.
+- **Mises à jour OTA** : Mettez à jour les futures versions du firmware par USB série depuis l'app avec **`firmware.ota`**. Le preset véhicule se charge séparément.
 
 ---
 

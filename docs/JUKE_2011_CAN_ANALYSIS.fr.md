@@ -125,9 +125,13 @@ L/100 km à partir des seules valeurs brutes ou du format UART de l'autoradio.
 ## Parseur et reproduction
 
 `tools/analyze_can_log.py` utilise uniquement la bibliothèque standard Python.
-Il accepte les formats série historique et actuel, ainsi que le CSV
-`timestamp_ms,RX,can_id,dlc,data` ; il refuse les IDs hors 11 bits, les DLC
-hors 0–8, les charges utiles incohérentes et les horodatages invalides.
+Il accepte les formats série historique et actuel, les lignes `ODB RAW_RX`
+et le CSV original `timestamp_ms,RX,can_id,dlc,data`. Le CSV exporté ajoute
+`source_line,ext,rtr,origin` pour conserver les métadonnées. Les IDs 29 bits
+sont conservés avec le flag explicite `ext=1` ; les RTR gardent leur DLC sans
+payload. Les hypothèses numériques portent seulement sur les trames de données
+standard. Le lecteur refuse les DLC hors 0–8, les octets incohérents, les IDs
+hors du format déclaré et les horodatages invalides.
 Il produit les statistiques par octet, les fenêtres BE/LE, les variations
 de bits et les motifs de compteurs, puis les hypothèses numériques ci-dessus.
 Les horodatages absents restent absents. Les lignes rejetées sont rapportées

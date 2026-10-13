@@ -106,8 +106,8 @@ anomalie. Il n’a ni timestamps ni références OBD synchronisées.
 Le replay utilise le **décodeur C++ de production**. Sur 1 016 lignes,
 1 013 trames sont acceptées et trois lignes sont rejetées : ID `0x3FC91000`
 (ligne 107) et DLC 20 (lignes 547 et 698). Avec le preset actif, 157 trames sont
-traitées, 856 IDs sont inconnus et aucune trame acceptée par le lecteur n’est
-rejetée ensuite par le décodeur.
+traitées et 856 trames ont un ID non configuré. Aucune trame acceptée par le
+lecteur n’est rejetée ensuite par le décodeur.
 
 | Signal | Résultat du preset actif | Limite |
 | --- | --- | --- |
@@ -128,8 +128,9 @@ Python 3.14.4, PlatformIO 6.2.0, pioarduino 55.3.312, Arduino ESP32 3.3.12,
 RISC-V 14.2.0, ArduinoJson 7.4.3 et ESP32-TWAI-CAN `01251a4`.
 Les étapes reproductibles sont dans [DEVELOPMENT.md](DEVELOPMENT.md).
 
-**152 tests C++ et 34 tests Python réussis**, aucun échec ni test ignoré avec
-la capture complète.
+Validation du code du commit `2b08661` : **152 tests C++ et 34 tests Python
+réussis**, aucun échec ni test ignoré avec la capture complète. Les changements
+de documentation ultérieurs ne modifient pas ce code.
 
 | Suite C++ | Réussis |
 | --- | ---: |
