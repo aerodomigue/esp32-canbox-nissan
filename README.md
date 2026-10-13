@@ -202,6 +202,11 @@ or the values sent to the radio. See the
 [capture and comparison guide](docs/OBD_CALIBRATION.fr.md) for PID units,
 timeouts, driver loss counters and recording commands.
 
+CAN reception continues while an OBD request is pending. The current USB
+output can still block on a full buffer and ignore incomplete writes. See
+the [firmware streaming validation](docs/LOG_STREAMING_VALIDATION.fr.md) and
+the [client routing contract](docs/protocols/USB_SERIAL_PROTOCOL.md#routing-the-shared-stream).
+
 ### Multi-Vehicle Support
 
 Vehicle configurations are stored as JSON files on the device's filesystem. You can:

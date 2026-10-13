@@ -15,7 +15,7 @@ mkdir -p .local-validation
 ## Tests
 
 ```bash
-.venv/bin/pio test -e native -e native_radio -e native_serial
+.venv/bin/pio test -e native -e native_radio -e native_serial -e native_stream
 .venv/bin/python -B -m unittest discover -s tools -p 'test_*can*.py' -v
 ```
 
@@ -24,13 +24,22 @@ serial command implementation. The CAN suites load `data/NissanJukeF15.json`
 directly. The serial environment generates `include/version.h` using the same
 script as the firmware build, so it works on a fresh clone.
 
-CI runs all three environments, including the OBD calibration and raw formatter
+CI runs all four environments, including the OBD calibration and raw formatter
 tests, and the Python capture analysis/comparison tests.
 The validation after removing the rejected experiments passed **152 C++
 tests and 34 Python tests**, with the complete archived capture supplied.
 Without `CAN_LOG_PATH`, the one optional full-capture test is skipped.
 Native test success checks software behavior; it does not establish that a
 mapping matches the dashboard of a particular car.
+
+The `native_stream` suite executes the production main loop with deterministic
+CAN and USB mocks. It checks streaming while an OBD reply is pending, raw and
+dashboard output, and the existing transport's behavior under USB stalls and
+short writes. These last scenarios characterize a known limitation; passing
+them does not assert lossless output. See
+[the streaming validation](LOG_STREAMING_VALIDATION.fr.md) for the exact
+record routing contract and the distinction between software simulation and
+hardware capture.
 
 The replay suite uses an authentic historical excerpt by default. To replay
 the complete archived capture through the production decoder, use the commands

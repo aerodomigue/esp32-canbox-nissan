@@ -203,6 +203,11 @@ ni le preset actif, ni les valeurs envoyées à l’autoradio. Le
 [guide de capture et comparaison](docs/OBD_CALIBRATION.fr.md) décrit les unités,
 timeouts, compteurs de pertes et commandes d’enregistrement.
 
+La lecture CAN continue pendant une requête OBD en cours. La sortie USB
+actuelle peut toutefois bloquer si son tampon est plein et ignorer des
+écritures incomplètes. Voir la [validation du streaming firmware](docs/LOG_STREAMING_VALIDATION.fr.md)
+et le [format de routage pour les clients](docs/protocols/USB_SERIAL_PROTOCOL.md#routing-the-shared-stream).
+
 ### Support Multi-Véhicules
 
 Les configurations véhicules sont stockées sous forme de fichiers JSON sur le filesystem du boîtier. Vous pouvez :

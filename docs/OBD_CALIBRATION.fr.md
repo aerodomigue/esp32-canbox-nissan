@@ -111,6 +111,13 @@ Les octets bruts restent visibles, y compris pour les IDs non configurés.
 L'USB peut encore ralentir la boucle : vérifier `ODB DRIVER` et les rejets
 du parseur avant de tirer des conclusions d'une capture.
 
+Pour séparer les journaux du dashboard dans un client, reconnaître les
+préfixes exacts `RX 0x` et `ODB ` avant les réponses aux commandes. Le dashboard
+est le bloc demandé par `SYS DATA`, de `=== Live Vehicle Data ===` à
+`=========================` ; il n'existe pas de préfixe `DASH` ou `TX` seul.
+Voir [le contrat de routage USB](protocols/USB_SERIAL_PROTOCOL.md#routing-the-shared-stream)
+et [la validation du streaming firmware](LOG_STREAMING_VALIDATION.fr.md).
+
 ## Comparaison sur la VM
 
 ```bash

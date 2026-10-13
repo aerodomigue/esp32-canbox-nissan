@@ -41,6 +41,49 @@ OK
 ERROR: <error description>
 ```
 
+### Routing the shared stream
+
+The exact diagnostic prefix is **`ODB `**, including the trailing space.
+The firmware does not emit an `OBD ` family, a `DASH ` family or standalone
+`TX ` records. Route complete lines using this order:
+
+| Line starts with / equals | Meaning | Destination |
+| --- | --- | --- |
+| `RX 0x` | Received raw CAN frame, including unknown IDs | CAN capture |
+| `ODB RAW_RX 0x` | Received raw standard frame on `0x7DF`–`0x7EF` | Diagnostic capture |
+| `ODB TX ` | OBD request bytes and driver queue status | Diagnostic capture |
+| `ODB RX ` | Decoded OBD reference, never a dashboard update | Diagnostic capture |
+| `ODB ` (other subtypes) | Capabilities, timeouts, negative responses, state, driver counters | Diagnostic capture |
+| `=== Live Vehicle Data ===` (exact) | Start of the response to `SYS DATA` | Dashboard response |
+| `=========================` (exact) | End of that dashboard response | Finish dashboard response |
+| `OK`, `OK `, `ERROR: ` | Command acknowledgment or failure | Pending command |
+| Other lines | Dashboard fields while its block is open; otherwise command/boot information | Matching response / console |
+
+Match raw CAN with `RX 0x`, not just `RX`: controller error messages such as
+`RX Err: ...` are console information. Check the raw and diagnostic families
+before accumulating dashboard fields. `SYS DATA` is requested by the client;
+the firmware does not periodically publish that block itself. Its fields
+start with `Config:`, `Mode:`, `RPM:`, `Speed:`, `Steering:`, `Fuel:`,
+`Battery:`, `DTE:`, `Temp:`, `Doors:` and `Lights:`. Other commands have their
+own headers and footers; a line of `=` is not a universal response terminator.
+
+`ODB TX` covers OBD request attempts only. It is not a capture of every CAN
+transmission or of the separate radio UART. With logging enabled, the firmware
+attempts to export each dequeued frame once, either as `RX` or as `ODB RAW_RX`.
+A valid reply may additionally produce
+an `ODB RX`, `ODB SUPPORTED` or `ODB NEGATIVE` interpretation.
+
+USB reads are arbitrary byte chunks: a chunk can end inside `ODB`, a payload
+or a CRLF, and one chunk can contain several lines. Keep a persistent receive
+buffer, extract only records ending in LF, remove an optional preceding CR
+for parsing, and retain the unfinished suffix for the next read. Preserve
+the original line and its line ending when exporting. Command completion
+and OBD replies must not control when complete raw lines are processed.
+
+This describes the intended records. The current firmware can still lose
+or truncate output under USB backpressure; see
+[the firmware streaming validation](../LOG_STREAMING_VALIDATION.fr.md).
+
 ---
 
 ## Command Reference
