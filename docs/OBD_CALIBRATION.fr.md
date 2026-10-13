@@ -8,8 +8,8 @@ arrête les nouvelles requêtes et la capture ; une transmission déjà mise en
 file dans le contrôleur ne peut pas être annulée par cette commande.
 
 Les lectures OBD ne changent ni le preset, ni les valeurs décodées envoyées à
-l'autoradio. Les cinq propositions de mapping de la PR #10 restent dans
-`test/fixtures/proposed_anyzlo_mappings.json`, hors du dossier `data/`.
+l'autoradio. Les propositions de mapping de la PR #10 et leur profil
+expérimental ont été retirés ; les corrections de robustesse restent actives.
 Le preset actif reprend exactement la tête PR `495f346` : régime `/7`,
 vitesse octets 0–1, carburant `[255,0,0,45]`, autonomie `0x54C ×100/338`,
 consommation instantanée octet 3. Ce retour ne valide pas physiquement ces

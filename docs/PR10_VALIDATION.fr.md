@@ -2,7 +2,7 @@
 
 La [PR #10](https://github.com/aerodomigue/esp32-canbox-nissan/pull/10) et ses
 sept commentaires de conversation ont été relus. À la demande du propriétaire,
-les cinq propositions de mapping d’`anyzlo` sont **mises de côté** : le preset
+les cinq propositions de mapping d’`anyzlo` sont **retirées** : le preset
 actif reprend exactement celui de la tête PR `495f346`. Les protections du
 décodeur sont conservées et renforcées. `LOG ON` ajoute les lectures OBD-II
 service 01 et leurs résultats pour comparer les références aux trames CAN.
@@ -14,13 +14,17 @@ sans suivi de la branche distante de la PR. La branche locale
 L’état précédent reste accessible sur `archive/pr10-anyzlo-mappings`. Aucun push,
 commentaire GitHub ni modification distante de la PR n’a été effectué.
 
-## Preset actif et propositions conservées
+## Preset actif et retrait des propositions
 
 `data/NissanJukeF15.json` est identique octet par octet à la version `495f346`.
-Les propositions sont dans `test/fixtures/proposed_anyzlo_mappings.json`, hors
-`data/`, avec leur provenance ; elles ne sont pas chargées dans LittleFS.
+Le profil expérimental des propositions et les huit tests qui le chargeaient
+ont été supprimés. Le tableau suivant décrit les changements retirés ;
+aucun de ces remplacements n'est appliqué. Le format UART est également
+celui de la tête PR : `0x23` sur trois octets et `0x24` sur deux octets.
+L'essai non commité de `0x23` sur 13 octets a été annulé ; le troisième octet
+constant `0x06`, les calculs de trajet et le relais climat ne sont pas introduits.
 
-| Signal | Preset actif initial | Proposition différée |
+| Signal | Preset actif initial | Proposition retirée |
 | --- | --- | --- |
 | Régime | `0x180`, octets 0–1, brut / 7 | brut / 8 |
 | Vitesse | `0x284`, octets 0–1, brut / 100 | octets 4–5, brut / 100 |
@@ -28,7 +32,8 @@ Les propositions sont dans `test/fixtures/proposed_anyzlo_mappings.json`, hors
 | Autonomie | `0x54C`, octets 6–7, brut × 100 / 338 | `0x2DE`, octets 6–7, brut / 10 |
 | Consommation instantanée | `0x580[3]`, brut | `0x580[1]`, échelle 1 |
 
-Les tests distinguent les deux jeux de mappings avec des octets contradictoires.
+Les tests du preset actif utilisent des octets contradictoires pour détecter
+un changement involontaire de source.
 Le retour au preset initial ne constitue pas une validation physique de ses
 formules. L’analyse du Juke 2011 1.6 DIG-T manuel et ses sources sont dans
 [JUKE_2011_CAN_ANALYSIS.fr.md](JUKE_2011_CAN_ANALYSIS.fr.md).
@@ -109,7 +114,7 @@ rejetée ensuite par le décodeur.
 | Régime, 114 trames | 182 tr/min constants | Suspect pour un moteur en marche ; mapping non validé |
 | Vitesse | Aucun relevé `0x284` | Tests synthétiques uniquement |
 | Carburant, 12 trames | 33 sous l’hypothèse litres | Nature de l’octet contestée ; aucun niveau réel connu |
-| Autonomie | Pas de `0x54C`, valeur initiale 0 | 120 trames `0x2DE` visibles, proposition différée |
+| Autonomie | Pas de `0x54C`, valeur initiale 0 | 120 trames `0x2DE` visibles, remplacement retiré |
 | Consommation, 10 trames | Dernier octet 3 : 6 | Motif cyclique `2,4,6,0` ; unité inconnue |
 
 La relecture vérifie le comportement logiciel. Cette capture ne permet pas
@@ -123,15 +128,15 @@ Python 3.14.4, PlatformIO 6.2.0, pioarduino 55.3.312, Arduino ESP32 3.3.12,
 RISC-V 14.2.0, ArduinoJson 7.4.3 et ESP32-TWAI-CAN `01251a4`.
 Les étapes reproductibles sont dans [DEVELOPMENT.md](DEVELOPMENT.md).
 
-**160 tests C++ et 34 tests Python réussis**, aucun échec ni test ignoré avec
+**152 tests C++ et 34 tests Python réussis**, aucun échec ni test ignoré avec
 la capture complète.
 
 | Suite C++ | Réussis |
 | --- | ---: |
 | OTA | 10 |
 | Paramètres véhicule | 9 |
-| Décodage CAN | 48 |
-| Relecture CAN | 8 |
+| Décodage CAN | 42 |
+| Relecture CAN | 6 |
 | Client OBD et formatage brut | 27 |
 | Encodage UART | 24 |
 | Commandes série | 34 |
@@ -144,15 +149,15 @@ Les tests Python couvrent les formats historiques/actuels, le CSV, les unités,
 les sessions, les offsets candidats, les délais et la protection des entrées.
 
 - Firmware ESP32-C3 : compilation réussie, RAM 17 132 octets (5,2 %),
-  programme 445 718 octets (34,0 % de la partition applicative).
+  programme d'environ 446 000 octets (34,0 % de la partition applicative).
 - LittleFS : construction réussie avec le preset initial restauré.
 - Exemple de comparaison : deux références et cinq trames, aucun rejet CAN.
-- Preset initial identique à la PR et propositions différées conservées : vérifiés.
+- Preset initial identique à la PR et absence du profil expérimental : vérifiés.
 - `pip check` et `git diff --check` : réussis.
 
-Les journaux sont dans `.local-validation/obd-native-tests.log`,
-`obd-python-tests.log`, `obd-can-replay.log`, `obd-firmware-build.log` et
-`obd-filesystem-build.log`. Aucun ESP32 ni véhicule n’était connecté.
+Les journaux du retrait sont dans `.local-validation/revert-native-tests.log`,
+`revert-python-tests.log`, `revert-can-replay.log`, `revert-firmware-build.log` et
+`revert-filesystem-build.log`. Aucun ESP32 ni véhicule n'était connecté.
 Une nouvelle capture simultanée CAN/ODB reste nécessaire.
 
 ## Reproduire la relecture complète

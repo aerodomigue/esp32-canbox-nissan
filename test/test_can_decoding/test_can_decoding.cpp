@@ -4,7 +4,7 @@
  *
  * Loads production config (data/NissanJukeF15.json) via LittleFS mock,
  * feeds raw CAN frames into processFrame(), and asserts GlobalData values.
- * Covers the original active preset and separate, deferred PR review mappings.
+ * Covers the active preset and frame validation before GlobalData writes.
  *
  * Run: pio test -e native
  */
@@ -134,16 +134,16 @@ void test_dte_100km() {
     TEST_ASSERT_EQUAL_INT16(100, dteValue);
 }
 
-void test_dte_deferred_source_does_not_overwrite() {
+void test_dte_unconfigured_source_does_not_overwrite() {
     uint8_t current[] = {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x52};
     CanFrame currentFrame = makeFrame(0x54C, current, 8);
     TEST_ASSERT_TRUE(proc.processFrame(currentFrame));
     TEST_ASSERT_EQUAL_INT16(100, dteValue);
 
-    // Deferred proposal would decode this 0x2DE payload as 305 km.
-    uint8_t proposed[] = {0x00, 0x00, 0x00, 0x00, 0x00, 0x80, 0x0B, 0xEA};
-    CanFrame proposedFrame = makeFrame(0x2DE, proposed, 8);
-    TEST_ASSERT_FALSE(proc.processFrame(proposedFrame));
+    // An unconfigured ID must not overwrite DTE, regardless of its payload.
+    uint8_t unconfigured[] = {0x00, 0x00, 0x00, 0x00, 0x00, 0x80, 0x0B, 0xEA};
+    CanFrame unconfiguredFrame = makeFrame(0x2DE, unconfigured, 8);
+    TEST_ASSERT_FALSE(proc.processFrame(unconfiguredFrame));
     TEST_ASSERT_EQUAL_INT16(100, dteValue);
 }
 
@@ -178,7 +178,7 @@ void test_rpm_zero() {
 // =============================================================================
 
 void test_speed_zero() {
-    // Active bytes 0-1 are zero while deferred bytes 4-5 indicate 100 km/h.
+    // Bytes 0-1 are zero while unrelated bytes 4-5 contain a nonzero word.
     uint8_t d[] = {0x00, 0x00, 0x00, 0x00, 0x27, 0x10, 0x00, 0x00};
     CanFrame f = makeFrame(0x284, d, 8);
     proc.processFrame(f);
@@ -187,7 +187,7 @@ void test_speed_zero() {
 
 void test_speed_100kmh() {
     // 100 km/h → raw = 100*100 = 10000 = 0x2710
-    // Deferred bytes 4-5 deliberately indicate 50 km/h.
+    // Unrelated bytes 4-5 deliberately contain a different nonzero word.
     uint8_t d[] = {0x27, 0x10, 0x00, 0x00, 0x13, 0x88, 0x00, 0x00};
     CanFrame f = makeFrame(0x284, d, 8);
     proc.processFrame(f);
@@ -462,78 +462,6 @@ void test_invalid_field_lengths_rejected() {
 }
 
 // =============================================================================
-// DEFERRED PROPOSALS — preserved outside data/, never loaded by the firmware
-// These tests check proposal arithmetic only, not vehicle signal calibration.
-// =============================================================================
-
-static void loadDeferredProposals() {
-    LittleFS.basePath = "test/fixtures";
-    TEST_ASSERT_TRUE(proc.loadFromJson("/proposed_anyzlo_mappings.json"));
-}
-
-void test_deferred_rpm_divisor() {
-    loadDeferredProposals();
-    uint8_t d[] = {0x1C, 0x39, 0x33, 0x43, 0x09, 0x00, 0x31, 0x05};
-    CanFrame f = makeFrame(0x180, d, 8);
-    TEST_ASSERT_TRUE(proc.processFrame(f));
-    TEST_ASSERT_EQUAL_UINT16(903, engineRPM);
-}
-
-void test_deferred_speed_offset() {
-    loadDeferredProposals();
-    uint8_t d[] = {0x13, 0x88, 0x00, 0x00, 0x27, 0x10};
-    CanFrame f = makeFrame(0x284, d, 6);
-    TEST_ASSERT_TRUE(proc.processFrame(f));
-    TEST_ASSERT_EQUAL_UINT8(100, vehicleSpeed);
-}
-
-void test_deferred_fuel_formula_bounds() {
-    loadDeferredProposals();
-    const uint8_t raw[] = {255, 247, 246, 125, 64, 0};
-    const uint8_t expected[] = {0, 0, 1, 16, 23, 31};
-    for (size_t i = 0; i < sizeof(raw); ++i) {
-        uint8_t d[] = {raw[i], 0x03, 0xBA, 0x2C};
-        CanFrame f = makeFrame(0x5C5, d, 4);
-        TEST_ASSERT_TRUE(proc.processFrame(f));
-        TEST_ASSERT_EQUAL_UINT8(expected[i], fuelLevel);
-        TEST_ASSERT_EQUAL_UINT32(244268, currentOdo);
-    }
-}
-
-void test_deferred_dte_source_exclusive() {
-    loadDeferredProposals();
-    uint8_t d[] = {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0B, 0xEA};
-    CanFrame proposedFrame = makeFrame(0x2DE, d, 8);
-    TEST_ASSERT_TRUE(proc.processFrame(proposedFrame));
-    TEST_ASSERT_EQUAL_INT16(305, dteValue);
-    CanFrame activeFrame = makeFrame(0x54C, d, 8);
-    TEST_ASSERT_FALSE(proc.processFrame(activeFrame));
-    TEST_ASSERT_EQUAL_INT16(305, dteValue);
-}
-
-void test_deferred_consumption_offset_full_byte() {
-    loadDeferredProposals();
-    uint8_t d[] = {0x00, 0xFF, 0x80, 0x04, 0x62};
-    CanFrame f = makeFrame(0x580, d, 5);
-    TEST_ASSERT_TRUE(proc.processFrame(f));
-    TEST_ASSERT_EQUAL_UINT16(255, fuelConsumptionInst);
-    TEST_ASSERT_EQUAL_UINT16(98, fuelConsumptionAvg);
-}
-
-void test_deferred_speed_short_frame_rejected() {
-    loadDeferredProposals();
-    vehicleSpeed = 88;
-    uint8_t d[] = {0x27, 0x10, 0x00, 0x00};
-    CanFrame f = makeFrame(0x284, d, 4);
-    const uint32_t processedBefore = proc.getFramesProcessed();
-    const uint32_t unknownBefore = proc.getUnknownFrames();
-    TEST_ASSERT_FALSE(proc.processFrame(f));
-    TEST_ASSERT_EQUAL_UINT8(88, vehicleSpeed);
-    TEST_ASSERT_EQUAL_UINT32(processedBefore, proc.getFramesProcessed());
-    TEST_ASSERT_EQUAL_UINT32(unknownBefore, proc.getUnknownFrames());
-}
-
-// =============================================================================
 // FRAME TYPE — only standard 11-bit data frames can affect vehicle state
 // =============================================================================
 
@@ -628,7 +556,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_dte_305km);
     RUN_TEST(test_dte_zero);
     RUN_TEST(test_dte_100km);
-    RUN_TEST(test_dte_deferred_source_does_not_overwrite);
+    RUN_TEST(test_dte_unconfigured_source_does_not_overwrite);
 
     // Engine RPM
     RUN_TEST(test_rpm_idle);
@@ -676,14 +604,6 @@ int main(int argc, char** argv) {
     RUN_TEST(test_fuel_short_frame_rejected_atomically);
     RUN_TEST(test_oversized_dlc_rejected);
     RUN_TEST(test_invalid_field_lengths_rejected);
-
-    // Deferred PR review proposals, kept outside the active production preset
-    RUN_TEST(test_deferred_rpm_divisor);
-    RUN_TEST(test_deferred_speed_offset);
-    RUN_TEST(test_deferred_fuel_formula_bounds);
-    RUN_TEST(test_deferred_dte_source_exclusive);
-    RUN_TEST(test_deferred_consumption_offset_full_byte);
-    RUN_TEST(test_deferred_speed_short_frame_rejected);
 
     // Standard data frames only
     RUN_TEST(test_rtr_configured_id_preserves_state);

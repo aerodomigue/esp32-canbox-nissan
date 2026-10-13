@@ -239,10 +239,10 @@ La LED (GPIO 8) permet un diagnostic rapide sans connexion PC :
 
 Pour compiler et tester localement, voir [Développement](docs/DEVELOPMENT.md).
 Le [rapport de validation de la PR #10](docs/PR10_VALIDATION.fr.md) décrit les
-correctifs de décodage, les propositions différées et les vérifications réalisées.
+correctifs de décodage, le retrait des propositions et les vérifications réalisées.
 L'[analyse CAN du DIG-T 2011](docs/JUKE_2011_CAN_ANALYSIS.fr.md) documente le
 défaut de l'ancien enregistreur, les mappings contradictoires et le parseur reproductible.
-Les propositions de la PR sont mises de côté hors du preset déployé. `LOG ON`
+Les propositions de la PR et leur profil expérimental ont été retirés. `LOG ON`
 enregistre maintenant les trames CAN brutes horodatées et lance les lectures
 OBD service 01 supportées ; chaque ligne de diagnostic commence par `ODB`.
 Voir [la capture pour calibration OBD](docs/OBD_CALIBRATION.fr.md).

@@ -249,7 +249,7 @@ Map value from one range to another: `map(value, inMin, inMax, outMin, outMax)`
 ```
 
 This is the restored initial mapping, not a validated physical tank capacity.
-The PR alternatives are deferred in `test/fixtures/proposed_anyzlo_mappings.json`.
+The proposed PR replacements and their experimental profile have been removed.
 Use [ODB calibration logging](OBD_CALIBRATION.fr.md) to collect reference measurements.
 
 ### BITMASK_EXTRACT

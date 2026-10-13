@@ -30,7 +30,7 @@ The actual decoding logic (byte extraction, formulas, target mapping) is defined
 
 ## Decoded CAN Frames (Nissan Juke F15)
 
-The following table describes the initial PR-head mappings restored in the default `NissanJukeF15.json`. Physical calibration remains unverified. The proposed replacements are preserved outside the deployed preset in `test/fixtures/proposed_anyzlo_mappings.json`.
+The following table describes the initial PR-head mappings restored in the default `NissanJukeF15.json`. Physical calibration remains unverified. The proposed replacements and their experimental profile have been removed.
 
 ### 1. Steering & Dynamics
 
@@ -94,7 +94,7 @@ Bytes [0-2] form a **24-bit status word** (Big Endian BITMASK). Individual bits 
 
 | Byte | Signal | Formula | Notes |
 | --- | --- | --- | --- |
-| **[6-7]** | Distance to Empty | SCALE [100, 338, 0] | Initial `raw * 100 / 338` hypothesis; 0x2DE replacement deferred |
+| **[6-7]** | Distance to Empty | SCALE [100, 338, 0] | Initial `raw * 100 / 338` hypothesis; 0x2DE replacement rejected |
 
 ### 6. Fuel Consumption (CAN ID 0x580)
 

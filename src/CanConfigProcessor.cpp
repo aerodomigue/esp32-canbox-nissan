@@ -394,7 +394,7 @@ int32_t CanConfigProcessor::extractRawValue(const uint8_t* data, const FieldConf
  * Formula Types:
  * - NONE: Return raw value unchanged
  * - SCALE: (value * multiplier / divisor) + offset
- *          Example: raw 20000 with params[1,8,0] → 2500
+ *          Example: RPM raw 17500 with params[1,7,0] → 2500
  * - MAP_RANGE: Arduino map() function
  *          Example: active Juke fuel params[255,0,0,45], raw 255→0 gives 0→45
  * - BITMASK_EXTRACT: (value & mask) >> shift

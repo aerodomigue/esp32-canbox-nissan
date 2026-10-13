@@ -239,10 +239,10 @@ The LED (GPIO 8) provides quick diagnostics without requiring a PC connection:
 
 For local builds and tests, see [Development](docs/DEVELOPMENT.md).
 The [PR #10 validation report](docs/PR10_VALIDATION.fr.md) records the decoder
-fixes, deferred mapping proposals and completed validation.
+fixes, rejected mapping proposals and completed validation.
 The [2011 DIG-T CAN analysis](docs/JUKE_2011_CAN_ANALYSIS.fr.md) documents the
 historical logger defect, conflicting mappings, and a reproducible analysis tool.
-The proposed PR mappings are deferred outside the deployed preset. `LOG ON`
+The proposed PR mappings and their experimental fixture have been removed. `LOG ON`
 now records timestamped raw CAN and starts supported OBD service 01 reference
 queries; all diagnostic lines begin with `ODB`. See
 [OBD calibration logging](docs/OBD_CALIBRATION.fr.md).

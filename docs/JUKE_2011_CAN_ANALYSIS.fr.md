@@ -4,10 +4,10 @@ L'analyse distingue les octets réellement présents, les hypothèses issues
 d'autres Nissan et les mesures qui restent à faire. **L'ancien export ne
 permet pas de valider physiquement les mappings de la PR #10** : le code de
 l'enregistreur retrouvé dans son historique affichait la trame avant de la
-lire. Les cinq mappings proposés dans la PR sont désormais **différés** : le
-preset initial de la tête PR est restauré et les propositions restent dans
-`test/fixtures/proposed_anyzlo_mappings.json`, hors déploiement. Les correctifs
-de robustesse restent actifs ; [le log OBD](OBD_CALIBRATION.fr.md) permet de
+lire. Les cinq mappings proposés dans la PR ont été **retirés**, ainsi que
+leur profil expérimental et les tests qui le chargeaient. Le preset initial
+de la tête PR est restauré. Les correctifs de robustesse restent actifs ;
+[le log OBD](OBD_CALIBRATION.fr.md) permet de
 collecter les références nécessaires pour décider des mappings.
 
 ## Véhicule et sources
@@ -70,13 +70,13 @@ sont des résultats numériques de l'export, sans présumer leur signification.
 
 | ID / champ | Observation | Interprétation et limite |
 | --- | --- | --- |
-| `0x180`, octets 0–1 BE | 114 valeurs identiques : `0x04FB = 1275` ; `/8 = 159,375` | La proposition différée produit 159 tr/min, le preset initial `/7` produit 182. Les deux sont incompatibles avec un ralenti normal si le contexte est exact. |
+| `0x180`, octets 0–1 BE | 114 valeurs identiques : `0x04FB = 1275` ; `/8 = 159,375` | La formule proposée, retirée, aurait produit 159 tr/min, le preset initial `/7` produit 182. Les deux sont incompatibles avec un ralenti normal si le contexte est exact. |
 | `0x1F9`, octets 2–3 BE | 116 valeurs identiques : 1275 | Copie du candidat précédent, sans référence indépendante de régime. |
 | `0x180`, octets 2–3 BE `>>4` | 866 à 1 030, 32 changements, puis 981 | Égale le champ `0x160`, octets 1–2 BE `&0xFFF`, sur 114/114 comparaisons avec la trame précédente. Cette redondance ne prouve pas qu'il s'agit du régime. |
 | `0x280`, octets 4–5 BE | 60 valeurs nulles | Compatible avec l'arrêt supposé ; aucune calibration de vitesse hors zéro. `0x284` et `0x285` absents. |
-| `0x5C5`, octet 0 | 12 valeurs constantes : `0x40` | La proposition différée calcule 23, le preset initial 33 ; la nature « niveau de carburant » de cet octet est fortement douteuse. |
+| `0x5C5`, octet 0 | 12 valeurs constantes : `0x40` | La formule proposée, retirée, aurait calculé 23, le preset initial 33 ; la nature « niveau de carburant » de cet octet est fortement douteuse. |
 | `0x5C5`, octets 1–3 BE | 239 944 constants | Candidat kilométrage, à comparer au compteur réel. |
-| `0x2DE`, octets 6–7 BE | 120 valeurs : 3 756 ; `/10 = 375,6` | La proposition différée produit 375 ; le preset actif ne traite pas cet ID. L'unité km n'est pas confirmée. Octet 4 = `0xF0`, donc son bit 1 vaut zéro. |
+| `0x2DE`, octets 6–7 BE | 120 valeurs : 3 756 ; `/10 = 375,6` | La formule proposée, retirée, aurait produit 375 ; le preset actif ne traite pas cet ID. L'unité km n'est pas confirmée. Octet 4 = `0xF0`, donc son bit 1 vaut zéro. |
 | `0x580`, octet 1 | 10 valeurs brutes : 20, 30, 46, 60 | Unité inconnue ; ne permet pas de conclure à 2–6 L/100 km. |
 | `0x551`, octet 0 | 9 valeurs : 107 ; `-40 = 67` | Candidat température de liquide de refroidissement, compatible avec des travaux Nissan proches, sans mesure synchronisée. |
 
@@ -101,8 +101,9 @@ identifier les octets. Le brut 1 275 pourrait ressembler à un ralenti accélér
 mais retirer le diviseur sur cette seule base serait injustifié.
 
 **Vitesse et autonomie.** Le même auteur Qashqai situe la vitesse `/100` dans
-les octets 4–5 de `0x280` et `0x284`, ce qui appuie la correction d'offset de
-la PR, maintenant différée. Sa formule d'autonomie `/10` pour `0x2DE[6:8]` est liée au mode
+les octets 4–5 de `0x280` et `0x284`, ce qui justifie une hypothèse à comparer
+avec les références OBD, sans changer l'offset du preset actif. Sa formule
+d'autonomie `/10` pour `0x2DE[6:8]` est liée au mode
 L/100 km, signalé par le bit 1 de l'octet 4. Ce bit est nul dans notre export,
 et le brut 3 756 n'est pas un multiple de dix comme dans sa description.
 Les différences de véhicule, d'unité ou de capture restent ouvertes.
@@ -144,13 +145,13 @@ Sorties locales : `.local-validation/deep-analysis/analysis.json` et
 les octets et le numéro de ligne source. Le parseur explore des hypothèses ;
 les tests de relecture C++ continuent d'exercer le décodeur de production.
 
-Vérification locale : **13 tests Python réussis**, couvrant les formats, les
+Vérification initiale : **13 tests Python réussis**, couvrant les formats, les
 rejets, la reprise après un CSV corrompu, les compteurs, la redondance 12 bits
 et la protection du fichier source, y compris contre les liens physiques.
 L'analyse complète retrouve 1 013 trames et trois rejets ; réimporter son CSV
-retrouve les mêmes 1 013 charges utiles, sans rejet. Les 122 tests natifs et
-les constructions firmware/LittleFS de la correction initiale ont également
-réussi, comme détaillé dans [le rapport PR #10](PR10_VALIDATION.fr.md).
+retrouve les mêmes 1 013 charges utiles, sans rejet. Les vérifications actuelles
+du décodeur, du client OBD et de la construction
+sont détaillées dans [le rapport PR #10](PR10_VALIDATION.fr.md).
 
 ## Capture nécessaire pour trancher
 
@@ -171,7 +172,9 @@ réussi, comme détaillé dans [le rapport PR #10](PR10_VALIDATION.fr.md).
 5. Pour la vitesse, il faudra des points non nuls avec une référence connue.
    Une capture à l'arrêt ne permet pas de choisir entre plusieurs échelles.
 
-Les suggestions différées de la PR sont vérifiées comme comportement logiciel
-dans une fixture séparée ; elles ne sont pas dans le preset déployé. Une
-nouvelle capture documentée reste nécessaire avant de présenter le carburant,
-le régime ou les unités de consommation comme calibrés sur cette voiture.
+Les propositions d'anyzlo ont été retirées du code, des profils et des tests
+expérimentaux. Le format UART reste celui de la tête PR, y compris les
+commandes `0x23` et `0x24`. Les statistiques de trajet, l'estimation du réservoir
+et le relais de climatisation proposés n'ont pas été introduits. Une nouvelle
+capture documentée avec les références OBD reste nécessaire avant de présenter
+le carburant, le régime ou les unités de consommation comme calibrés sur cette voiture.
