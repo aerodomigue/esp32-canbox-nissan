@@ -26,17 +26,17 @@ script as the firmware build, so it works on a fresh clone.
 
 CI runs all four environments, including the OBD calibration and raw formatter
 tests, and the Python capture analysis/comparison tests.
-The validation after removing the rejected experiments passed **152 C++
-tests and 34 Python tests**, with the complete archived capture supplied.
+The USB buffering validation passed **170 C++ tests and 34 Python tests**,
+with the complete archived capture supplied (including 18 streaming tests).
 Without `CAN_LOG_PATH`, the one optional full-capture test is skipped.
 Native test success checks software behavior; it does not establish that a
 mapping matches the dashboard of a particular car.
 
 The `native_stream` suite executes the production main loop with deterministic
 CAN and USB mocks. It checks streaming while an OBD reply is pending, raw and
-dashboard output, and the existing transport's behavior under USB stalls and
-short writes. These last scenarios characterize a known limitation; passing
-them does not assert lossless output. See
+dashboard output, FIFO wrap, USB stalls, partial writes, saturation counters
+and command/OTA response ordering. Oversized command responses are also tested
+for complete rollback to an error line. See
 [the streaming validation](LOG_STREAMING_VALIDATION.fr.md) for the exact
 record routing contract and the distinction between software simulation and
 hardware capture.

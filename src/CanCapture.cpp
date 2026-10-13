@@ -7,6 +7,7 @@
  * Falls back to mock data generation when no config is present.
  */
 
+#include "UsbConsole.h"
 #include <ESP32-TWAI-CAN.hpp>
 #include "CanConfigProcessor.h"
 #include "GlobalData.h"
@@ -38,13 +39,18 @@ void handleCanCapture(const CanFrame& rxFrame, uint32_t receivedAt) {
     if (isCanLogEnabled()) {
         // Format a complete line before output; neither decoder nor logger mutates the frame.
         char line[160];
-        if (formatCanFrameLog(rxFrame, receivedAt, line, sizeof(line))) Serial.println(line);
+        if (formatCanFrameLog(rxFrame, receivedAt, line, sizeof(line))) {
+            Console.logLine(line, line[0] == 'O');
+        }
     }
 
     // Optional: Debug logging for unknown frames
     #ifdef DEBUG_CAN_UNKNOWN
     if (!processed) {
-        Serial.printf("[CAN] Unknown frame: 0x%03X\n", rxFrame.identifier);
+        char debugLine[48];
+        snprintf(debugLine, sizeof(debugLine), "[CAN] Unknown frame: 0x%03lX",
+                 static_cast<unsigned long>(rxFrame.identifier));
+        Console.logLine(debugLine);
     }
     #endif
 }

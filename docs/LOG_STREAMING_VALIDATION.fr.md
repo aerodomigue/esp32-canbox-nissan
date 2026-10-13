@@ -1,160 +1,148 @@
-# Validation du streaming CAN / OBD
+# Streaming CAN / OBD avec tampon USB
 
-## Périmètre et conclusion
+## Fonctionnement
 
-Cette validation porte sur le firmware du commit `5a2a6ff`, base de l'image
-OTA précédemment livrée, et sur le code du framework Arduino installé pour
-l'ESP32-C3. Aucun fichier du client Android n'est nécessaire à ce contrôle.
-Les essais hôte utilisent des périphériques simulés ; ils ne reproduisent
-pas une capture matérielle du véhicule.
+La sortie USB utilise maintenant un tampon circulaire fixe de **64 Kio**,
+partagé par les logs CAN/OBD, les réponses aux commandes et les messages de
+configuration. [UsbConsole](../src/UsbConsole.cpp) est le seul code applicatif
+qui écrit dans le pilote USB. Il est appelé depuis la tâche principale ; aucun
+thread concurrent n'est ajouté.
 
-**La réception CAN ne dépend pas d'une réponse OBD. En revanche, les
-écritures USB peuvent bloquer la boucle et perdre des lignes.** Le flux
-actuel n'offre donc pas une garantie d'export de toutes les trames présentes
-sur le bus.
+Chaque ligne `RX` ou `ODB` est copiée avec son CRLF en une seule admission
+logique. Le drainage conserve la position exacte du prochain octet à envoyer :
+si le pilote n'accepte qu'un préfixe, le suffixe reste devant toutes les lignes
+suivantes. Une réponse `SYS DATA` ou OTA ne peut donc pas s'insérer au milieu
+d'une ligne déjà commencée.
 
-## Chemin exécuté
+Le pilote HWCDC est configuré avant son démarrage avec **4 Kio de tampon TX**,
+**1 Kio de tampon RX** et un timeout d'écriture de **zéro**. Le drainage :
 
-Dans [la boucle principale](../src/main.cpp), chaque tour traite les commandes
-série, puis retire jusqu'à 32 trames de la file CAN avec
-`ESP32Can.readFrame(rxFrame, 0)`. Le timeout nul ne laisse pas la lecture CAN
-attendre une nouvelle trame. Pour chaque trame reçue :
+- ne tente aucune écriture si la connexion ou l'espace disponible manque ;
+- transmet au maximum l'espace annoncé par le pilote ;
+- avance uniquement du nombre d'octets réellement acceptés ;
+- s'arrête immédiatement sur un retour nul ;
+- traite au plus **4 096 octets et huit écritures par appel**.
 
-1. [Le handler CAN](../src/CanCapture.cpp) décode les champs configurés et
-   formate la trame originale en `RX` ou `ODB RAW_RX` si `LOG ON` est actif.
-2. [Le client OBD](../src/ObdCalibration.cpp) examine la même trame et émet,
-   si nécessaire, une référence ou une réponse de découverte distincte.
-3. Après le drainage, `tick(millis())` fait progresser les requêtes OBD.
+Il est appelé au début et à la fin de la boucle, y compris sur le chemin OTA.
+Aucun `Serial.flush()` bloquant n'est utilisé. Les pauses précédant un
+redémarrage volontaire servent aussi à drainer la file, pendant une durée
+bornée ; le délai OTA de deux secondes reste appliqué.
 
-La fenêtre OBD de 250 ms est un contrôle d'échéance : `tick()` retourne
-immédiatement tant que la requête est en cours. Elle n'est ni un `delay()`,
-ni une attente bloquante d'un calculateur. Les requêtes utilisent également
-`ESP32Can.writeFrame(frame, 0)` : le résultat indique une tentative de mise
-en file, pas un acquittement du véhicule.
+## Acquisition, commandes et saturation
 
-Les logs CAN, les références OBD et les réponses `SYS DATA` sont écrits par
-la même tâche, successivement. Il n'y a pas deux producteurs de logs CAN/OBD
-qui écrivent simultanément leurs chaînes. Le CAN est déjà formaté dans
-`char line[160]`, et les messages du client OBD dans `char line[256]`.
+La réception CAN reste indépendante des réponses OBD : jusqu'à 32 trames sont
+retirées par tour, avec un timeout nul et une file TWAI de 128 trames. La
+fenêtre OBD de 250 ms est un contrôle d'échéance, pas une attente bloquante.
+Le client OBD conserve ses cadences et ses conversions ; les références ne
+remplacent pas les valeurs du preset envoyées au dashboard et à l'autoradio.
 
-## Point de blocage et risque de troncature
+Le tampon réserve **12 Kio pour les réponses aux commandes**, ainsi que
+**512 octets supplémentaires aux diagnostics** par rapport aux logs RAW.
+Les commandes sont traitées une par tour. Une commande complète reste en RAM
+jusqu'à ce que la réserve soit disponible, pendant que la réception CAN
+continue. Les réponses sont assemblées avant leur émission. Une réponse trop
+grande pour l'espace disponible, ou une allocation de formatage impossible,
+est remplacée intégralement par :
 
-La configuration `ARDUINO_USB_MODE=1` et `ARDUINO_USB_CDC_ON_BOOT=1` sélectionne
-`HWCDC` pour `Serial`. Le paramètre 115200 de `Serial.begin()` ne limite pas
-la liaison USB Serial/JTAG comme un UART physique.
-
-Le framework **Arduino ESP32 3.3.12 installé lors du contrôle** contient :
-
-- `cores/esp32/HWCDC.cpp` : tampon TX par défaut de **256 octets** et
-  `tx_timeout_ms = 100` ; un envoi connecté peut répéter jusqu'à **20 attentes
-  successives**, soit environ deux secondes par appel à `write()` sans
-  progrès, puis retourner un nombre d'octets inférieur à celui demandé.
-- `cores/esp32/Print.cpp` : `println(texte)` effectue un `write()` pour le
-  texte, puis un autre pour `\r\n`. `printf()` transmet également son résultat
-  formaté à `write()`.
-
-Ces sources sont sous
-`.pio-core/packages/framework-arduinoespressif32/` dans l'environnement de
-compilation. Le comportement peut différer avec une autre version du
-framework ; la plateforme `stable` du projet n'est pas une version figée.
-
-Le firmware appelle directement `Serial.println()` et `Serial.printf()`
-dans le chemin de réception et **ne contrôle pas les octets réellement
-acceptés**. Pendant une attente USB, la tâche ne retire plus les nouvelles
-trames CAN. La file TWAI de 128 trames peut alors déborder. Si une écriture
-échoue ou est courte, le reste de la ligne ou sa terminaison n'est pas
-réessayé : des lignes peuvent disparaître ou se retrouver concaténées.
-Les réponses aux commandes peuvent subir le même problème.
-
-Une réponse OBD déjà arrivée peut aussi rester dans la file jusqu'après
-l'expiration de sa fenêtre logicielle. Elle reste visible en `ODB RAW_RX`
-si l'export passe, mais elle ne donne alors pas de référence `ODB RX`.
-Les timestamps sont pris au retrait de la file, avant l'écriture USB :
-ils ne représentent pas l'instant où le client reçoit la ligne.
-
-`ODB DRIVER` expose les compteurs de pertes et la taille de la file, mais
-emprunte lui aussi l'USB. Son absence ou l'absence d'un compteur croissant
-dans un export incomplet ne prouve pas une capture sans pertes.
-
-## Essais exécutés
-
-La suite [native_stream](../test/test_log_streaming/test_log_streaming.cpp)
-exécute les véritables `setup()` et `loop()`, le handler CAN, le client OBD,
-les commandes série, le décodeur JSON et l'envoi radio. Seuls les
-périphériques, le stockage persistant et l'horloge sont simulés.
-
-**Huit tests réussissent**, avec les résultats suivants :
-
-| Scénario | Résultat |
-| --- | --- |
-| Initialisation du firmware | Preset Juke réel chargé, CAN à 500 kbit/s et file RX configurée à 128 trames |
-| Aucun calculateur ne répond | 960 trames brutes traitées sur 30 tours, malgré trois timeouts OBD et le passage en attente de nouvelle découverte |
-| 40 trames disponibles pendant une requête OBD | 32 retirées au premier tour, les huit restantes au suivant ; timeouts CAN RX et TX tous nuls |
-| Trames configurées, inconnues, étendues, RTR et DLC 0 | Octets et flags conservés ; le décodeur rejette les formats qu'il ne prend pas en charge |
-| Réponse OBD puis `SYS DATA` envoyé en deux fragments | Référence OBD 643 RPM séparée du CAN 182 RPM ; bloc dashboard conforme et aucun écho partiel ajouté au préfixe RAW |
-| Écriture USB volontairement courte | Ligne RAW tronquée, aucun réessai ; compteurs CAN inchangés malgré la perte d'export |
-| Texte accepté, CRLF refusé, puis reprise | Les lignes `RX` et `ODB RAW_RX` sont concaténées sur une seule ligne |
-| Attente USB simulée de 500 ms, arrivée synthétique de 1 000 trames/s | La file de 128 déborde : 372 trames perdues ; drainage normal après reprise |
-
-Les durées et nombres de pertes de ce dernier scénario sont des **valeurs
-de simulation**, pas des mesures du Juke. Les tests de troncature et de
-blocage caractérisent la limitation actuelle : leur succès signifie que
-le défaut a été reproduit, pas qu'il a été corrigé.
-
-Commande de reproduction :
-
-```bash
-.venv/bin/pio test -e native_stream
+```text
+ERROR: Response exceeds USB buffer or allocation failed
 ```
 
-Les suites préexistantes donnent **151 tests C++ réussis et un test de replay
-externe ignoré** (`CAN_LOG_PATH` non fourni). Les **34 tests Python**
-d'analyse et de comparaison passent également. L'image OTA `5a2a6ff`
-reste celle précédemment livrée ; cette branche ajoute des tests, leur
-exécution en CI et la documentation du protocole.
+Cette erreur concerne la sortie : une commande ayant des effets de bord peut
+avoir été exécutée. Les octets des anciennes lignes déjà en cours d'envoi ne
+sont jamais retirés pour fabriquer cette réponse.
 
-## Format à transmettre au client
+Si l'hôte reste trop lent pour la quantité reçue, toute mémoire finie finit par
+se remplir. Dans ce cas, une **nouvelle ligne entière** est refusée avant son
+insertion et comptée ; aucun ancien octet en attente n'est écrasé. La lecture
+CAN et la mise à jour des valeurs du véhicule continuent. Les compteurs de
+saturation USB sont distincts des pertes matérielles/driver de `ODB DRIVER`.
 
-Le préfixe exact est **`ODB`**. Exemples synthétiques :
+`LOG OFF` arrête les nouvelles captures et requêtes. Les lignes déjà admises
+restent dans l'ordre avant la réponse à cette commande. L'OTA suspend les
+nouveaux logs ; les anciennes lignes précèdent `OK READY` dans la file. Les
+accusés de données OTA sont ajoutés après l'écriture de leur bloc en flash.
+
+## Format du retour
+
+Les préfixes, champs et octets des lignes existantes sont conservés. Le préfixe
+diagnostic exact reste **`ODB`**. Exemples synthétiques :
 
 ```text
 RX 0x180 [8]: 14 18 00 00 00 00 00 00 | t_ms=1000 ext=0 rtr=0
 ODB TX t_ms=1500 seq=2 can_id=0x7E0 service=0x01 pid=0x0C status=queued data=02 01 0C 00 00 00 00 00
 ODB RAW_RX 0x7E8 [8]: 04 41 0C 0A 0C 00 00 00 | t_ms=1508 ext=0 rtr=0
 ODB RX t_ms=1508 seq=2 request_id=0x7E0 ecu=0x7E8 pid=0x0C name=rpm value=643.000 unit=rpm latency_ms=8
+ODB BUFFER t_ms=2000 queued_bytes=174 dropped_raw=0 dropped_odb=0 short_writes=0 rejected_responses=0
 ```
+
+`ODB BUFFER` est une nouvelle ligne diagnostic, au plus une fois par seconde
+en mode réel avec `LOG ON` :
+
+| Champ | Signification |
+| --- | --- |
+| `queued_bytes` | Octets restant dans la file logicielle à cet instant, avant insertion de cette ligne |
+| `dropped_raw` | Lignes RAW refusées faute de place ou dépassant la longueur admise |
+| `dropped_odb` | Lignes diagnostic refusées dans les mêmes conditions |
+| `short_writes` | Écritures ayant accepté moins d'octets que demandé ; leur suffixe est conservé |
+| `rejected_responses` | Réponses refusées, notamment pour dépassement du tampon ou allocation impossible |
+
+Les compteurs sont cumulatifs depuis le démarrage. Une écriture partielle
+n'est pas en elle-même une perte. Une indisponibilité de l'USB diffère aussi
+d'une déconnexion physique : aucun protocole d'acquittement par ligne ne
+confirme les octets déjà acceptés par le pilote avant un débranchement.
 
 | Reconnaissance exacte | Destination |
 | --- | --- |
 | `RX 0x` | Trame CAN brute reçue, ID connu ou inconnu |
 | `ODB RAW_RX 0x` | Trame brute reçue sur les IDs diagnostic standard `0x7DF–0x7EF` |
-| `ODB TX ` | Commande OBD, octets envoyés au driver et statut `queued` / `failed` |
+| `ODB TX ` | Requête OBD et statut de mise en file `queued` / `failed` |
 | `ODB RX ` | Référence OBD décodée |
-| Autre ligne commençant par `ODB ` | Informations et événements du diagnostic |
+| Autre ligne commençant par `ODB ` | Informations diagnostic, dont `ODB BUFFER` |
 | `=== Live Vehicle Data ===` | Début du dashboard demandé par `SYS DATA` |
 | `=========================` | Fin de ce bloc dashboard |
 | `OK`, `OK ...`, `ERROR: ...` | Réponses aux commandes |
 
 Il n'existe pas de famille `TX` seule pour toutes les transmissions, ni de
 préfixe `DASH` pour chaque valeur dashboard. Les échanges UART avec
-l'autoradio ne sont pas exportés par `LOG ON`. Pour chaque trame retirée de
-la file avec `LOG ON` actif, le firmware tente un export sous `RX` ou
-`ODB RAW_RX`, puis éventuellement une interprétation dans une deuxième ligne
-diagnostic. Les références OBD ne remplacent jamais
-les valeurs CAN du dashboard.
+l'autoradio ne sont pas exportés par `LOG ON`. Les trames reçues sont admises
+sous `RX` ou `ODB RAW_RX`, puis éventuellement interprétées dans une deuxième
+ligne diagnostic. Les timestamps viennent du retrait de la file CAN, avant
+l'attente éventuelle dans le tampon USB ; ce ne sont pas des timestamps
+matériels ou des heures de réception par le client.
 
-Un lecteur doit reconstituer les lignes sur `\n`, garder le suffixe incomplet
-entre deux lectures USB et reconnaître les familles de logs avant d'ajouter
-des champs à une réponse dashboard. Une lecture USB peut contenir plusieurs
-lignes ou une fraction de ligne. Pour le détail des sous-types et des
-réponses, voir [le protocole USB](protocols/USB_SERIAL_PROTOCOL.md#routing-the-shared-stream).
+Le lecteur conserve les fragments USB jusqu'au `\n`, accepte LF/CRLF et route
+les familles de logs avant d'accumuler des champs dashboard. Un fragment USB
+peut contenir plusieurs lignes ou une partie de ligne. Voir le
+[contrat complet de routage](protocols/USB_SERIAL_PROTOCOL.md#routing-the-shared-stream).
 
-## Limite de cette validation
+## Vérification
 
-Le blocage USB est possible et explicable dans le firmware. Sans le fichier
-du nouvel enregistrement et une mesure sur le boîtier, cette validation
-n'attribue pas chaque ligne manquante de cet enregistrement à cette cause.
-Une correction possible utiliserait une file de sortie bornée, un drainage
-non bloquant, le suivi des écritures partielles et des compteurs de pertes.
-Les commandes et l'OTA doivent partager une sérialisation cohérente
-avec cette sortie ; agrandir seulement une chaîne de formatage ne suffit pas.
+La suite [native_stream](../test/test_log_streaming/test_log_streaming.cpp)
+exécute les véritables `setup()` et `loop()`, le handler CAN, le client OBD,
+les commandes série, le décodeur JSON et l'envoi radio. Les périphériques,
+le stockage persistant et l'horloge sont simulés.
+
+Les scénarios couvrent notamment : 960 trames sans réponse OBD, 500 trames
+reçues pendant une indisponibilité USB de 500 ms, les écritures partielles,
+la coupure juste avant CRLF, le bouclage du tampon circulaire, les refus de
+lignes entières à saturation, les commandes différées, les réponses trop
+grandes (y compris la séparation entre écho et erreur) et les accusés OTA
+jusqu'au redémarrage. Les tests OTA utilisent
+une fixture de décodage Base64 ; ils vérifient le transport et l'ordre des
+réponses, pas le décodeur Base64 ni une écriture physique en flash.
+
+```bash
+.venv/bin/pio test -e native -e native_radio -e native_serial -e native_stream
+.venv/bin/python -B -m unittest discover -s tools -p 'test_*can*.py' -v
+.venv/bin/pio run -e esp32-c3-devkitm-1
+```
+
+Résultat de la validation locale : **170 tests C++ réussis**, dont **18 tests
+de streaming**, et **34 tests Python réussis**. La relecture complète de
+l'export historique est incluse via `CAN_LOG_PATH`.
+
+Ces essais sont des simulations logicielles. Aucun test sur le Juke ou une
+carte ESP32 connectée n'est réalisé sur la VM. Le défaut antérieur, reproduit
+sur `5a2a6ff` et documenté dans le commit de validation `70622fb`, provenait
+d'appels directs à HWCDC depuis la capture, avec des retours courts ignorés.

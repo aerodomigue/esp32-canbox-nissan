@@ -1,13 +1,18 @@
 #pragma once
 #include "Arduino.h"
-// OTA is not exercised here; provide the interface required by SerialCommand.
+// Flash writes are simulated; OTA tests verify parsing and ordered ACKs only.
 class UpdateClass {
 public:
-    bool begin(size_t = 0) { return true; }
-    size_t write(const uint8_t*, size_t size) { return size; }
+    std::vector<uint8_t> received;
+    bool running = false;
+    bool begin(size_t = 0) { received.clear(); running = true; return true; }
+    size_t write(const uint8_t* data, size_t size) {
+        received.insert(received.end(), data, data + size);
+        return size;
+    }
     bool end(bool = false) { return true; }
-    void abort() {}
-    bool isRunning() const { return false; }
+    void abort() { running = false; }
+    bool isRunning() const { return running; }
     const char* errorString() const { return "none"; }
     bool hasError() const { return false; }
 };

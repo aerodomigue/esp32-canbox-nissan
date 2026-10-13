@@ -10,3 +10,4 @@
 #include "../../src/GlobalData.cpp"
 #include "../../src/MockDataGenerator.cpp"
 #include "../../src/RadioSend.cpp"
+#include "../../src/UsbConsole.cpp"

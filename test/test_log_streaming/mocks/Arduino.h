@@ -49,6 +49,7 @@ struct SimulatedWrite {
     std::string attempted;
     size_t accepted;
     uint32_t at;
+    uint32_t timeoutMs;
 };
 
 class SerialClass {
@@ -56,13 +57,23 @@ public:
     std::string captured;
     std::deque<char> input;
     std::vector<SimulatedWrite> writes;
-    std::string shortPrefix;
-    size_t shortLimit = 0;
-    std::string blockingPrefix;
-    uint32_t blockingMs = 0;
+    std::deque<size_t> scriptedLimits;
+    bool connected = true;
+    int writeCapacity = 4096;
+    size_t maxWrite = static_cast<size_t>(-1);
+    size_t txBufferSize = 0;
+    size_t rxBufferSize = 0;
+    uint32_t txTimeoutMs = 250;
+    unsigned unsafeWriteAttempts = 0;
+    unsigned blockingWriteAttempts = 0;
     unsigned begins = 0;
 
     void begin(unsigned long) { ++begins; }
+    size_t setTxBufferSize(size_t size) { txBufferSize = size; return size; }
+    size_t setRxBufferSize(size_t size) { rxBufferSize = size; return size; }
+    void setTxTimeoutMs(uint32_t timeout) { txTimeoutMs = timeout; }
+    explicit operator bool() const { return connected; }
+    int availableForWrite() const { return writeCapacity; }
     void inject(const char* text) { while (*text) input.push_back(*text++); }
     int available() const { return static_cast<int>(input.size()); }
     int read() {
@@ -74,17 +85,23 @@ public:
     size_t write(const uint8_t* bytes, size_t n) {
         const std::string attempted(reinterpret_cast<const char*>(bytes), n);
         const uint32_t startedAt = StreamingSimulation::now;
-        if (!blockingPrefix.empty() && attempted.rfind(blockingPrefix, 0) == 0) {
-            blockingPrefix.clear();  // Only the selected first write stalls.
-            StreamingSimulation::advance(blockingMs);
+        if (!connected || writeCapacity <= 0) {
+            ++unsafeWriteAttempts;
+            if (txTimeoutMs > 0) {
+                ++blockingWriteAttempts;
+                StreamingSimulation::advance(txTimeoutMs);
+            }
+            writes.push_back({attempted, 0, startedAt, txTimeoutMs});
+            return 0;
         }
-        size_t accepted = n;
-        if (!shortPrefix.empty() && attempted.rfind(shortPrefix, 0) == 0) {
-            shortPrefix.clear();  // Only the selected first write is incomplete.
-            accepted = std::min(n, shortLimit);
+        if (txTimeoutMs > 0) ++blockingWriteAttempts;
+        size_t accepted = std::min({n, static_cast<size_t>(writeCapacity), maxWrite});
+        if (!scriptedLimits.empty()) {
+            accepted = std::min(accepted, scriptedLimits.front());
+            scriptedLimits.pop_front();
         }
         captured.append(attempted, 0, accepted);
-        writes.push_back({attempted, accepted, startedAt});
+        writes.push_back({attempted, accepted, startedAt, txTimeoutMs});
         return accepted;
     }
     size_t write(uint8_t byte) { return write(&byte, 1); }
@@ -147,12 +164,13 @@ inline long map(long x, long inMin, long inMax, long outMin, long outMax) {
 
 struct EspClass {
     unsigned restarts = 0;
+    std::string outputAtRestart;
     uint32_t getFreeHeap() const { return 200000; }
     uint32_t getFreeSketchSpace() const { return 1048576; }
     uint32_t getSketchSize() const { return 512000; }
     uint32_t getCpuFreqMHz() const { return 160; }
     const char* getChipModel() const { return "ESP32-C3-simulated"; }
     uint32_t getChipRevision() const { return 3; }
-    void restart() { ++restarts; }
+    void restart() { ++restarts; outputAtRestart = Serial.captured; }
 };
 extern EspClass ESP;

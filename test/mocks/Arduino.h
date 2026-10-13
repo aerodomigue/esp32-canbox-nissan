@@ -32,6 +32,11 @@ private:
 // Serial stub — routes to stdout, captures nothing
 struct SerialClass {
     void begin(int) {}
+    size_t setRxBufferSize(size_t size) { return size; }
+    size_t setTxBufferSize(size_t size) { return size; }
+    void setTxTimeoutMs(uint32_t) {}
+    explicit operator bool() const { return true; }
+    int availableForWrite() const { return 4096; }
     template<typename... Args>
     void printf(const char* fmt, Args... args) { ::printf(fmt, args...); }  // NOLINT
     void println(const char* s)  { ::puts(s ? s : ""); }

@@ -1,5 +1,7 @@
 #include <unity.h>
 #include <regex>
+#include <set>
+#include <unistd.h>
 #include "Arduino.h"
 #include "ESP32-TWAI-CAN.hpp"
 #include "LittleFS.h"
@@ -9,12 +11,15 @@
 #include "GlobalData.h"
 #include "ObdCalibration.h"
 #include "SerialCommand.h"
+#include "UsbConsole.h"
+#include "Update.h"
 
 extern void setup();
 extern void loop();
 extern CanConfigProcessor canProcessor;
 extern ObdCalibration obdCalibration;
 extern HardwareSerial RadioSerial;
+static unsigned expectedRestarts = 0;
 
 static CanFrame frame(uint32_t id, std::initializer_list<uint8_t> payload, bool extended = false, bool rtr = false) {
     CanFrame result = {};
@@ -67,6 +72,12 @@ static void assertRawLinesComplete(const std::string& output) {
     TEST_ASSERT_TRUE_MESSAGE(output.empty() || output.back() == '\n', "Output ends inside a line");
 }
 
+static void flushConsole() {
+    unsigned drains = 0;
+    while (Console.queuedBytes() > 0 && drains++ < 2048) Console.drain();
+    TEST_ASSERT_EQUAL_UINT32(0, Console.queuedBytes());
+}
+
 static void enableLoggingThroughLoop() {
     Serial.inject("LOG ON\n");
     loop();
@@ -78,12 +89,23 @@ void setUp() {
     StreamingSimulation::onAdvance = {};
     StreamingSimulation::now = 0;
     StreamingSimulation::watchdogResets = 0;
-    Serial.reset();
+    // Clean persistent command/OBD state with a ready simulated writer, then
+    // reset the mock so production setup must configure its own USB timeout.
+    Serial.connected = true;
+    Serial.writeCapacity = 4096;
+    Serial.txTimeoutMs = 0;
+    Serial.scriptedLimits.clear();
+    Serial.maxWrite = static_cast<size_t>(-1);
+    Console.reset();
     ESP.restarts = 0;
+    ESP.outputAtRestart.clear();
+    expectedRestarts = 0;
     ESP32Can.reset();
     RadioSerial.clear();
     obdCalibration.setEnabled(false, 0);
+    testProcessCommand("OTA ABORT");
     testProcessCommand("LOG OFF");
+    Serial.reset();
     canProcessor = CanConfigProcessor{};
     mockReset();
     configSetVehicleFile("NissanJukeF15.json");
@@ -91,12 +113,16 @@ void setUp() {
     resetVehicleData();
     setup();
     TEST_ASSERT_FALSE(canProcessor.isMockMode());
+    flushConsole();
     Serial.clearOutput();
 }
 
 void tearDown() {
     StreamingSimulation::onAdvance = {};
-    TEST_ASSERT_EQUAL_UINT32(0, ESP.restarts);
+    TEST_ASSERT_EQUAL_UINT32(expectedRestarts, ESP.restarts);
+    TEST_ASSERT_EQUAL_UINT32(0, Serial.unsafeWriteAttempts);
+    TEST_ASSERT_EQUAL_UINT32(0, Serial.blockingWriteAttempts);
+    for (const auto& write : Serial.writes) TEST_ASSERT_EQUAL_UINT32(0, write.timeoutMs);
 }
 
 void test_setup_uses_real_preset_and_can_queue() {
@@ -108,6 +134,8 @@ void test_setup_uses_real_preset_and_can_queue() {
     TEST_ASSERT_EQUAL_INT(21, ESP32Can.txPin);
     TEST_ASSERT_EQUAL_INT(20, ESP32Can.rxPin);
     TEST_ASSERT_EQUAL_UINT32(2000, StreamingSimulation::now);
+    TEST_ASSERT_EQUAL_UINT32(4096, Serial.txBufferSize);
+    TEST_ASSERT_EQUAL_UINT32(0, Serial.txTimeoutMs);
 }
 
 void test_no_obd_response_does_not_gate_continuous_rx() {
@@ -218,88 +246,345 @@ void test_obd_reference_sys_data_and_partial_command_keep_complete_lines() {
     assertRawLinesComplete(Serial.captured);
 }
 
-void test_short_usb_write_is_not_retried_and_can_statistics_do_not_report_it() {
+void test_short_usb_write_resumes_exactly_without_truncation_or_duplicates() {
     enableLoggingThroughLoop();
     Serial.clearOutput();
-    Serial.shortPrefix = "RX 0x182 ";
-    Serial.shortLimit = 8;
+    Serial.scriptedLimits = {8, 0};
     TEST_ASSERT_TRUE(ESP32Can.enqueue(frame(0x182, {0xDE, 0xAD, 0xBE, 0xEF})));
     TEST_ASSERT_TRUE(ESP32Can.enqueue(frame(0x183, {0x12, 0x34})));
     loop();
-    TEST_ASSERT_TRUE(hasLine(Serial.captured, "RX 0x182"));  // Missing payload/flags: observed limitation.
-    TEST_ASSERT_FALSE(hasLine(Serial.captured, "RX 0x182 [4]: DE AD BE EF | t_ms=2000 ext=0 rtr=0"));
-    TEST_ASSERT_TRUE(hasLine(Serial.captured, "RX 0x183 [2]: 12 34 | t_ms=2000 ext=0 rtr=0"));
-    unsigned attempts = 0;
-    for (const auto& write : Serial.writes) {
-        if (write.attempted.rfind("RX 0x182 ", 0) == 0) {
-            ++attempts;
-            TEST_ASSERT_EQUAL_UINT32(8, write.accepted);
-            TEST_ASSERT_EQUAL_STRING("RX 0x182 [4]: DE AD BE EF | t_ms=2000 ext=0 rtr=0", write.attempted.c_str());
-        }
-    }
-    TEST_ASSERT_EQUAL_UINT32(1, attempts);
+    TEST_ASSERT_EQUAL_STRING("RX 0x182", Serial.captured.c_str());
+    TEST_ASSERT_GREATER_THAN_UINT32(0, Console.queuedBytes());
+    TEST_ASSERT_GREATER_THAN_UINT32(0, Console.shortWrites());
+    flushConsole();
+    const std::string expected = "RX 0x182 [4]: DE AD BE EF | t_ms=2000 ext=0 rtr=0\r\n"
+                                 "RX 0x183 [2]: 12 34 | t_ms=2000 ext=0 rtr=0\r\n";
+    TEST_ASSERT_EQUAL_STRING(expected.c_str(), Serial.captured.c_str());
     TEST_ASSERT_EQUAL_UINT32(2, ESP32Can.reads.size());
     TEST_ASSERT_EQUAL_UINT32(2, canProcessor.getUnknownFrames());
     TEST_ASSERT_EQUAL_UINT32(0, ESP32Can.rxMissedCounter());
     TEST_ASSERT_EQUAL_UINT32(0, ESP32Can.txFailedCounter());
+    TEST_ASSERT_EQUAL_UINT32(0, Console.droppedRawLines());
+    assertRawLinesComplete(Serial.captured);
 }
 
-void test_rejected_usb_newline_concatenates_rx_and_odb_lines() {
+void test_usb_stop_before_crlf_preserves_separate_rx_and_odb_lines() {
     enableLoggingThroughLoop();
     Serial.clearOutput();
-    // Arduino Print::println emits its text and CRLF as separate writes.
-    // Accept the full text, reject the first CRLF, then recover immediately.
-    Serial.shortPrefix = "\r\n";
-    Serial.shortLimit = 0;
+    const std::string first = "RX 0x182 [2]: DE AD | t_ms=2000 ext=0 rtr=0";
+    // Stop exactly before CRLF in a FIFO chunk; the next drain must retain it.
+    Serial.scriptedLimits = {first.size(), 0};
     TEST_ASSERT_TRUE(ESP32Can.enqueue(frame(0x182, {0xDE, 0xAD})));
     TEST_ASSERT_TRUE(ESP32Can.enqueue(frame(0x7E8, {0x03, 0x41, 0x0D, 0x64, 0, 0, 0, 0})));
     loop();
-    const std::string joined = "RX 0x182 [2]: DE AD | t_ms=2000 ext=0 rtr=0"
-                               "ODB RAW_RX 0x7E8 [8]: 03 41 0D 64 00 00 00 00 | t_ms=2000 ext=0 rtr=0";
-    TEST_ASSERT_TRUE(hasLine(Serial.captured, joined));
-    TEST_ASSERT_EQUAL_UINT32(1, lines(Serial.captured).size());
-    TEST_ASSERT_EQUAL_UINT32(0, countPrefix(Serial.captured, "ODB RAW_RX "));
+    TEST_ASSERT_EQUAL_STRING(first.c_str(), Serial.captured.c_str());
+    flushConsole();
+    const std::string expected = first + "\r\nODB RAW_RX 0x7E8 [8]: 03 41 0D 64 00 00 00 00 | t_ms=2000 ext=0 rtr=0\r\n";
+    TEST_ASSERT_EQUAL_STRING(expected.c_str(), Serial.captured.c_str());
+    TEST_ASSERT_EQUAL_UINT32(2, lines(Serial.captured).size());
+    TEST_ASSERT_EQUAL_UINT32(1, countPrefix(Serial.captured, "ODB RAW_RX "));
     TEST_ASSERT_EQUAL_UINT32(2, ESP32Can.reads.size());
-    unsigned rejectedNewlines = 0;
-    for (const auto& write : Serial.writes) {
-        if (write.attempted == "\r\n" && write.accepted == 0) ++rejectedNewlines;
-    }
-    TEST_ASSERT_EQUAL_UINT32(1, rejectedNewlines);
     TEST_ASSERT_EQUAL_UINT32(0, ESP32Can.rxMissedCounter());
     TEST_ASSERT_EQUAL_UINT32(0, ESP32Can.txFailedCounter());
+    assertRawLinesComplete(Serial.captured);
 }
 
-void test_simulated_usb_block_stalls_acquisition_and_can_queue_overflows() {
+void test_usb_unavailable_for_500ms_keeps_can_acquisition_and_all_500_lines() {
     enableLoggingThroughLoop();
     Serial.clearOutput();
     const uint32_t startedAt = StreamingSimulation::now;
     const size_t previousReads = ESP32Can.reads.size();
-    TEST_ASSERT_TRUE(ESP32Can.enqueue(frame(0x182, {0x00})));
-    Serial.blockingPrefix = "RX ";
-    Serial.blockingMs = 500;
+    Serial.connected = false;
+    Serial.writeCapacity = 0;
     StreamingSimulation::onAdvance = [](uint32_t, uint32_t elapsed) {
-        // Synthetic 1000 frames/s input during the single simulated USB wait.
-        // There is no hardware timing claim in these numbers.
+        // Synthetic 1000 frames/s input while the USB consumer is unavailable.
+        // One loop per virtual ms; no hardware scheduling/timing claim is made.
         for (uint32_t i = 0; i < elapsed; ++i) {
-            ESP32Can.enqueue(frame(0x182, {static_cast<uint8_t>(i)}));
+            ESP32Can.enqueue(frame(0x182, {static_cast<uint8_t>(StreamingSimulation::now >> 8),
+                                         static_cast<uint8_t>(StreamingSimulation::now), 0xDE, 0xAD, 0xBE, 0xEF, 0x55, 0xAA}));
         }
     };
-    loop();
+    for (unsigned i = 0; i < 500; ++i) {
+        StreamingSimulation::advance(1);
+        loop();
+        TEST_ASSERT_EQUAL_UINT32(i + 1, ESP32Can.reads.size() - previousReads);
+        TEST_ASSERT_EQUAL_UINT32(0, ESP32Can.inRxQueue());
+    }
     StreamingSimulation::onAdvance = {};
     TEST_ASSERT_EQUAL_UINT32(500, StreamingSimulation::now - startedAt);
-    TEST_ASSERT_EQUAL_UINT32(32, ESP32Can.reads.size() - previousReads);
-    TEST_ASSERT_EQUAL_UINT32(372, ESP32Can.rxMissedCounter());
-    TEST_ASSERT_EQUAL_UINT32(97, ESP32Can.inRxQueue());
-    TEST_ASSERT_EQUAL_UINT32(startedAt, ESP32Can.reads[previousReads].at);
-    TEST_ASSERT_EQUAL_UINT32(startedAt + 500, ESP32Can.reads[previousReads + 1].at);
-    TEST_ASSERT_TRUE(hasLine(Serial.captured, "RX 0x182 [1]: 00 | t_ms=2000 ext=0 rtr=0"));
-    TEST_ASSERT_TRUE(hasLine(Serial.captured, "RX 0x182 [1]: 00 | t_ms=2500 ext=0 rtr=0"));
+    TEST_ASSERT_EQUAL_UINT32(500, ESP32Can.reads.size() - previousReads);
+    TEST_ASSERT_EQUAL_UINT32(0, ESP32Can.rxMissedCounter());
+    TEST_ASSERT_EQUAL_UINT32(0, Console.droppedRawLines());
+    TEST_ASSERT_EQUAL_UINT32(0, Console.droppedDiagnosticLines());
+    TEST_ASSERT_GREATER_THAN_UINT32(0, Console.queuedBytes());
+    TEST_ASSERT_LESS_OR_EQUAL_UINT32(65536, Console.queuedBytes());
+    TEST_ASSERT_EQUAL_UINT32(0, Serial.writes.size());
+    TEST_ASSERT_EQUAL_UINT32(startedAt + 1, ESP32Can.reads[previousReads].at);
+    TEST_ASSERT_EQUAL_UINT32(startedAt + 500, ESP32Can.reads.back().at);
+    Serial.connected = true;
+    Serial.writeCapacity = 4096;
+    flushConsole();
+    TEST_ASSERT_EQUAL_UINT32(500, countPrefix(Serial.captured, "RX "));
     assertRawLinesComplete(Serial.captured);
-    // Recovering the USB writer allows the remaining queued frames to be drained.
-    for (unsigned i = 0; i < 4; ++i) loop();
-    TEST_ASSERT_EQUAL_UINT32(0, ESP32Can.inRxQueue());
-    TEST_ASSERT_EQUAL_UINT32(129, ESP32Can.reads.size() - previousReads);
-    TEST_ASSERT_EQUAL_UINT32(372, ESP32Can.rxMissedCounter());
+    std::set<std::string> unique;
+    for (const auto& line : lines(Serial.captured)) if (line.rfind("RX ", 0) == 0) unique.insert(line);
+    TEST_ASSERT_EQUAL_UINT32(500, unique.size());
+    TEST_ASSERT_EQUAL_UINT32(0, ESP32Can.rxMissedCounter());
+}
+
+void test_fifo_pressure_drops_whole_raw_and_diagnostic_lines_preserving_commands() {
+    enableLoggingThroughLoop();
+    Serial.clearOutput();
+    Serial.connected = false;
+    Serial.writeCapacity = 0;
+    constexpr unsigned total = 1280;
+    for (unsigned base = 0; base < total; base += 32) {
+        for (unsigned i = base; i < base + 32; ++i) {
+            TEST_ASSERT_TRUE(ESP32Can.enqueue(frame(0x182, {static_cast<uint8_t>(i >> 8), static_cast<uint8_t>(i),
+                                                         0xDE, 0xAD, 0xBE, 0xEF, 0x55, 0xAA})));
+        }
+        loop();
+    }
+    const uint32_t rawDrops = Console.droppedRawLines();
+    TEST_ASSERT_GREATER_THAN_UINT32(0, rawDrops);
+    TEST_ASSERT_EQUAL_UINT32(total, ESP32Can.reads.size());
+    TEST_ASSERT_EQUAL_UINT32(0, ESP32Can.rxMissedCounter());
+    for (unsigned i = 0; i < 32; ++i) {
+        Console.logLine("ODB TEST diagnostic reserve pressure with a complete deterministic line", true);
+    }
+    TEST_ASSERT_GREATER_THAN_UINT32(0, Console.droppedDiagnosticLines());
+    TEST_ASSERT_TRUE(Console.canProcessCommand());
+    TEST_ASSERT_LESS_OR_EQUAL_UINT32(65536 - 12288, Console.queuedBytes());
+    Serial.inject("SYS DATA\nLOG OFF\n");
+    loop();  // The first command uses the command reserve even with raw FIFO saturation.
+    TEST_ASSERT_TRUE(isCanLogEnabled());
+    TEST_ASSERT_GREATER_THAN_INT(0, Serial.available());
+    Serial.connected = true;
+    Serial.writeCapacity = 4096;
+    flushConsole();
+    loop();
+    flushConsole();
+    TEST_ASSERT_FALSE(isCanLogEnabled());
+    TEST_ASSERT_FALSE(obdCalibration.enabled());
+    TEST_ASSERT_TRUE(hasLine(Serial.captured, "=== Live Vehicle Data ==="));
+    TEST_ASSERT_TRUE(hasLine(Serial.captured, "CAN logging disabled"));
+    TEST_ASSERT_EQUAL_UINT32(total - rawDrops, countPrefix(Serial.captured, "RX "));
+    std::set<std::string> unique;
+    for (const auto& line : lines(Serial.captured)) if (line.rfind("RX ", 0) == 0) unique.insert(line);
+    TEST_ASSERT_EQUAL_UINT32(total - rawDrops, unique.size());
+    assertRawLinesComplete(Serial.captured);
+}
+
+void test_usb_drain_has_bounded_work_and_stops_immediately_after_zero_write() {
+    const std::string text(100, 'A');
+    for (unsigned i = 0; i < 200; ++i) Console.logLine(text.c_str());
+    const size_t queued = Console.queuedBytes();
+    Serial.writeCapacity = 32768;
+    Console.drain();
+    TEST_ASSERT_EQUAL_UINT32(4096, Serial.captured.size());
+    TEST_ASSERT_LESS_OR_EQUAL_UINT32(8, Serial.writes.size());
+    TEST_ASSERT_EQUAL_UINT32(queued - 4096, Console.queuedBytes());
+    Serial.clearOutput();
+    Serial.writeCapacity = 4096;
+    Serial.maxWrite = 1;
+    const size_t beforePartial = Console.queuedBytes();
+    Console.drain();
+    TEST_ASSERT_LESS_OR_EQUAL_UINT32(8, Serial.writes.size());
+    TEST_ASSERT_LESS_OR_EQUAL_UINT32(4096, Serial.captured.size());
+    TEST_ASSERT_EQUAL_UINT32(beforePartial - Serial.captured.size(), Console.queuedBytes());
+    Serial.maxWrite = static_cast<size_t>(-1);
+    Serial.clearOutput();
+    Serial.scriptedLimits = {0};
+    const size_t beforeZero = Console.queuedBytes();
+    Console.drain();
+    TEST_ASSERT_EQUAL_UINT32(1, Serial.writes.size());
+    TEST_ASSERT_EQUAL_UINT32(beforeZero, Console.queuedBytes());
+    Serial.clearOutput();
+    Serial.writeCapacity = 7;
+    Console.drain();
+    TEST_ASSERT_LESS_OR_EQUAL_UINT32(8, Serial.writes.size());
+    for (const auto& write : Serial.writes) TEST_ASSERT_LESS_OR_EQUAL_UINT32(7, write.attempted.size());
+    Serial.writeCapacity = 4096;
+    flushConsole();
+}
+
+void test_disconnected_or_zero_capacity_usb_is_never_written() {
+    Console.println("queued while USB unavailable");
+    const size_t queued = Console.queuedBytes();
+    Serial.connected = false;
+    Serial.writeCapacity = 4096;
+    Console.drain();
+    TEST_ASSERT_EQUAL_UINT32(0, Serial.writes.size());
+    Serial.connected = true;
+    Serial.writeCapacity = 0;
+    Console.drain();
+    TEST_ASSERT_EQUAL_UINT32(0, Serial.writes.size());
+    Serial.writeCapacity = -1;
+    Console.drain();
+    TEST_ASSERT_EQUAL_UINT32(0, Serial.writes.size());
+    TEST_ASSERT_EQUAL_UINT32(queued, Console.queuedBytes());
+    Serial.writeCapacity = 4096;
+    flushConsole();
+    TEST_ASSERT_EQUAL_STRING("queued while USB unavailable\r\n", Serial.captured.c_str());
+}
+
+void test_serial_processes_one_command_per_loop_without_stopping_can() {
+    enableLoggingThroughLoop();
+    Serial.clearOutput();
+    Serial.inject("SYS DATA\nLOG OFF\n");
+    TEST_ASSERT_TRUE(ESP32Can.enqueue(frame(0x180, {0x04, 0xFB, 0, 0, 0, 0, 0, 0})));
+    loop();
+    TEST_ASSERT_TRUE(isCanLogEnabled());
+    TEST_ASSERT_GREATER_THAN_INT(0, Serial.available());
+    TEST_ASSERT_EQUAL_UINT16(182, engineRPM);
+    loop();
+    TEST_ASSERT_FALSE(isCanLogEnabled());
+    TEST_ASSERT_FALSE(obdCalibration.enabled());
+    TEST_ASSERT_TRUE(hasLine(Serial.captured, "=== Live Vehicle Data ==="));
+    TEST_ASSERT_TRUE(hasLine(Serial.captured, "CAN logging disabled"));
+    assertRawLinesComplete(Serial.captured);
+}
+
+void test_ota_ack_follows_pending_rx_fragment_without_mixing_lines() {
+    enableLoggingThroughLoop();
+    Serial.clearOutput();
+    Serial.scriptedLimits = {8, 0};
+    TEST_ASSERT_TRUE(ESP32Can.enqueue(frame(0x182, {0xDE, 0xAD, 0xBE, 0xEF})));
+    loop();
+    TEST_ASSERT_EQUAL_STRING("RX 0x182", Serial.captured.c_str());
+    Serial.writeCapacity = 0;
+    Serial.inject("OTA START 4\n");
+    loop();
+    TEST_ASSERT_TRUE(isOtaInProgress());
+    Serial.inject("OTA DATA AQIDBA==\n");
+    loop();
+    const uint8_t expectedBytes[] = {1, 2, 3, 4};
+    TEST_ASSERT_EQUAL_UINT32(4, Update.received.size());
+    TEST_ASSERT_EQUAL_HEX8_ARRAY(expectedBytes, Update.received.data(), 4);
+    Serial.writeCapacity = 4096;
+    flushConsole();
+    TEST_ASSERT_TRUE(hasLine(Serial.captured, "RX 0x182 [4]: DE AD BE EF | t_ms=2000 ext=0 rtr=0"));
+    TEST_ASSERT_TRUE(hasLine(Serial.captured, "OTA starting: expecting 4 bytes"));
+    TEST_ASSERT_TRUE(hasLine(Serial.captured, "OK READY"));
+    TEST_ASSERT_TRUE(hasLine(Serial.captured, "OK 4/4 (100%)"));
+    const size_t rawEnd = Serial.captured.find("rtr=0\r\n");
+    const size_t ready = Serial.captured.find("OK READY");
+    const size_t ack = Serial.captured.find("OK 4/4 (100%)");
+    TEST_ASSERT_TRUE(rawEnd < ready && ready < ack);
+    TEST_ASSERT_EQUAL_UINT32(1, countPrefix(Serial.captured, "RX "));
+    assertRawLinesComplete(Serial.captured);
+    Serial.inject("OTA ABORT\n");
+    loop();
+    flushConsole();
+    TEST_ASSERT_FALSE(isOtaInProgress());
+}
+
+void test_oversized_command_response_rolls_back_to_one_complete_error() {
+    const char* previous = "RX 0x182 [1]: AB | t_ms=2000 ext=0 rtr=0";
+    Console.logLine(previous);
+    Console.beginCommand();
+    Console.println("This partial response must be rolled back");
+    const std::vector<uint8_t> oversized(UsbConsole::CAPACITY, 'X');
+    Console.write(oversized.data(), oversized.size());
+    Console.println("No response suffix may escape the rollback");
+    Console.endCommand();
+    flushConsole();
+    const std::string expected = std::string(previous) + "\r\nERROR: Response exceeds USB buffer or allocation failed\r\n";
+    TEST_ASSERT_EQUAL_STRING(expected.c_str(), Serial.captured.c_str());
+    TEST_ASSERT_EQUAL_UINT32(1, Console.rejectedResponses());
+    TEST_ASSERT_EQUAL_UINT32(0, Console.droppedRawLines());
+    assertRawLinesComplete(Serial.captured);
+}
+
+void test_oversized_can_get_keeps_echo_separate_from_error() {
+    // Exercise the real command parser, including echo while LOG is OFF.
+    char directory[] = ".pio/stream-response-XXXXXX";
+    TEST_ASSERT_NOT_NULL(mkdtemp(directory));
+    const std::string path = std::string(directory) + "/large.json";
+    FILE* fixture = fopen(path.c_str(), "wb");
+    TEST_ASSERT_NOT_NULL(fixture);
+    const std::string content(UsbConsole::CAPACITY, 'X');
+    const size_t written = fwrite(content.data(), 1, content.size(), fixture);
+    fclose(fixture);
+    LittleFS.basePath = directory;
+    configSetVehicleFile("large.json");
+    Serial.inject("CAN GET\n");
+    loop();
+    flushConsole();
+    LittleFS.basePath = "data";
+    remove(path.c_str());
+    rmdir(directory);
+
+    TEST_ASSERT_EQUAL_UINT32(content.size(), written);
+    TEST_ASSERT_EQUAL_STRING(
+        "CAN GET\r\nERROR: Response exceeds USB buffer or allocation failed\r\n",
+        Serial.captured.c_str());
+    TEST_ASSERT_EQUAL_UINT32(1, Console.rejectedResponses());
+}
+
+void test_complete_pending_command_is_retained_until_response_reserve_is_available() {
+    enableLoggingThroughLoop();
+    Serial.clearOutput();
+    Serial.connected = false;
+    Serial.writeCapacity = 0;
+    const std::string existing(UsbConsole::CAPACITY - UsbConsole::COMMAND_RESERVE + 100, 'P');
+    Console.print(existing.c_str());
+    Console.println();
+    TEST_ASSERT_FALSE(Console.canProcessCommand());
+    Serial.inject("LOG OFF\n");
+    loop();
+    TEST_ASSERT_EQUAL_UINT32(0, Serial.available());
+    TEST_ASSERT_TRUE(isCanLogEnabled());
+    TEST_ASSERT_TRUE(obdCalibration.enabled());
+    loop();
+    TEST_ASSERT_TRUE(isCanLogEnabled());
+    Serial.connected = true;
+    Serial.writeCapacity = 4096;
+    loop();
+    flushConsole();
+    TEST_ASSERT_FALSE(isCanLogEnabled());
+    TEST_ASSERT_FALSE(obdCalibration.enabled());
+    TEST_ASSERT_EQUAL_UINT32(1, countPrefix(Serial.captured, "CAN logging disabled"));
+    TEST_ASSERT_EQUAL_UINT32(0, Console.rejectedResponses());
+}
+
+void test_ota_end_ack_and_completion_reach_usb_before_simulated_restart() {
+    Serial.inject("OTA START 4\n");
+    loop();
+    TEST_ASSERT_TRUE(isOtaInProgress());
+    Serial.inject("OTA DATA AQIDBA==\n");
+    loop();
+    TEST_ASSERT_TRUE(hasLine(Serial.captured, "OK 4/4 (100%)"));
+    Serial.inject("OTA END\n");
+    loop();
+    expectedRestarts = 1;
+    TEST_ASSERT_EQUAL_UINT32(1, ESP.restarts);
+    TEST_ASSERT_FALSE(isOtaInProgress());
+    TEST_ASSERT_TRUE(hasLine(ESP.outputAtRestart, "OK READY"));
+    TEST_ASSERT_TRUE(hasLine(ESP.outputAtRestart, "OK 4/4 (100%)"));
+    TEST_ASSERT_TRUE(hasLine(ESP.outputAtRestart, "Firmware updated successfully!"));
+    TEST_ASSERT_TRUE(hasLine(ESP.outputAtRestart, "Rebooting in 2 seconds..."));
+    TEST_ASSERT_TRUE(ESP.outputAtRestart.back() == '\n');
+}
+
+void test_fifo_wraparound_preserves_partial_suffix_before_new_response() {
+    // Advance both ring cursors near the end, then queue a record across it.
+    const std::string positioning(50000, 'P');
+    Console.print(positioning.c_str());
+    flushConsole();
+    Serial.clearOutput();
+    const std::string first(16000, 'A');
+    const std::string second(2000, 'B');
+    Console.println(first.c_str());
+    Serial.scriptedLimits = {3, 0};
+    Console.drain();
+    TEST_ASSERT_EQUAL_STRING("AAA", Serial.captured.c_str());
+    Console.println(second.c_str());
+    TEST_ASSERT_EQUAL_UINT32(first.size() + second.size() + 4 - 3, Console.queuedBytes());
+    flushConsole();
+    const std::string expected = first + "\r\n" + second + "\r\n";
+    TEST_ASSERT_EQUAL_STRING(expected.c_str(), Serial.captured.c_str());
+    TEST_ASSERT_EQUAL_UINT32(0, Console.rejectedResponses());
 }
 
 int main() {
@@ -309,8 +594,18 @@ int main() {
     RUN_TEST(test_loop_drains_only_32_frames_then_continues_while_obd_waits);
     RUN_TEST(test_raw_can_keeps_payload_flags_and_unconfigured_frames);
     RUN_TEST(test_obd_reference_sys_data_and_partial_command_keep_complete_lines);
-    RUN_TEST(test_short_usb_write_is_not_retried_and_can_statistics_do_not_report_it);
-    RUN_TEST(test_rejected_usb_newline_concatenates_rx_and_odb_lines);
-    RUN_TEST(test_simulated_usb_block_stalls_acquisition_and_can_queue_overflows);
+    RUN_TEST(test_short_usb_write_resumes_exactly_without_truncation_or_duplicates);
+    RUN_TEST(test_usb_stop_before_crlf_preserves_separate_rx_and_odb_lines);
+    RUN_TEST(test_usb_unavailable_for_500ms_keeps_can_acquisition_and_all_500_lines);
+    RUN_TEST(test_fifo_pressure_drops_whole_raw_and_diagnostic_lines_preserving_commands);
+    RUN_TEST(test_usb_drain_has_bounded_work_and_stops_immediately_after_zero_write);
+    RUN_TEST(test_disconnected_or_zero_capacity_usb_is_never_written);
+    RUN_TEST(test_serial_processes_one_command_per_loop_without_stopping_can);
+    RUN_TEST(test_ota_ack_follows_pending_rx_fragment_without_mixing_lines);
+    RUN_TEST(test_oversized_command_response_rolls_back_to_one_complete_error);
+    RUN_TEST(test_oversized_can_get_keeps_echo_separate_from_error);
+    RUN_TEST(test_complete_pending_command_is_retained_until_response_reserve_is_available);
+    RUN_TEST(test_ota_end_ack_and_completion_reach_usb_before_simulated_restart);
+    RUN_TEST(test_fifo_wraparound_preserves_partial_suffix_before_new_response);
     return UNITY_END();
 }

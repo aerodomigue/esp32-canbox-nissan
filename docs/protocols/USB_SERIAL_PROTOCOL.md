@@ -53,7 +53,7 @@ The firmware does not emit an `OBD ` family, a `DASH ` family or standalone
 | `ODB RAW_RX 0x` | Received raw standard frame on `0x7DF`–`0x7EF` | Diagnostic capture |
 | `ODB TX ` | OBD request bytes and driver queue status | Diagnostic capture |
 | `ODB RX ` | Decoded OBD reference, never a dashboard update | Diagnostic capture |
-| `ODB ` (other subtypes) | Capabilities, timeouts, negative responses, state, driver counters | Diagnostic capture |
+| `ODB ` (other subtypes) | Capabilities, timeouts, negative responses, state, driver/buffer counters | Diagnostic capture |
 | `=== Live Vehicle Data ===` (exact) | Start of the response to `SYS DATA` | Dashboard response |
 | `=========================` (exact) | End of that dashboard response | Finish dashboard response |
 | `OK`, `OK `, `ERROR: ` | Command acknowledgment or failure | Pending command |
@@ -80,8 +80,10 @@ for parsing, and retain the unfinished suffix for the next read. Preserve
 the original line and its line ending when exporting. Command completion
 and OBD replies must not control when complete raw lines are processed.
 
-This describes the intended records. The current firmware can still lose
-or truncate output under USB backpressure; see
+The firmware queues complete log lines in a 64 KiB FIFO and resumes partial
+USB writes without interleaving later records or responses. Sustained
+backpressure can fill this finite queue: new log lines are then dropped as
+whole records and counted in `ODB BUFFER`. See
 [the firmware streaming validation](../LOG_STREAMING_VALIDATION.fr.md).
 
 ---
@@ -441,7 +443,7 @@ ODB RX t_ms=1508 seq=2 request_id=0x7E0 ecu=0x7E8 pid=0x0C name=rpm value=643.00
 
 All OBD diagnostic records start with the exact prefix **`ODB`**, including
 `ODB TX`, `ODB RAW_RX`, `ODB SUPPORTED`, `ODB RX`, `ODB NEGATIVE`,
-`ODB TIMEOUT`, `ODB STATE` and `ODB DRIVER`. Standard raw frames outside
+`ODB TIMEOUT`, `ODB STATE`, `ODB DRIVER` and `ODB BUFFER`. Standard raw frames outside
 IDs `0x7DF`–`0x7EF` start with `RX`;
 extended frames also keep that prefix. Command acknowledgments retain their
 existing formats. Client applications must route these record families
@@ -492,7 +494,25 @@ while logging to keep raw and diagnostic lines intact.
 
 RX is nonblocking, with a 128-frame queue and at most 32 frames drained per
 loop. `ODB DRIVER` reports counters and queue occupancy once per second;
-USB throughput can still cause losses. Save captures without terminal color
+`ODB BUFFER` reports software output queue bytes and cumulative counters:
+
+```text
+ODB BUFFER t_ms=2000 queued_bytes=174 dropped_raw=0 dropped_odb=0 short_writes=0 rejected_responses=0
+```
+
+`dropped_raw` and `dropped_odb` count complete log records refused at admission;
+`short_writes` counts partial/zero USB writes whose suffix stays queued;
+`rejected_responses` counts rejected command responses. Short writes are
+retried and do not themselves indicate lost bytes. Counters reset on reboot.
+USB writes have zero timeout; each drain is limited to 4 KiB and eight writes.
+12 KiB are reserved for command responses, with 512 additional bytes reserved
+for diagnostics relative to RAW logs. A completed command waits for response
+space while CAN processing continues, and at most one command runs per loop.
+A response that exceeds available space is replaced before transmission by
+`ERROR: Response exceeds USB buffer or allocation failed`; the command's side
+effects may already have occurred. `LOG OFF` and OTA preserve the FIFO order
+of previously admitted lines rather than discard a partially transmitted one.
+Sustained USB saturation can still cause whole-record losses. Save captures without terminal color
 or timestamp prefixes, for example with
 `.venv/bin/pio device monitor --filter direct`. See the
 [calibration guide](../OBD_CALIBRATION.fr.md) for analysis and limitations.

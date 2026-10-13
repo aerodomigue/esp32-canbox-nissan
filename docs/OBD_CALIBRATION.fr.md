@@ -92,6 +92,8 @@ ODB RX t_ms=508 seq=2 request_id=0x7E0 ecu=0x7E8 pid=0x0C name=rpm value=643.000
 - `ODB STATE` : début/fin ou état de découverte.
 - `ODB DRIVER` : pertes RX, échecs TX, occupation de la file, erreurs et état
   du contrôleur, au maximum une ligne par seconde.
+- `ODB BUFFER` : occupation du tampon USB, lignes RAW/diagnostic refusées,
+  écritures partielles reprises et réponses refusées, au même rythme.
 
 `queued` signifie que TWAI a accepté la mise en file, pas que la voiture a
 acquitté la requête. C'est le comportement de
@@ -108,8 +110,11 @@ limité à 32 trames par tour. Le formatage ne lit jamais plus de huit octets
 et n'invente aucun payload pour une RTR. Le décodeur rejette les trames RTR,
 étendues, hors 11 bits, ou trop courtes pour l'ensemble des champs configurés.
 Les octets bruts restent visibles, y compris pour les IDs non configurés.
-L'USB peut encore ralentir la boucle : vérifier `ODB DRIVER` et les rejets
-du parseur avant de tirer des conclusions d'une capture.
+La sortie USB passe par un tampon de 64 Kio drainé sans attente de l'hôte.
+Les écritures partielles sont reprises à l'octet suivant. Si le débit reste
+insuffisant et que le tampon se remplit, seules des lignes nouvelles entières
+sont refusées et comptées dans `ODB BUFFER`. Vérifier ces compteurs,
+`ODB DRIVER` et les rejets du parseur avant d'exploiter une capture.
 
 Pour séparer les journaux du dashboard dans un client, reconnaître les
 préfixes exacts `RX 0x` et `ODB ` avant les réponses aux commandes. Le dashboard

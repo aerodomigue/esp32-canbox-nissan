@@ -20,6 +20,7 @@
  *    c. Write result to appropriate GlobalData variable
  */
 
+#include "UsbConsole.h"
 #include "CanConfigProcessor.h"
 #include "GlobalData.h"
 #include "ConfigManager.h"
@@ -50,7 +51,7 @@ CanConfigProcessor::CanConfigProcessor()
 bool CanConfigProcessor::begin() {
     // Initialize LittleFS filesystem
     if (!LittleFS.begin(true)) {
-        Serial.println("[CanConfig] LittleFS mount failed");
+        Console.println("[CanConfig] LittleFS mount failed");
         _mockMode = true;
         return false;
     }
@@ -61,11 +62,11 @@ bool CanConfigProcessor::begin() {
         char savedPath[48];
         snprintf(savedPath, sizeof(savedPath), "/%s", savedFile);
         if (LittleFS.exists(savedPath)) {
-            Serial.printf("[CanConfig] Restoring saved config: %s\n", savedPath);
+            Console.printf("[CanConfig] Restoring saved config: %s\n", savedPath);
             if (loadFromJson(savedPath)) {
-                Serial.printf("[CanConfig] Loaded: %s (%d frames) - %s mode\n",
+                Console.printf("[CanConfig] Loaded: %s (%d frames) - %s mode\n",
                               _profile.name.c_str(),
-                              _profile.frames.size(),
+                              static_cast<int>(_profile.frames.size()),
                               _mockMode ? "MOCK" : "REAL CAN");
                 return true;
             }
@@ -82,11 +83,11 @@ bool CanConfigProcessor::begin() {
     // Try each config path until one succeeds
     for (const char* path : configPaths) {
         if (LittleFS.exists(path)) {
-            Serial.printf("[CanConfig] Found config: %s\n", path);
+            Console.printf("[CanConfig] Found config: %s\n", path);
             if (loadFromJson(path)) {
-                Serial.printf("[CanConfig] Loaded: %s (%d frames) - %s mode\n",
+                Console.printf("[CanConfig] Loaded: %s (%d frames) - %s mode\n",
                               _profile.name.c_str(),
-                              _profile.frames.size(),
+                              static_cast<int>(_profile.frames.size()),
                               _mockMode ? "MOCK" : "REAL CAN");
                 return true;
             }
@@ -94,7 +95,7 @@ bool CanConfigProcessor::begin() {
     }
 
     // No config found - use mock mode with simulated data
-    Serial.println("[CanConfig] No config found - MOCK mode active (default)");
+    Console.println("[CanConfig] No config found - MOCK mode active (default)");
     _mockMode = true;
     return false;
 }
@@ -119,7 +120,7 @@ bool CanConfigProcessor::loadFromJson(const char* path) {
     // Open configuration file
     File file = LittleFS.open(path, "r");
     if (!file) {
-        Serial.printf("[CanConfig] Failed to open: %s\n", path);
+        Console.printf("[CanConfig] Failed to open: %s\n", path);
         return false;
     }
 
@@ -129,7 +130,7 @@ bool CanConfigProcessor::loadFromJson(const char* path) {
     file.close();
 
     if (error) {
-        Serial.printf("[CanConfig] JSON parse error: %s\n", error.c_str());
+        Console.printf("[CanConfig] JSON parse error: %s\n", error.c_str());
         return false;
     }
 
@@ -200,7 +201,7 @@ bool CanConfigProcessor::loadFromJson(const char* path) {
 
         if (isVehicleSwitch) {
             if (currentFile[0] != '\0') {
-                Serial.printf("[CanConfig] Vehicle switch: '%s' → '%s'\n", currentFile, filename);
+                Console.printf("[CanConfig] Vehicle switch: '%s' → '%s'\n", currentFile, filename);
             }
             configReset();
             JsonObjectConst vp = doc["vehicleParams"];
@@ -209,7 +210,7 @@ bool CanConfigProcessor::loadFromJson(const char* path) {
             }
             configSave();
         } else {
-            Serial.printf("[CanConfig] Same vehicle — calibration preserved from NVS\n");
+            Console.printf("[CanConfig] Same vehicle — calibration preserved from NVS\n");
         }
 
         configSetVehicleFile(filename);
@@ -229,47 +230,47 @@ void CanConfigProcessor::applyVehicleParams(JsonObjectConst params) {
     v = params["steerScale"];
     if (!v.isNull()) {
         configSetSteerScale(v.as<uint16_t>());
-        Serial.printf("[CanConfig] vehicleParam: steerScale = %u\n", v.as<uint16_t>());
+        Console.printf("[CanConfig] vehicleParam: steerScale = %u\n", v.as<uint16_t>());
         applied++;
     }
     v = params["steerOffset"];
     if (!v.isNull()) {
         configSetSteerOffset(v.as<int16_t>());
-        Serial.printf("[CanConfig] vehicleParam: steerOffset = %d\n", v.as<int16_t>());
+        Console.printf("[CanConfig] vehicleParam: steerOffset = %d\n", v.as<int16_t>());
         applied++;
     }
     v = params["steerInvert"];
     if (!v.isNull()) {
         configSetSteerInvert(v.as<bool>());
-        Serial.printf("[CanConfig] vehicleParam: steerInvert = %d\n", (int)v.as<bool>());
+        Console.printf("[CanConfig] vehicleParam: steerInvert = %d\n", (int)v.as<bool>());
         applied++;
     }
     v = params["indTimeout"];
     if (!v.isNull()) {
         configSetIndicatorTimeout(v.as<uint16_t>());
-        Serial.printf("[CanConfig] vehicleParam: indTimeout = %u\n", v.as<uint16_t>());
+        Console.printf("[CanConfig] vehicleParam: indTimeout = %u\n", v.as<uint16_t>());
         applied++;
     }
     v = params["rpmDiv"];
     if (!v.isNull()) {
         configSetRpmDivisor(v.as<uint8_t>());
-        Serial.printf("[CanConfig] vehicleParam: rpmDiv = %u\n", v.as<uint8_t>());
+        Console.printf("[CanConfig] vehicleParam: rpmDiv = %u\n", v.as<uint8_t>());
         applied++;
     }
     v = params["tankCap"];
     if (!v.isNull()) {
         configSetTankCapacity(v.as<uint8_t>());
-        Serial.printf("[CanConfig] vehicleParam: tankCap = %u\n", v.as<uint8_t>());
+        Console.printf("[CanConfig] vehicleParam: tankCap = %u\n", v.as<uint8_t>());
         applied++;
     }
     v = params["dteDiv"];
     if (!v.isNull()) {
         configSetDteDivisor(v.as<uint16_t>());
-        Serial.printf("[CanConfig] vehicleParam: dteDiv = %u\n", v.as<uint16_t>());
+        Console.printf("[CanConfig] vehicleParam: dteDiv = %u\n", v.as<uint16_t>());
         applied++;
     }
 
-    Serial.printf("[CanConfig] %d vehicle param(s) applied\n", applied);
+    Console.printf("[CanConfig] %d vehicle param(s) applied\n", applied);
 }
 
 // =============================================================================

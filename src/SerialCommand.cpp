@@ -7,6 +7,7 @@
  * and OTA firmware updates.
  */
 
+#include "UsbConsole.h"
 #include "SerialCommand.h"
 #include "base64.h"
 #include "ConfigManager.h"
@@ -29,6 +30,7 @@ extern CanConfigProcessor canProcessor;
 
 static char cmdBuffer[CMD_BUFFER_SIZE];
 static uint16_t cmdIndex = 0;
+static bool commandReady = false;
 static bool canLogEnabled = false;
 static unsigned long bootTime = 0;
 
@@ -128,20 +130,36 @@ static void printError(const char* msg);
 
 void serialCommandInit() {
     cmdIndex = 0;
+    commandReady = false;
     cmdBuffer[0] = '\0';
     bootTime = millis();
-    Serial.println("Serial command interface ready. Type HELP for commands.");
+    Console.println("Serial command interface ready. Type HELP for commands.");
 }
 
 void serialCommandProcess() {
-    while (Serial.available()) {
+    // Keep a completed command in RAM if its response cannot yet be admitted.
+    // One command and at most one command-buffer worth of input per loop keep
+    // serial traffic from monopolising CAN acquisition.
+    for (size_t consumed = 0; consumed <= CMD_BUFFER_SIZE; ++consumed) {
+        if (commandReady) {
+            if (!Console.canProcessCommand()) return;
+            // Preserve the echo's line ending even if the response rolls back.
+            if (!otaInProgress) Console.println();
+            Console.beginCommand();
+            processCommand(cmdBuffer);
+            Console.endCommand();
+            cmdIndex = 0;
+            commandReady = false;
+            return;
+        }
+        if (consumed == CMD_BUFFER_SIZE || !Serial.available()) return;
         char c = Serial.read();
 
         // Handle backspace
         if (c == '\b' || c == 127) {
             if (cmdIndex > 0) {
                 cmdIndex--;
-                if (!otaInProgress && !canLogEnabled) Serial.print("\b \b");
+                if (!otaInProgress && !canLogEnabled && Console.canProcessCommand()) Console.print("\b \b");
             }
             continue;
         }
@@ -150,9 +168,7 @@ void serialCommandProcess() {
         if (c == '\n' || c == '\r') {
             if (cmdIndex > 0) {
                 cmdBuffer[cmdIndex] = '\0';
-                if (!otaInProgress) Serial.println();
-                processCommand(cmdBuffer);
-                cmdIndex = 0;
+                commandReady = true;
             }
             continue;
         }
@@ -161,7 +177,7 @@ void serialCommandProcess() {
         if (cmdIndex < CMD_BUFFER_SIZE - 1) {
             cmdBuffer[cmdIndex++] = c;
             // Partial command echo must not prefix/interleave a raw or ODB log line.
-            if (!otaInProgress && !canLogEnabled) Serial.print(c);
+            if (!otaInProgress && !canLogEnabled && Console.canProcessCommand()) Console.print(c);
         }
     }
 }
@@ -177,7 +193,7 @@ bool isOtaInProgress() {
 void serialCommandCheckOtaTimeout() {
     if (otaInProgress && otaLastDataTime > 0 &&
         millis() - otaLastDataTime > OTA_DATA_TIMEOUT_MS) {
-        Serial.println("OTA timeout: no data for 60s, aborting");
+        Console.println("OTA timeout: no data for 60s, aborting");
         otaAbort();
     }
 }
@@ -251,12 +267,12 @@ static void handleCfgCommand(const char* args) {
     else if (n >= 1 && strcmp(subCmd, "SAVE") == 0) {
         configSave();
         printOK();
-        Serial.println("Configuration saved to NVS");
+        Console.println("Configuration saved to NVS");
     }
     else if (n >= 1 && strcmp(subCmd, "RESET") == 0) {
         configReset();
         printOK();
-        Serial.println("Configuration reset to defaults");
+        Console.println("Configuration reset to defaults");
     }
     else if (n >= 2 && strcmp(subCmd, "GET") == 0) {
         cfgGet(param);
@@ -278,29 +294,29 @@ static void cfgGet(const char* param) {
     }
 
     if (strcmp(paramLower, "steeroffset") == 0) {
-        Serial.printf("steerOffset = %d\n", configGetSteerOffset());
+        Console.printf("steerOffset = %d\n", configGetSteerOffset());
     }
     else if (strcmp(paramLower, "steerinvert") == 0) {
-        Serial.printf("steerInvert = %d\n", configGetSteerInvert() ? 1 : 0);
+        Console.printf("steerInvert = %d\n", configGetSteerInvert() ? 1 : 0);
     }
     else if (strcmp(paramLower, "steerscale") == 0) {
-        Serial.printf("steerScale = %u\n", configGetSteerScale());
+        Console.printf("steerScale = %u\n", configGetSteerScale());
     }
     else if (strcmp(paramLower, "indtimeout") == 0) {
-        Serial.printf("indTimeout = %d\n", configGetIndicatorTimeout());
+        Console.printf("indTimeout = %d\n", configGetIndicatorTimeout());
     }
     else if (strcmp(paramLower, "rpmdiv") == 0) {
-        Serial.printf("rpmDiv = %d\n", configGetRpmDivisor());
+        Console.printf("rpmDiv = %d\n", configGetRpmDivisor());
     }
     else if (strcmp(paramLower, "tankcap") == 0) {
-        Serial.printf("tankCap = %d\n", configGetTankCapacity());
+        Console.printf("tankCap = %d\n", configGetTankCapacity());
     }
     else if (strcmp(paramLower, "dtediv") == 0) {
-        Serial.printf("dteDiv = %d\n", configGetDteDivisor());
+        Console.printf("dteDiv = %d\n", configGetDteDivisor());
     }
     else {
         printError("Unknown parameter");
-        Serial.println("Valid: steerOffset, steerInvert, steerScale, indTimeout, rpmDiv, tankCap, dteDiv");
+        Console.println("Valid: steerOffset, steerInvert, steerScale, indTimeout, rpmDiv, tankCap, dteDiv");
     }
 }
 
@@ -367,19 +383,19 @@ static void cfgSet(const char* param, const char* value) {
     }
 
     printOK();
-    Serial.println("Value set (use CFG SAVE to persist)");
+    Console.println("Value set (use CFG SAVE to persist)");
 }
 
 static void cfgList() {
-    Serial.println("=== Current Configuration ===");
-    Serial.printf("steerOffset  = %d    (center offset)\n", configGetSteerOffset());
-    Serial.printf("steerInvert  = %d    (invert direction)\n", configGetSteerInvert() ? 1 : 0);
-    Serial.printf("steerScale   = %u    (scale x0.0001)\n", configGetSteerScale());
-    Serial.printf("indTimeout   = %d    (indicator ms)\n", configGetIndicatorTimeout());
-    Serial.printf("rpmDiv       = %d    (RPM divisor)\n", configGetRpmDivisor());
-    Serial.printf("tankCap      = %d    (tank liters)\n", configGetTankCapacity());
-    Serial.printf("dteDiv       = %d    (DTE divisor x100)\n", configGetDteDivisor());
-    Serial.println("=============================");
+    Console.println("=== Current Configuration ===");
+    Console.printf("steerOffset  = %d    (center offset)\n", configGetSteerOffset());
+    Console.printf("steerInvert  = %d    (invert direction)\n", configGetSteerInvert() ? 1 : 0);
+    Console.printf("steerScale   = %u    (scale x0.0001)\n", configGetSteerScale());
+    Console.printf("indTimeout   = %d    (indicator ms)\n", configGetIndicatorTimeout());
+    Console.printf("rpmDiv       = %d    (RPM divisor)\n", configGetRpmDivisor());
+    Console.printf("tankCap      = %d    (tank liters)\n", configGetTankCapacity());
+    Console.printf("dteDiv       = %d    (DTE divisor x100)\n", configGetDteDivisor());
+    Console.println("=============================");
 }
 
 // =============================================================================
@@ -468,17 +484,17 @@ static void handleCanCommand(const char* args) {
         }
     }
     else if (strcmp(subCmd, "RELOAD") == 0) {
-        Serial.println("Reloading CAN configuration...");
+        Console.println("Reloading CAN configuration...");
         if (canProcessor.begin()) {
             // Reset vehicle data to clear stale values
             resetVehicleData();
 
             printOK();
-            Serial.printf("Loaded: %s (%s mode)\n",
+            Console.printf("Loaded: %s (%s mode)\n",
                           canProcessor.getProfileName(),
                           canProcessor.isMockMode() ? "MOCK" : "REAL");
         } else {
-            Serial.println("No config found - MOCK mode active");
+            Console.println("No config found - MOCK mode active");
         }
     }
     else {
@@ -490,24 +506,24 @@ static void handleCanCommand(const char* args) {
  * @brief Display current CAN configuration status
  */
 static void canStatus() {
-    Serial.println("=== CAN Configuration Status ===");
-    Serial.printf("Config: %s\n", configGetVehicleFile());
-    Serial.printf("Mode: %s\n", canProcessor.isMockMode() ? "MOCK (simulated data)" : "REAL (CAN bus)");
-    Serial.printf("Profile: %s\n", canProcessor.getProfileName());
-    Serial.printf("Frames processed: %lu\n", canProcessor.getFramesProcessed());
-    Serial.printf("Unknown frames: %lu\n", canProcessor.getUnknownFrames());
+    Console.println("=== CAN Configuration Status ===");
+    Console.printf("Config: %s\n", configGetVehicleFile());
+    Console.printf("Mode: %s\n", canProcessor.isMockMode() ? "MOCK (simulated data)" : "REAL (CAN bus)");
+    Console.printf("Profile: %s\n", canProcessor.getProfileName());
+    Console.printf("Frames processed: %lu\n", static_cast<unsigned long>(canProcessor.getFramesProcessed()));
+    Console.printf("Unknown frames: %lu\n", static_cast<unsigned long>(canProcessor.getUnknownFrames()));
     if (uploadInProgress) {
-        Serial.printf("Upload in progress: %s (%lu/%lu bytes)\n",
-                      uploadFilename, uploadReceivedSize, uploadExpectedSize);
+        Console.printf("Upload in progress: %s (%lu/%lu bytes)\n",
+                      uploadFilename, static_cast<unsigned long>(uploadReceivedSize), static_cast<unsigned long>(uploadExpectedSize));
     }
-    Serial.println("================================");
+    Console.println("================================");
 }
 
 /**
  * @brief List all JSON config files on LittleFS
  */
 static void canList() {
-    Serial.println("=== CAN Config Files ===");
+    Console.println("=== CAN Config Files ===");
 
     File root = LittleFS.open("/");
     if (!root || !root.isDirectory()) {
@@ -520,17 +536,17 @@ static void canList() {
     while (file) {
         String name = file.name();
         if (name.endsWith(".json")) {
-            Serial.printf("  %s (%d bytes)\n", file.name(), file.size());
+            Console.printf("  %s (%lu bytes)\n", file.name(), static_cast<unsigned long>(file.size()));
             count++;
         }
         file = root.openNextFile();
     }
 
     if (count == 0) {
-        Serial.println("  (no config files found)");
+        Console.println("  (no config files found)");
     }
-    Serial.printf("Total: %d file(s)\n", count);
-    Serial.println("========================");
+    Console.printf("Total: %d file(s)\n", count);
+    Console.println("========================");
 }
 
 /**
@@ -558,8 +574,8 @@ static void canLoad(const char* filename) {
         resetVehicleData();
 
         printOK();
-        Serial.printf("Loaded: %s\n", canProcessor.getProfileName());
-        Serial.printf("Mode: %s\n", canProcessor.isMockMode() ? "MOCK" : "REAL");
+        Console.printf("Loaded: %s\n", canProcessor.getProfileName());
+        Console.printf("Mode: %s\n", canProcessor.isMockMode() ? "MOCK" : "REAL");
     } else {
         printError("Failed to parse config file");
     }
@@ -591,12 +607,12 @@ static void canGet() {
         return;
     }
 
-    Serial.printf("=== %s ===\n", currentFile);
+    Console.printf("=== %s ===\n", currentFile);
     while (file.available()) {
-        Serial.write(file.read());
+        Console.write(file.read());
     }
-    Serial.println();
-    Serial.println("=== END ===");
+    Console.println();
+    Console.println("=== END ===");
     file.close();
 }
 
@@ -619,7 +635,7 @@ static void canDelete(const char* filename) {
 
     if (LittleFS.remove(path)) {
         printOK();
-        Serial.printf("Deleted: %s\n", path);
+        Console.printf("Deleted: %s\n", path);
     } else {
         printError("Failed to delete file");
     }
@@ -660,8 +676,8 @@ static void canUploadStart(const char* filename, uint32_t size) {
     uploadReceivedSize = 0;
     uploadInProgress = true;
 
-    Serial.println("OK READY");
-    Serial.printf("Awaiting %lu bytes for %s\n", size, uploadFilename);
+    Console.println("OK READY");
+    Console.printf("Awaiting %lu bytes for %s\n", static_cast<unsigned long>(size), uploadFilename);
 }
 
 /**
@@ -687,8 +703,8 @@ static void canUploadData(const char* base64Data) {
     // Feed the watchdog during flash/filesystem operations
     esp_task_wdt_reset();
 
-    Serial.printf("OK %lu/%lu\n", uploadReceivedSize, uploadExpectedSize);
-    Serial.flush();  // Ensure ACK is sent before processing next chunk
+    Console.printf("OK %lu/%lu\n", static_cast<unsigned long>(uploadReceivedSize), static_cast<unsigned long>(uploadExpectedSize));
+    Console.flush();  // Pump if possible; the ACK remains ordered in the FIFO.
     delay(1);        // Give USB CDC stack time to transmit
 }
 
@@ -709,7 +725,7 @@ static void canUploadEnd() {
     DeserializationError error = deserializeJson(doc, (char*)uploadBuffer);
 
     if (error) {
-        Serial.printf("ERROR: JSON parse failed: %s\n", error.c_str());
+        Console.printf("ERROR: JSON parse failed: %s\n", error.c_str());
         canUploadAbort();
         return;
     }
@@ -741,8 +757,8 @@ static void canUploadEnd() {
     uploadInProgress = false;
 
     printOK();
-    Serial.printf("Saved: %s (%lu bytes)\n", uploadFilename, uploadReceivedSize);
-    Serial.println("Use 'CAN RELOAD' to activate");
+    Console.printf("Saved: %s (%lu bytes)\n", uploadFilename, static_cast<unsigned long>(uploadReceivedSize));
+    Console.println("Use 'CAN RELOAD' to activate");
 }
 
 /**
@@ -756,7 +772,7 @@ static void canUploadAbort() {
     uploadInProgress = false;
     uploadReceivedSize = 0;
     uploadExpectedSize = 0;
-    Serial.println("Upload aborted");
+    Console.println("Upload aborted");
 }
 
 // =============================================================================
@@ -857,8 +873,8 @@ static void otaStart(uint32_t size, const char* md5) {
 
     // Check available space
     if (size > (ESP.getFreeSketchSpace() - 0x1000)) {
-        Serial.printf("ERROR: Firmware too large (%lu bytes, max %lu)\n",
-                      size, ESP.getFreeSketchSpace() - 0x1000);
+        Console.printf("ERROR: Firmware too large (%lu bytes, max %lu)\n",
+                      static_cast<unsigned long>(size), static_cast<unsigned long>(ESP.getFreeSketchSpace()) - 0x1000);
         return;
     }
 
@@ -876,7 +892,7 @@ static void otaStart(uint32_t size, const char* md5) {
 
     // Begin update
     if (!Update.begin(size)) {
-        Serial.printf("ERROR: Update.begin failed: %s\n", Update.errorString());
+        Console.printf("ERROR: Update.begin failed: %s\n", Update.errorString());
         return;
     }
 
@@ -893,12 +909,12 @@ static void otaStart(uint32_t size, const char* md5) {
 
     // Send informational lines first, then the terminal OK READY line last.
     // This ensures the Android client consumes all info before detecting OK.
-    Serial.printf("OTA starting: expecting %lu bytes\n", size);
+    Console.printf("OTA starting: expecting %lu bytes\n", static_cast<unsigned long>(size));
     if (otaExpectedMD5[0]) {
-        Serial.printf("MD5: %s\n", otaExpectedMD5);
+        Console.printf("MD5: %s\n", otaExpectedMD5);
     }
-    Serial.flush();
-    Serial.println("OK READY");
+    Console.flush();
+    Console.println("OK READY");
 }
 
 /**
@@ -927,16 +943,16 @@ static void otaData(const char* base64Data, bool hasCrc, uint32_t expectedCrc) {
     if (hasCrc) {
         uint32_t actualCrc = crc32_le(0, decodeBuffer, decoded);
         if (actualCrc != expectedCrc) {
-            Serial.printf("ERROR: CRC mismatch chunk (got %08lx expected %08lx)\n",
-                          actualCrc, expectedCrc);
+            Console.printf("ERROR: CRC mismatch chunk (got %08lx expected %08lx)\n",
+                          static_cast<unsigned long>(actualCrc), static_cast<unsigned long>(expectedCrc));
             return;  // otaInProgress and otaReceivedSize unchanged — chunk retry is safe
         }
     }
 
     // Check for overflow
     if (otaReceivedSize + decoded > otaExpectedSize) {
-        Serial.printf("ERROR: Data exceeds expected size (%lu + %u > %lu)\n",
-                      otaReceivedSize, decoded, otaExpectedSize);
+        Console.printf("ERROR: Data exceeds expected size (%lu + %u > %lu)\n",
+                      static_cast<unsigned long>(otaReceivedSize), static_cast<unsigned>(decoded), static_cast<unsigned long>(otaExpectedSize));
         otaAbort();
         return;
     }
@@ -947,8 +963,8 @@ static void otaData(const char* base64Data, bool hasCrc, uint32_t expectedCrc) {
     // Write to flash
     size_t written = Update.write(decodeBuffer, decoded);
     if (written != decoded) {
-        Serial.printf("ERROR: Write failed (wrote %u of %u): %s\n",
-                      written, decoded, Update.errorString());
+        Console.printf("ERROR: Write failed (wrote %u of %u): %s\n",
+                      static_cast<unsigned>(written), static_cast<unsigned>(decoded), Update.errorString());
         otaAbort();
         return;
     }
@@ -962,7 +978,7 @@ static void otaData(const char* base64Data, bool hasCrc, uint32_t expectedCrc) {
     esp_task_wdt_reset();
 
     uint8_t percent = (otaReceivedSize * 100) / otaExpectedSize;
-    Serial.printf("OK %lu/%lu (%d%%)\n", otaReceivedSize, otaExpectedSize, percent);
+    Console.printf("OK %lu/%lu (%d%%)\n", static_cast<unsigned long>(otaReceivedSize), static_cast<unsigned long>(otaExpectedSize), percent);
 }
 
 /**
@@ -976,8 +992,8 @@ static void otaEnd() {
 
     // Check if all data received
     if (otaReceivedSize != otaExpectedSize) {
-        Serial.printf("ERROR: Incomplete data (%lu of %lu bytes)\n",
-                      otaReceivedSize, otaExpectedSize);
+        Console.printf("ERROR: Incomplete data (%lu of %lu bytes)\n",
+                      static_cast<unsigned long>(otaReceivedSize), static_cast<unsigned long>(otaExpectedSize));
         otaAbort();
         return;
     }
@@ -988,13 +1004,13 @@ static void otaEnd() {
         String calculatedMD5 = otaMD5.toString();
 
         if (calculatedMD5 != otaExpectedMD5) {
-            Serial.printf("ERROR: MD5 mismatch!\n");
-            Serial.printf("  Expected: %s\n", otaExpectedMD5);
-            Serial.printf("  Got:      %s\n", calculatedMD5.c_str());
+            Console.printf("ERROR: MD5 mismatch!\n");
+            Console.printf("  Expected: %s\n", otaExpectedMD5);
+            Console.printf("  Got:      %s\n", calculatedMD5.c_str());
             otaAbort();
             return;
         }
-        Serial.println("MD5 verified OK");
+        Console.println("MD5 verified OK");
     }
 
     // Feed the watchdog before the slow finalization process
@@ -1002,7 +1018,7 @@ static void otaEnd() {
 
     // Finalize update
     if (!Update.end(true)) {
-        Serial.printf("ERROR: Update.end failed: %s\n", Update.errorString());
+        Console.printf("ERROR: Update.end failed: %s\n", Update.errorString());
         otaAbort();
         return;
     }
@@ -1013,9 +1029,9 @@ static void otaEnd() {
     // Success!
     otaInProgress = false;
     printOK();
-    Serial.println("Firmware updated successfully!");
-    Serial.println("Rebooting in 2 seconds...");
-    delay(2000);
+    Console.println("Firmware updated successfully!");
+    Console.println("Rebooting in 2 seconds...");
+    Console.drainBeforeRestart(2000);
     ESP.restart();
 }
 
@@ -1033,26 +1049,26 @@ static void otaAbort() {
     otaExpectedMD5[0] = '\0';
     otaLastDataTime = 0;
 
-    Serial.println("OTA aborted");
+    Console.println("OTA aborted");
 }
 
 /**
  * @brief Show OTA status
  */
 static void otaStatus() {
-    Serial.println("=== OTA Status ===");
-    Serial.printf("Update in progress: %s\n", otaInProgress ? "YES" : "NO");
+    Console.println("=== OTA Status ===");
+    Console.printf("Update in progress: %s\n", otaInProgress ? "YES" : "NO");
     if (otaInProgress) {
         uint8_t percent = (otaReceivedSize * 100) / otaExpectedSize;
-        Serial.printf("Progress: %lu / %lu bytes (%d%%)\n",
-                      otaReceivedSize, otaExpectedSize, percent);
+        Console.printf("Progress: %lu / %lu bytes (%d%%)\n",
+                      static_cast<unsigned long>(otaReceivedSize), static_cast<unsigned long>(otaExpectedSize), percent);
         if (otaExpectedMD5[0]) {
-            Serial.printf("Expected MD5: %s\n", otaExpectedMD5);
+            Console.printf("Expected MD5: %s\n", otaExpectedMD5);
         }
     }
-    Serial.printf("Free sketch space: %lu bytes\n", ESP.getFreeSketchSpace());
-    Serial.printf("Current firmware size: %lu bytes\n", ESP.getSketchSize());
-    Serial.println("==================");
+    Console.printf("Free sketch space: %lu bytes\n", static_cast<unsigned long>(ESP.getFreeSketchSpace()));
+    Console.printf("Current firmware size: %lu bytes\n", static_cast<unsigned long>(ESP.getSketchSize()));
+    Console.println("==================");
 }
 
 // =============================================================================
@@ -1072,12 +1088,12 @@ static void handleLogCommand(const char* args) {
     if (strcmp(subCmd, "ON") == 0) {
         canLogEnabled = true;
         printOK();
-        Serial.println("CAN logging enabled");
+        Console.println("CAN logging enabled");
     }
     else if (strcmp(subCmd, "OFF") == 0) {
         canLogEnabled = false;
         printOK();
-        Serial.println("CAN logging disabled");
+        Console.println("CAN logging disabled");
     }
     else {
         printError("Usage: LOG <ON|OFF>");
@@ -1100,42 +1116,41 @@ static void handleSysCommand(const char* args) {
 
     if (strcmp(subCmd, "INFO") == 0) {
         unsigned long uptime = (millis() - bootTime) / 1000;
-        Serial.println("=== System Info ===");
-        Serial.printf("Firmware: %s (%s)\n", FIRMWARE_VERSION, FIRMWARE_DATE);
-        Serial.printf("Uptime: %lu sec\n", uptime);
-        Serial.printf("Free heap: %d bytes\n", ESP.getFreeHeap());
-        Serial.printf("CPU freq: %d MHz\n", ESP.getCpuFreqMHz());
-        Serial.printf("Chip: %s rev%d\n", ESP.getChipModel(), ESP.getChipRevision());
-        Serial.println("===================");
+        Console.println("=== System Info ===");
+        Console.printf("Firmware: %s (%s)\n", FIRMWARE_VERSION, FIRMWARE_DATE);
+        Console.printf("Uptime: %lu sec\n", uptime);
+        Console.printf("Free heap: %d bytes\n", ESP.getFreeHeap());
+        Console.printf("CPU freq: %d MHz\n", ESP.getCpuFreqMHz());
+        Console.printf("Chip: %s rev%d\n", ESP.getChipModel(), ESP.getChipRevision());
+        Console.println("===================");
     }
     else if (strcmp(subCmd, "DATA") == 0) {
-        Serial.println("=== Live Vehicle Data ===");
-        Serial.printf("Config:   %s\n", configGetVehicleFile());
-        Serial.printf("Mode:     %s (%s)\n",
+        Console.println("=== Live Vehicle Data ===");
+        Console.printf("Config:   %s\n", configGetVehicleFile());
+        Console.printf("Mode:     %s (%s)\n",
             canProcessor.isMockMode() ? "MOCK" : "REAL",
             canProcessor.getProfileName());
-        Serial.printf("RPM:      %d\n", engineRPM);
-        Serial.printf("Speed:    %d km/h\n", vehicleSpeed);
-        Serial.printf("Steering: %d\n", currentSteer);
-        Serial.printf("Fuel:     %d L\n", fuelLevel);
-        Serial.printf("Battery:  %.1f V\n", voltBat);
-        Serial.printf("DTE:      %d km\n", dteValue);
-        Serial.printf("Temp:     %d C\n", tempExt);
-        Serial.printf("Doors:    0x%02X\n", currentDoors);
-        Serial.printf("Lights:   H=%d P=%d HB=%d L=%d R=%d\n",
+        Console.printf("RPM:      %d\n", engineRPM);
+        Console.printf("Speed:    %d km/h\n", vehicleSpeed);
+        Console.printf("Steering: %d\n", currentSteer);
+        Console.printf("Fuel:     %d L\n", fuelLevel);
+        Console.printf("Battery:  %.1f V\n", voltBat);
+        Console.printf("DTE:      %d km\n", dteValue);
+        Console.printf("Temp:     %d C\n", tempExt);
+        Console.printf("Doors:    0x%02X\n", currentDoors);
+        Console.printf("Lights:   H=%d P=%d HB=%d L=%d R=%d\n",
             headlightsOn, parkingLightsOn, highBeamOn, indicatorLeft, indicatorRight);
-        Serial.println("=========================");
+        Console.println("=========================");
     }
     else if (strcmp(subCmd, "REBOOT") == 0) {
-        Serial.println("Rebooting...");
-        delay(100);
+        Console.println("Rebooting...");
+        Console.drainBeforeRestart(100);
         ESP.restart();
     }
     else if (strcmp(subCmd, "BOOTLOADER") == 0) {
-        Serial.println("Entering bootloader mode for esptool...");
-        Serial.println("Use esptool.py to flash firmware.");
-        Serial.flush();
-        delay(100);
+        Console.println("Entering bootloader mode for esptool...");
+        Console.println("Use esptool.py to flash firmware.");
+        Console.drainBeforeRestart(100);
 
         // Force download boot mode on next restart
         REG_WRITE(RTC_CNTL_OPTION1_REG, RTC_CNTL_FORCE_DOWNLOAD_BOOT);
@@ -1151,37 +1166,37 @@ static void handleSysCommand(const char* args) {
 // =============================================================================
 
 static void handleHelpCommand() {
-    Serial.println("=== ESP32 CANBox Command Interface ===");
-    Serial.println();
-    Serial.println("CFG GET <param>       Read calibration value");
-    Serial.println("CFG SET <param> <val> Set calibration value");
-    Serial.println("CFG LIST              Show all calibration");
-    Serial.println("CFG SAVE              Save to flash (NVS)");
-    Serial.println("CFG RESET             Reset to defaults");
-    Serial.println();
-    Serial.println("CAN STATUS            CAN config status");
-    Serial.println("CAN LIST              List config files");
-    Serial.println("CAN LOAD <file>       Load config file");
-    Serial.println("CAN GET               Output current config");
-    Serial.println("CAN DELETE <file>     Delete config file");
-    Serial.println("CAN UPLOAD START/DATA/END  Upload config");
-    Serial.println("CAN RELOAD            Reload configuration");
-    Serial.println();
-    Serial.println("OTA START <size> [md5]       Start firmware update");
-    Serial.println("OTA DATA <base64> [crc32]    Send firmware chunk");
-    Serial.println("OTA END                      Finalize and reboot");
-    Serial.println("OTA ABORT               Cancel update");
-    Serial.println("OTA STATUS              Update status");
-    Serial.println();
-    Serial.println("LOG ON|OFF            Raw CAN logging + ODB service 01 reference polling");
-    Serial.println();
-    Serial.println("SYS INFO              System information");
-    Serial.println("SYS DATA              Live vehicle data");
-    Serial.println("SYS REBOOT            Restart device");
-    Serial.println("SYS BOOTLOADER        Enter esptool flash mode");
-    Serial.println();
-    Serial.println("HELP                  This message");
-    Serial.println("======================================");
+    Console.println("=== ESP32 CANBox Command Interface ===");
+    Console.println();
+    Console.println("CFG GET <param>       Read calibration value");
+    Console.println("CFG SET <param> <val> Set calibration value");
+    Console.println("CFG LIST              Show all calibration");
+    Console.println("CFG SAVE              Save to flash (NVS)");
+    Console.println("CFG RESET             Reset to defaults");
+    Console.println();
+    Console.println("CAN STATUS            CAN config status");
+    Console.println("CAN LIST              List config files");
+    Console.println("CAN LOAD <file>       Load config file");
+    Console.println("CAN GET               Output current config");
+    Console.println("CAN DELETE <file>     Delete config file");
+    Console.println("CAN UPLOAD START/DATA/END  Upload config");
+    Console.println("CAN RELOAD            Reload configuration");
+    Console.println();
+    Console.println("OTA START <size> [md5]       Start firmware update");
+    Console.println("OTA DATA <base64> [crc32]    Send firmware chunk");
+    Console.println("OTA END                      Finalize and reboot");
+    Console.println("OTA ABORT               Cancel update");
+    Console.println("OTA STATUS              Update status");
+    Console.println();
+    Console.println("LOG ON|OFF            Raw CAN logging + ODB service 01 reference polling");
+    Console.println();
+    Console.println("SYS INFO              System information");
+    Console.println("SYS DATA              Live vehicle data");
+    Console.println("SYS REBOOT            Restart device");
+    Console.println("SYS BOOTLOADER        Enter esptool flash mode");
+    Console.println();
+    Console.println("HELP                  This message");
+    Console.println("======================================");
 }
 
 // =============================================================================
@@ -1189,14 +1204,19 @@ static void handleHelpCommand() {
 // =============================================================================
 
 static void printOK() {
-    Serial.println("OK");
+    Console.println("OK");
 }
 
 static void printError(const char* msg) {
-    Serial.print("ERROR: ");
-    Serial.println(msg);
+    Console.print("ERROR: ");
+    Console.println(msg);
 }
 
 #ifdef UNIT_TEST
-void testProcessCommand(const char* line) { processCommand(line); }
+void testProcessCommand(const char* line) {
+    Console.beginCommand();
+    processCommand(line);
+    Console.endCommand();
+    Console.drain();
+}
 #endif
