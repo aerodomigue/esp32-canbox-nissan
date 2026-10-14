@@ -188,6 +188,11 @@ in addition to the [Juke F15 2011–2018 PDF](https://www.racelogic.co.uk/_downl
 Retrieved on 14 October 2026: 2,650 bytes, SHA-256
 `960a5d9b2e8323ad8a69c5226ac7179a5a8addafc112c47276f70a4f1023d7f4`.
 
+The [text extraction supplied for the project](vehicle/nissan-juke-f15/Juke_F15_CAN_REF_decode.txt)
+is archived unchanged in the documentation: 37 signals across 14 CAN
+identifiers. The definitions originate from the REF on the VBOX / Racelogic
+website; the [source note](vehicle/nissan-juke-f15/README.md) preserves its links.
+
 The REF provides precise fields absent from the PDF alone. It corroborates
 speed, coolant temperature and the parking-brake bit. Its engine-speed
 definition only uses `0x180 B0×32`: the high-byte contribution to
@@ -205,8 +210,6 @@ and 55–48 to B1; Intel bits 7–0 belong to B0 and 15–8 to B1. Thus
 `start=58,length=1,Motorola` identifies B0 bit2, and
 `start=8,length=8,Intel` identifies B1. This is not the Vector DBC Motorola
 start-bit convention; copying the positions directly would shift signals.
-The supplier database remains in the local cache; only the necessary facts
-are documented here, without republishing it in full.
 
 ### Nissan manuals in the repository
 

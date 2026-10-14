@@ -195,6 +195,11 @@ un [fichier de définitions REF](https://www.racelogic.co.uk/_downloads/vbox/Veh
 Consulté le 14 octobre 2026 : 2 650 octets, SHA-256
 `960a5d9b2e8323ad8a69c5226ac7179a5a8addafc112c47276f70a4f1023d7f4`.
 
+L’[extraction texte fournie pour le projet](vehicle/nissan-juke-f15/Juke_F15_CAN_REF_decode.txt)
+est archivée sans modification dans la documentation : 37 signaux sur
+14 identifiants CAN. Les définitions proviennent du REF du site VBOX / Racelogic ;
+la [notice de source](vehicle/nissan-juke-f15/README.fr.md) en conserve les liens.
+
 Le REF apporte des champs précis que la fiche PDF seule ne fournissait pas.
 Il corrobore notamment la vitesse, la température et le bit de frein à main.
 Son régime se limite à `0x180 B0×32` : c'est la partie haute de
@@ -212,8 +217,7 @@ appartiennent à B0, 55–48 à B1 ; en Intel, 7–0 à B0 et 15–8 à B1.
 Ainsi `start=58,length=1,Motorola` désigne B0 bit2, et
 `start=8,length=8,Intel` désigne B1. Ce n'est pas la convention de start-bit
 Motorola d'un DBC Vector ; copier les positions telles quelles déplacerait
-les signaux. La base fournisseur reste dans le cache local ; seuls les
-faits nécessaires sont documentés ici, sans la republier intégralement.
+les signaux.
 
 ### Manuels Nissan du dépôt
 

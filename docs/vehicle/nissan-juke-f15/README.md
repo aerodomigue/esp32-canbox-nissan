@@ -1,4 +1,4 @@
-# Nissan Juke F15 service manuals
+# Nissan Juke F15 documentation
 
 [Français](README.fr.md)
 
@@ -32,7 +32,23 @@ A physical CAN capture and observations on the target vehicle are still needed t
 Nissan vehicle CAN and the [Raise Toyota UART protocol](../../protocols/raise-toyota-rav4/) used toward the head unit are separate protocols.
 See [the CAN mapping analysis](../../JUKE_F15_CAN_MAPPING.md) for the project's current evidence and limits.
 
-## File index
+## VBOX / Racelogic CAN definitions
+
+[Juke_F15_CAN_REF_decode.txt](Juke_F15_CAN_REF_decode.txt) is the text extraction
+of the **Nissan Juke (F15) 2011–2018** `.REF` file, supplied for the project and
+preserved unchanged: **37 signals and 14 CAN identifiers**.
+
+**Definition source: Racelogic / VBOX**, from the
+[public VBOX CAN database website](https://vboxautomotive.co.uk/en/can-database-documents)
+([original REF file](https://www.racelogic.co.uk/_downloads/vbox/Vehicle_CAN_Files/New/Nissan-Juke%20%28F15%29%202011-2018.REF),
+[accompanying PDF](https://www.racelogic.co.uk/_downloads/vbox/Vehicles/Other/Docs/Nissan-Juke%20%28F15%29%202011-2018.pdf)),
+accessed on 14 October 2026. The text is an extraction from the REF, not a text
+file published directly by VBOX.
+
+For bit-numbering conventions and signal validation on the project vehicle,
+see [the CAN mapping analysis](../../JUKE_F15_CAN_MAPPING.md).
+
+## PDF service-manual index
 
 English section names follow the **Quick Reference Index in FWD.pdf**.
 Filenames are preserved, including the lowercase `acc.pdf`.
