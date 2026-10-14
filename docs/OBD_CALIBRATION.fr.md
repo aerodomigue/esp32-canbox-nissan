@@ -16,6 +16,12 @@ vitesse octets 0–1, carburant `[255,0,0,45]`, autonomie `0x54C ×100/338`,
 consommation instantanée octet 3. Ce retour ne valide pas physiquement ces
 anciens mappings ; la capture sert précisément à les vérifier.
 
+La [recherche des commandes Nissan et le tableau de couverture](NISSAN_DIAGNOSTIC_RESEARCH.fr.md)
+précisent les valeurs réellement vérifiables. Aucune lecture constructeur
+supplémentaire n'a été validée pour le Juke 2011 MR16DDT manuel : portes,
+direction, clignotants, éclairage, frein à main, consommation moyenne et
+autonomie n'ont actuellement pas de référence OBD interrogée.
+
 ## Utilisation
 
 1. Charger le firmware et le preset actif dans LittleFS ou avec CANBox Manager,
