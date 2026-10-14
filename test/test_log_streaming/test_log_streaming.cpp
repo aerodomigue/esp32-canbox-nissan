@@ -246,6 +246,79 @@ void test_obd_reference_sys_data_and_partial_command_keep_complete_lines() {
     assertRawLinesComplete(Serial.captured);
 }
 
+static void assertIndicatorOutputs(bool left, bool right) {
+    // Read the public dashboard response after the CAN acquisition/radio loop.
+    Serial.clearOutput();
+    Serial.inject("SYS DATA\n");
+    loop();
+    flushConsole();
+    const std::string expected = std::string("Lights:   H=0 P=0 HB=0 L=") +
+        (left ? "1" : "0") + " R=" + (right ? "1" : "0");
+    TEST_ASSERT_TRUE_MESSAGE(hasLine(Serial.captured, expected), Serial.captured.c_str());
+
+    // Compare with the actual UART lights frame, not just the dashboard globals.
+    bool found = false;
+    uint8_t lights = 0;
+    for (size_t offset = 0; offset < RadioSerial.captured.size();) {
+        TEST_ASSERT_TRUE(offset + 4 <= RadioSerial.captured.size());
+        TEST_ASSERT_EQUAL_HEX8(0x2E, RadioSerial.captured[offset]);
+        const size_t length = RadioSerial.captured[offset + 2];
+        TEST_ASSERT_TRUE(offset + length + 4 <= RadioSerial.captured.size());
+        if (RadioSerial.captured[offset + 1] == 0x7D && length == 2 &&
+            RadioSerial.captured[offset + 3] == 0x01) {
+            found = true;
+            lights = RadioSerial.captured[offset + 4];
+        }
+        offset += length + 4;
+    }
+    TEST_ASSERT_TRUE_MESSAGE(found, "No UART lights frame emitted");
+    TEST_ASSERT_EQUAL_HEX8((left ? 0x10 : 0) | (right ? 0x08 : 0), lights);
+}
+
+void test_sys_data_indicators_match_left_right_and_hazard_can_frames() {
+    configSetIndicatorTimeout(500);
+    // Advance past the previous signal's timeout before testing each state.
+    // Nonzero simulated time makes a missing timestamp update observable.
+    for (const uint8_t bits : {0x20, 0x40, 0x60}) {
+        StreamingSimulation::advance(1000);
+        RadioSerial.clear();
+        TEST_ASSERT_TRUE(ESP32Can.enqueue(frame(0x60D, {0, bits, 0})));
+        loop();
+        assertIndicatorOutputs((bits & 0x20) != 0, (bits & 0x40) != 0);
+    }
+}
+
+void test_sys_data_indicators_expire_at_configured_timeout_without_new_can() {
+    configSetIndicatorTimeout(800);
+    TEST_ASSERT_TRUE(ESP32Can.enqueue(frame(0x60D, {0, 0x60, 0})));
+    loop();
+    assertIndicatorOutputs(true, true);
+    StreamingSimulation::advance(799);
+    loop();
+    assertIndicatorOutputs(true, true);
+    StreamingSimulation::advance(1);
+    loop();
+    assertIndicatorOutputs(false, false);
+}
+
+void test_sys_data_indicator_refresh_and_zero_frame_keep_radio_hold_time() {
+    configSetIndicatorTimeout(500);
+    TEST_ASSERT_TRUE(ESP32Can.enqueue(frame(0x60D, {0, 0x20, 0})));
+    loop();
+    assertIndicatorOutputs(true, false);
+    StreamingSimulation::advance(400);
+    TEST_ASSERT_TRUE(ESP32Can.enqueue(frame(0x60D, {0, 0x20, 0})));
+    loop();
+    StreamingSimulation::advance(400);
+    TEST_ASSERT_TRUE(ESP32Can.enqueue(frame(0x60D, {0, 0, 0})));
+    loop();
+    // A zero input does not cancel the existing radio hold immediately.
+    assertIndicatorOutputs(true, false);
+    StreamingSimulation::advance(100);
+    loop();
+    assertIndicatorOutputs(false, false);
+}
+
 void test_short_usb_write_resumes_exactly_without_truncation_or_duplicates() {
     enableLoggingThroughLoop();
     Serial.clearOutput();
@@ -594,6 +667,9 @@ int main() {
     RUN_TEST(test_loop_drains_only_32_frames_then_continues_while_obd_waits);
     RUN_TEST(test_raw_can_keeps_payload_flags_and_unconfigured_frames);
     RUN_TEST(test_obd_reference_sys_data_and_partial_command_keep_complete_lines);
+    RUN_TEST(test_sys_data_indicators_match_left_right_and_hazard_can_frames);
+    RUN_TEST(test_sys_data_indicators_expire_at_configured_timeout_without_new_can);
+    RUN_TEST(test_sys_data_indicator_refresh_and_zero_frame_keep_radio_hold_time);
     RUN_TEST(test_short_usb_write_resumes_exactly_without_truncation_or_duplicates);
     RUN_TEST(test_usb_stop_before_crlf_preserves_separate_rx_and_odb_lines);
     RUN_TEST(test_usb_unavailable_for_500ms_keeps_can_acquisition_and_all_500_lines);

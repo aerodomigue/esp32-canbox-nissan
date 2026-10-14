@@ -385,6 +385,11 @@ void processRadioUpdates() {
     bool leftActive = (now - lastLeftIndicatorTime) < indTimeout;
     bool rightActive = (now - lastRightIndicatorTime) < indTimeout;
 
+    // SYS DATA must expose the same timed state as the radio, including expiry
+    // when no new CAN frame arrives. The decoder only updates the timestamps.
+    indicatorLeft = leftActive;
+    indicatorRight = rightActive;
+
     if (rightActive)      lightStatus |= MASK_LIGHT_RIGHT_IND;
     if (leftActive)       lightStatus |= MASK_LIGHT_LEFT_IND;
     if (highBeamOn)       lightStatus |= MASK_LIGHT_HIGH_BEAM;
