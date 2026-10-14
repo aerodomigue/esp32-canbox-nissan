@@ -11,19 +11,22 @@ arrête les nouvelles requêtes et la capture ; une transmission déjà mise en
 file dans le contrôleur ne peut pas être annulée par cette commande.
 
 Les lectures OBD ne changent ni le preset, ni les valeurs décodées envoyées à
-l'autoradio. Les propositions de mapping de la PR #10 et leur profil
-expérimental ont été retirés ; les corrections de robustesse restent actives.
-Le preset actif reprend exactement la tête PR `495f346` : régime `/7`,
-vitesse octets 0–1, carburant `[255,0,0,45]`, autonomie `0x54C ×100/338`,
-consommation instantanée octet 3. Ce retour ne valide pas physiquement ces
-anciens mappings ; la capture sert précisément à les vérifier.
+l'autoradio. La [capture CAN/OBD du 14 octobre et le mapping documenté](JUKE_F15_CAN_MAPPING.fr.md)
+ont conduit à des corrections explicites dans le preset du dépôt : régime
+`0x180 B0–B1 /8`, vitesse `0x284 B4–B5 /100`, frein à main `0x5C5 B0 bit2`,
+contact de frein `0x180 B7 bit0` et compteur brut lié au carburant `0x551 B1`.
+Il s'agit de champs CAN périodiques, pas de nouvelles commandes OBD. La
+polarité du contact de frein et l'interprétation physique du compteur brut
+restent à vérifier.
 
-La [capture CAN/OBD du 14 octobre et le mapping documenté](JUKE_F15_CAN_MAPPING.fr.md)
-apportent maintenant des preuves : régime `/8`, vitesse octets 4–5 et
-température moteur concordent avec les références ; le champ de consommation
-instantanée du preset est un compteur cyclique. Ces résultats ne sont pas
-encore appliqués au JSON actif. Le bit CAN du frein à main est corroboré par
-le scénario utilisateur et une définition Juke, sans nouvelle commande OBD.
+La jauge fondée sur l'octet entier `0x5C5` et les deux consommations `0x580`
+ont été retirées. Dans le profil Juke, `FuelValid: 0` signale que la valeur
+de compatibilité `Fuel: 0 L` est indisponible ; `FuelConsValid: INST=0 AVG=0`
+empêche les trames UART de consommation. `FuelRaw` n'est ni des L/h ni des
+L/100 km. Direction, température extérieure, kilométrage et autonomie
+`0x54C` gardent leurs formules historiques à valider physiquement. Le profil
+expérimental retiré de la PR reste historique ; les nouveaux changements
+s'appuient sur les preuves véhicule citées.
 
 La [recherche des commandes Nissan et le tableau de couverture](NISSAN_DIAGNOSTIC_RESEARCH.fr.md)
 précisent les valeurs réellement vérifiables. Aucune lecture constructeur
@@ -33,9 +36,11 @@ autonomie n'ont actuellement pas de référence OBD interrogée.
 
 ## Utilisation
 
-1. Charger le firmware et le preset actif dans LittleFS ou avec CANBox Manager,
-   puis recharger le profil. Une OTA applicative seule ne remplace pas le JSON
-   déjà installé sur l'ESP32.
+1. Installer **d'abord le nouveau firmware correspondant**, puis transférer
+   `data/NissanJukeF15.json` corrigé dans LittleFS et l'activer avec
+   `CAN LOAD NissanJukeF15.json`. Une OTA applicative seule ne remplace pas
+   le JSON installé. Un ancien firmware peut interpréter les cibles inconnues
+   comme `STEERING` ; ne pas charger le nouveau JSON avant sa mise à jour.
 2. Ouvrir la sortie série USB et enregistrer les lignes sans ajouter de
    préfixe d'heure ou de couleur au fichier. Pour le moniteur PlatformIO :
    `.venv/bin/pio device monitor --filter direct`.

@@ -34,7 +34,16 @@
           "byteOrder": "BE",
           "dataType": "UINT16",
           "formula": "SCALE",
-          "params": [1, 7, 0]
+          "params": [1, 8, 0]
+        },
+        {
+          "target": "BRAKE_PEDAL",
+          "startByte": 7,
+          "byteCount": 1,
+          "byteOrder": "BE",
+          "dataType": "UINT8",
+          "formula": "BITMASK_EXTRACT",
+          "params": [1, 0]
         }
       ]
     },
@@ -43,7 +52,7 @@
       "fields": [
         {
           "target": "VEHICLE_SPEED",
-          "startByte": 0,
+          "startByte": 4,
           "byteCount": 2,
           "byteOrder": "BE",
           "dataType": "UINT16",
@@ -56,13 +65,13 @@
       "canId": "0x5C5",
       "fields": [
         {
-          "target": "FUEL_LEVEL",
+          "target": "HANDBRAKE",
           "startByte": 0,
           "byteCount": 1,
           "byteOrder": "BE",
           "dataType": "UINT8",
-          "formula": "MAP_RANGE",
-          "params": [255, 0, 0, 45]
+          "formula": "BITMASK_EXTRACT",
+          "params": [4, 2]
         },
         {
           "target": "ODOMETER",
@@ -112,6 +121,14 @@
           "dataType": "UINT8",
           "formula": "SCALE",
           "params": [1, 1, -40]
+        },
+        {
+          "target": "FUEL_COUNTER_RAW",
+          "startByte": 1,
+          "byteCount": 1,
+          "byteOrder": "LE",
+          "dataType": "UINT8",
+          "formula": "NONE"
         }
       ]
     },
@@ -221,27 +238,6 @@
           "dataType": "UINT16",
           "formula": "SCALE",
           "params": [100, 338, 0]
-        }
-      ]
-    },
-    {
-      "canId": "0x580",
-      "fields": [
-        {
-          "target": "FUEL_CONS_INST",
-          "startByte": 3,
-          "byteCount": 1,
-          "byteOrder": "BE",
-          "dataType": "UINT8",
-          "formula": "NONE"
-        },
-        {
-          "target": "FUEL_CONS_AVG",
-          "startByte": 4,
-          "byteCount": 1,
-          "byteOrder": "BE",
-          "dataType": "UINT8",
-          "formula": "NONE"
         }
       ]
     }

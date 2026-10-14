@@ -36,7 +36,7 @@ A vehicle preset is a JSON file that tells the ESP32 how to decode CAN frames fr
           "byteOrder": "BE",
           "dataType": "UINT16",
           "formula": "SCALE",
-          "params": [1, 7, 0]
+          "params": [1, 8, 0]
         }
       ]
     }
@@ -119,7 +119,7 @@ When a **different vehicle file** is loaded, NVS is reset to firmware defaults f
 
 These values are stored in NVS but are not currently used for post-processing
 in the CAN decoder or radio encoder. Set conversions in the formula `params`
-of individual frame fields (e.g., `"params": [1, 7, 0]` for RPM). The Juke preset
+of individual frame fields (e.g., `"params": [1, 8, 0]` for Juke RPM). The Juke preset
 leaves these `vehicleParams` values at `null`.
 
 The steering parameters (`steerScale`, `steerOffset`, `steerInvert`) have **no frame-level equivalent** — they are applied during radio output in `RadioSend.cpp` and must be set here or via `CFG SET`.
@@ -157,9 +157,35 @@ Variables that can be updated from CAN data:
 | `ODOMETER` | Total mileage | km |
 | `VOLTAGE` | Battery voltage | 0.1V |
 | `TEMPERATURE` | Temperature | °C |
+| `COOLANT_TEMP` | Engine coolant temperature | °C |
 | `DTE` | Distance to empty | km |
 | `FUEL_CONS_INST` | Instant consumption | 0.1 L/100km |
 | `FUEL_CONS_AVG` | Average consumption | 0.1 L/100km |
+| `FUEL_COUNTER_RAW` | Raw fuel-related byte, separate from consumption | No validated physical unit |
+
+`FUEL_LEVEL`, `FUEL_CONS_INST` and `FUEL_CONS_AVG` require a calibrated source
+in the specified unit. Their availability becomes true after a configured
+frame supplies a value; absent targets stay unavailable after profile load.
+The Juke preset has none of these three targets and sends no consumption
+UART packets. Mock mode retains synthetic values. `FUEL_COUNTER_RAW` is
+exposed separately as `FuelRaw` and must not be treated as L/h or L/100km.
+
+### Additional vehicle states (boolean)
+
+| Target | Description |
+| --- | --- |
+| `HANDBRAKE` | Juke `0x5C5 B0 bit2`; observed 1 = applied |
+| `BRAKE_PEDAL` | Juke `0x180 B7 bit0`; raw switch state, action/polarity to verify |
+
+These states and `FUEL_COUNTER_RAW` report `unknown` in `SYS DATA` before
+the first configured frame. Availability resets at profile load; it does not
+provide a freshness timeout or physical calibration.
+
+Missing or unknown targets are rejected without replacing the active
+profile. Install the matching new firmware **before** uploading a JSON with
+these new targets: older parsers may silently map them to `STEERING`.
+Application OTA does not update LittleFS; transfer the JSON separately and
+activate it with `CAN LOAD <filename>`.
 
 ### Door Status (boolean)
 
@@ -223,8 +249,8 @@ Linear conversion: `result = (value × mult ÷ div) + offset`
 **Examples:**
 
 ```text
-// Initial Juke RPM hypothesis: raw / 7
-"params": [1, 7, 0]
+// Corrected Juke RPM: raw / 8, corroborated by OBD
+"params": [1, 8, 0]
 
 // Speed: raw / 100
 "params": [1, 100, 0]
@@ -248,13 +274,14 @@ Map value from one range to another: `map(value, inMin, inMax, outMin, outMax)`
 **Example:**
 
 ```text
-// Initial Juke fuel hypothesis: raw 255 -> 0, raw 0 -> 45
+// Historical, contradicted Juke fuel hypothesis; do not use as a fuel gauge
 "params": [255, 0, 0, 45]
 ```
 
-This is the restored initial mapping, not a validated physical tank capacity.
-The proposed PR replacements and their experimental profile have been removed.
-Use [OBD reference capture](OBD_CALIBRATION.md) to collect reference measurements.
+This historical whole-byte Juke interpretation has been removed from the
+active preset: the byte contains parking-brake and other states. The example
+only illustrates formula syntax. Use [the current mapping evidence](JUKE_F15_CAN_MAPPING.md)
+and [OBD reference capture](OBD_CALIBRATION.md) for vehicle validation.
 
 ### BITMASK_EXTRACT
 
@@ -291,7 +318,7 @@ Extract specific bit(s): `result = (value & mask) >> shift`
 
 ## Complete Example
 
-Nissan Juke F15 - initial active RPM mapping from CAN ID 0x180. This
+Nissan Juke F15 - corrected RPM mapping from CAN ID 0x180. This
 synthetic example checks the formula, not physical calibration:
 
 ```
@@ -299,7 +326,7 @@ CAN Frame 0x180: [0x44, 0x7E, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
                   ^^^^  ^^^^
                   Bytes 0-1 = 0x447E = 17534 (raw)
 
-RPM = 17534 / 7 = 2504 RPM (integer division)
+RPM = 17534 / 8 = 2191 RPM (integer division)
 ```
 
 ```json
@@ -313,7 +340,7 @@ RPM = 17534 / 7 = 2504 RPM (integer division)
       "byteOrder": "BE",
       "dataType": "UINT16",
       "formula": "SCALE",
-      "params": [1, 7, 0]
+      "params": [1, 8, 0]
     }
   ]
 }

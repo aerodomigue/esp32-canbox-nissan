@@ -6,6 +6,8 @@
 > captures CAN/OBD récentes, les manœuvres du propriétaire et les définitions
 > Racelogic. Les limites de l'ancien enregistreur ne s'appliquent pas
 > automatiquement aux nouveaux fichiers.
+> Le retour au preset initial décrit ci-dessous est historique ; le guide
+> courant détaille les corrections désormais appliquées au preset du dépôt.
 
 L'analyse distingue les octets réellement présents, les hypothèses issues
 d'autres Nissan et les mesures qui restent à faire. **L'ancien export ne

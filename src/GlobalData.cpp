@@ -1,5 +1,7 @@
 #include "GlobalData.h"
 
+CanAuxData canAuxData;
+
 // =============================================================================
 // VEHICLE DATA STORAGE (memory allocation with safe defaults)
 // =============================================================================
@@ -16,7 +18,7 @@ uint8_t vehicleSpeed = 0;
 /** Door status bitmask - 0 = all doors closed */
 uint8_t currentDoors = 0;
 
-/** Fuel level in liters (default 0-45L for Juke F15) - 0 = empty */
+/** Fuel level in liters; consult canAuxData.fuelLevelValid before interpreting. */
 uint8_t fuelLevel = 0;
 
 /** Battery voltage - 0.0V until first CAN reading */
@@ -90,6 +92,7 @@ uint16_t elapsedTime = 0;
  * @brief Reset all vehicle data to default values
  */
 void resetVehicleData() {
+    canAuxData = {};
     // Vehicle data
     currentSteer = 0;
     engineRPM = 0;

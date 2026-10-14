@@ -10,19 +10,20 @@ as requested. OBD-II is the protocol name; `ODB` is the exact log prefix.
 already queued in the controller.
 
 OBD readings change neither the preset nor the decoded values sent to the
-radio. The proposed PR #10 mappings and their experimental profile have
-been removed; the robustness fixes remain active. The active preset matches
-PR head `495f346` exactly: RPM `/7`, speed bytes 0–1, fuel `[255,0,0,45]`,
-range `0x54C ×100/338`, and instantaneous consumption byte 3. Restoring these
-older mappings does not physically validate them; the capture is intended
-to check them.
+radio. The [14 October CAN/OBD capture and documented mapping](JUKE_F15_CAN_MAPPING.md)
+led to explicit corrections in the repository preset: RPM `0x180 B0–B1 /8`,
+speed `0x284 B4–B5 /100`, parking brake `0x5C5 B0 bit2`, brake switch
+`0x180 B7 bit0` and raw fuel-related counter `0x551 B1`. These are periodic
+CAN fields, not new OBD commands. Brake-switch polarity and the raw counter's
+physical interpretation remain to be checked.
 
-The [14 October CAN/OBD capture and documented mapping](JUKE_F15_CAN_MAPPING.md)
-now provide evidence: RPM `/8`, speed bytes 4–5 and coolant agree with the
-references; the preset's instantaneous consumption field is a cycling counter.
-These results have not yet been applied to the active JSON. The parking brake
-CAN bit is corroborated by the owner's sequence and a Juke definition,
-without a new OBD command.
+The whole-byte `0x5C5` fuel gauge and both `0x580` consumption mappings were
+removed. In the Juke profile, `FuelValid: 0` marks the compatibility
+`Fuel: 0 L` value as unavailable; `FuelConsValid: INST=0 AVG=0` prevents
+consumption UART packets. `FuelRaw` is not L/h or L/100 km. Steering,
+ambient temperature, odometer and `0x54C` range retain their legacy formulas
+and require physical validation. The withdrawn experimental PR profile
+remains historical; the new changes follow the cited vehicle evidence.
 
 The [Nissan command research and coverage table](NISSAN_DIAGNOSTIC_RESEARCH.md)
 explain which values can actually be checked. No additional manufacturer
@@ -32,9 +33,11 @@ remaining range currently have no queried OBD reference.
 
 ## Usage
 
-1. Load the firmware and the active preset into LittleFS or through CANBox
-   Manager, then reload the profile. An application-only OTA does not replace
-   the JSON already installed on the ESP32.
+1. Install the matching **new firmware first**, then transfer the corrected
+   `data/NissanJukeF15.json` into LittleFS and activate it with
+   `CAN LOAD NissanJukeF15.json`. An application-only OTA does not replace
+   the installed JSON. Old firmware can interpret unknown targets as
+   `STEERING`; do not load the new JSON before updating firmware.
 2. Open the USB serial output and save the lines without adding timestamps
    or color prefixes to the file. For the PlatformIO monitor, use
    `.venv/bin/pio device monitor --filter direct`.

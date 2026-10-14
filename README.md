@@ -32,7 +32,7 @@ The project started as a custom solution for the **Nissan Juke F15**, but has si
 
 - **Real-time data translation** from Nissan CAN to Toyota RAV4 protocol
 - **Steering wheel angle** for reverse camera guidelines
-- **Dashboard data**: RPM, speed, battery voltage, temperature, fuel level
+- **Dashboard data**: RPM, speed, battery voltage, temperature and vehicle states; fuel level depends on a validated vehicle mapping
 - **Door status** with automatic updates on change
 - **Safety systems**: Hardware watchdog, CAN error monitoring, timeout protection
 
@@ -40,26 +40,27 @@ The project started as a custom solution for the **Nissan Juke F15**, but has si
 
 | Feature | Status | Notes |
 | --- | --- | --- |
-| Engine RPM | Correction documented, not yet applied | OBD supports `/8`; the preset still uses `/7` |
-| Vehicle Speed | Correction documented, not yet applied | OBD supports `0x284` bytes 4–5 at low speed; the preset reads 0–1 |
-| Fuel Tank Level | Mapping contradicted | `0x5C5[0]` includes the parking brake state; it is not a direct fuel gauge |
+| Engine RPM | Corrected in the preset | `0x180` bytes 0–1 BE `/8`, corroborated by OBD |
+| Vehicle Speed | Corrected in the preset | `0x284` bytes 4–5 BE `/100`; OBD corroboration covers low speed |
+| Fuel Tank Level | Unavailable in the Juke preset | False `0x5C5[0]` gauge removed; `FuelValid: 0` distinguishes the compatibility value `0 L` from a measurement |
 | Battery Voltage | Consistent with OBD | Mean absolute difference 0.139 V; potentially different measurement points |
 | Steering / Dynamic Guidelines | Feature implemented | Angle units, zero and sign need validation on this variant |
 | Door Status | Feature implemented | Verify each door/bit correspondence with separate actions |
 | Indicators | ✅ Operation confirmed | Owner feedback after the dashboard state fix |
 | Lights | Feature implemented | Headlights, high beam, parking lights; no annotated sequence in the latest capture |
-| Handbrake | CAN bit identified, not integrated | `0x5C5[0] & 0x04`, corroborated by Juke source and owner maneuver |
+| Handbrake | Decoded in the preset | `0x5C5[0] & 0x04`, corroborated by Juke source and owner maneuver; available in `SYS DATA` |
+| Brake pedal | Raw switch bit decoded | `0x180[7] & 0x01`; action and polarity still need a separate vehicle check |
 | External Temperature | Calibration pending | `0x540[0]−40`; no independent reference in the log |
-| Instant Fuel Consumption | Current mapping contradicted | `0x580[3]` cycles; candidate fuel field `0x551[1]` needs characterization |
-| Average Fuel Consumption | Unit unverified | From CAN 0x580; CAN units require a vehicle reference |
+| Instant Fuel Consumption | Unavailable in the Juke preset | `0x580[3]` removed; `0x551[1]` exposed only as `FuelRaw`, without a physical unit |
+| Average Fuel Consumption | Unavailable in the Juke preset | Unvalidated `0x580[4]` removed; no consumption UART message without an available source |
 | Distance to Empty | Unit unverified | Initial CAN 0x54C mapping restored; dashboard reference needed |
 
 > **Note:** Documentation for the Raise/Toyota RAV4 protocol used by Android head units is scarce. Some features are still being reverse-engineered due to lack of official protocol specifications.
 
 See the **[Roadmap](ROADMAP.md)** for upcoming features.
 The [documented CAN mapping in EN/FR](docs/JUKE_F15_CAN_MAPPING.md) records
-CAN/OBD evidence, sources and limitations. This documentation update does
-not change the preset installed on the ESP32.
+CAN/OBD evidence, sources and limitations. The corrected repository preset
+must be uploaded separately to update the JSON installed on the ESP32.
 
 ---
 
@@ -301,24 +302,33 @@ Once flashed, connect the ESP32 to your Android head unit's USB port. All furthe
 - **Calibrate**: Set steering wheel offsets and tank capacity.
 - **OTA Updates**: Update future firmware versions over USB serial from the app using **`firmware.ota`**. The vehicle preset is uploaded separately.
 
+For the corrected Juke preset, install the matching **firmware first**, then
+transfer `data/NissanJukeF15.json` and activate it with `CAN LOAD NissanJukeF15.json`.
+Application OTA does **not** update LittleFS. Older firmware can interpret
+unknown targets such as `HANDBRAKE` as `STEERING`; do not load the new JSON
+on it. The new parser rejects unknown or missing targets and keeps the
+previous active profile.
+
 ---
 
 ## Supported Data
 
 | Data | CAN ID | Send Rate | Notes |
 | --- | --- | --- | --- |
-| Steering Angle | 0x002 | 200ms | For camera guidelines |
-| Engine RPM | 0x180 | 333ms | Initial bytes 0–1, big endian, raw / 7; calibration pending |
-| Vehicle Speed | 0x284 | 500ms | Initial bytes 0–1, big endian, raw / 100; calibration pending |
-| Fuel Level | 0x5C5 | — | Initial MAP_RANGE [255, 0, 0, 45]; mapping disputed |
+| Steering Angle | 0x002 | 200ms | Legacy bytes 1–2 BE signed; angle scale, zero and sign unvalidated |
+| Engine RPM | 0x180 | 333ms | Bytes 0–1, big endian, raw / 8; integer RPM |
+| Vehicle Speed | 0x284 | 500ms | Bytes 4–5, big endian, raw / 100; integer km/h |
+| Handbrake | 0x5C5 | On `SYS DATA` request | Byte 0 bit 2; `unknown` before the first configured frame |
+| Brake pedal | 0x180 | On `SYS DATA` request | Byte 7 bit 0; raw switch state, physical polarity pending |
+| Fuel raw counter | 0x551 | On `SYS DATA` request | Byte 1, 0–255; no validated physical unit or consumption conversion |
+| Fuel Level | — | — | No Juke source; compatibility `Fuel: 0 L` with `FuelValid: 0` |
 | Battery Voltage | 0x6F6 | — | Alternator output |
-| External Temperature | 0x540 | 5000ms | Ambient air temperature |
+| External Temperature | 0x540 | 5000ms | Legacy byte 0 − 40; physical reference pending |
 | Coolant Temperature | 0x551 | 5000ms | Sent in CMD 0x28 byte 0 as an undocumented, unverified hypothesis |
 | Door Status | 0x60D | 250ms | All doors + trunk (or on change) |
 | Distance to Empty | 0x54C | 5000ms | Initial bytes 6–7, big endian, raw * 100 / 338; calibration pending |
-| Instant Fuel Consumption | 0x580 | 1000ms | Initial byte 3, no mask; CAN unit unknown; UART expects 0.1 L/100km |
-| Average Fuel Consumption | 0x580 | 5000ms | CAN unit unknown; UART expects 0.1 L/100km |
-| Odometer | 0x5C5 | 10000ms | Total km (24-bit) |
+| Instant / Average Fuel Consumption | — | Not sent for Juke | UART `0x22` / `0x23` require an available calibrated source; mock mode retains synthetic output |
+| Odometer | 0x5C5 | 10000ms | Legacy bytes 1–3 BE (24-bit); units unvalidated |
 
 ---
 

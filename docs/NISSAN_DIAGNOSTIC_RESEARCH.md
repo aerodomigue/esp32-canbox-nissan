@@ -43,10 +43,13 @@ The two other existing reads are coolant temperature (`01 05`) and manifold
 absolute pressure (`01 0B`).
 Implementation: [ObdCalibration.cpp](../src/ObdCalibration.cpp).
 Received CAN frames are still captured raw, even without a decoded OBD
-reference. The current preset also has no parking brake field.
+reference. The current Juke preset decodes the parking-brake bit directly
+from periodic CAN; it does not query a manufacturer diagnostic command.
 
 The [new periodic-frame study](JUKE_F15_CAN_MAPPING.md) nevertheless identifies
-its CAN bit `0x5C5[0] & 0x04`, corroborated by the owner's maneuver.
+its CAN bit `0x5C5[0] & 0x04`, corroborated by the owner's maneuver and now
+exposed as `Handbrake` in `SYS DATA`. `Brake` uses the separate `0x180 B7 bit0`
+source definition; its physical action and polarity still need checking.
 A periodic CAN reading and a diagnostic command are different kinds of evidence.
 The recent captures query only four of the eight PIDs: `0C`, `0D`, `05` and `42`.
 MAF `10` and commanded equivalence ratio `44` are advertised by the ECU but

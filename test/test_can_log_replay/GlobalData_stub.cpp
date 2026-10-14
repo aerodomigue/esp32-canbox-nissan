@@ -1,3 +1,6 @@
+#include "CanAuxData.h"
+CanAuxData canAuxData;
+
 // Stub definitions for GlobalData globals used by CanConfigProcessor::writeToGlobalData()
 #include <stdint.h>
 #include "Arduino.h"

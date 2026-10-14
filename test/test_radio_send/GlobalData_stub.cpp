@@ -1,3 +1,6 @@
+#include "CanAuxData.h"
+CanAuxData canAuxData;
+
 // GlobalData stub for RadioSend test build
 #include <stdint.h>
 #include "Arduino.h"

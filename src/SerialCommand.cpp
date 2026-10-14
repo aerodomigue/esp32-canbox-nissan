@@ -1140,6 +1140,16 @@ static void handleSysCommand(const char* args) {
         Console.printf("Doors:    0x%02X\n", currentDoors);
         Console.printf("Lights:   H=%d P=%d HB=%d L=%d R=%d\n",
             headlightsOn, parkingLightsOn, highBeamOn, indicatorLeft, indicatorRight);
+        // Additive dashboard fields; RX and ODB streaming remain unchanged.
+        Console.printf("FuelValid: %d\n", canAuxData.fuelLevelValid);
+        Console.printf("FuelConsValid: INST=%d AVG=%d\n",
+            canAuxData.fuelConsumptionInstValid, canAuxData.fuelConsumptionAvgValid);
+        if (canAuxData.handbrakeValid) Console.printf("Handbrake: %d\n", canAuxData.handbrake);
+        else Console.println("Handbrake: unknown");
+        if (canAuxData.brakePedalValid) Console.printf("Brake: %d\n", canAuxData.brakePedal);
+        else Console.println("Brake: unknown");
+        if (canAuxData.fuelCounterValid) Console.printf("FuelRaw: %u\n", static_cast<unsigned>(canAuxData.fuelCounterRaw));
+        else Console.println("FuelRaw: unknown");
         Console.println("=========================");
     }
     else if (strcmp(subCmd, "REBOOT") == 0) {

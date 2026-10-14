@@ -14,6 +14,7 @@
 #define GLOBAL_DATA_H
 
 #include <Arduino.h>
+#include "CanAuxData.h"
 
 // =============================================================================
 // SHARED VEHICLE DATA (extern declarations)
@@ -31,7 +32,7 @@ extern uint8_t vehicleSpeed;
 /** Door status bitmask (see CanCapture.cpp for bit mapping) */
 extern uint8_t currentDoors;
 
-/** Fuel level in liters, scaled to tank capacity (default 0-45L for Juke F15) */
+/** Fuel level in liters; only meaningful when canAuxData.fuelLevelValid is true. */
 extern uint8_t fuelLevel;
 
 /** Battery/alternator voltage in volts (typically 12.0-14.5V) */
@@ -43,7 +44,7 @@ extern int16_t dteValue;
 /** Average fuel consumption (L/100km) - reserved for future use */
 extern float fuelConsoMoy;
 
-/** External/ambient temperature in °C (from BCM sensor 0x551) */
+/** External/ambient temperature in °C (legacy Juke candidate: 0x540). */
 extern int8_t tempExt;
 
 /** Engine coolant temperature in °C (from 0x551) */
@@ -78,7 +79,7 @@ extern unsigned long lastLeftIndicatorTime;
 extern unsigned long lastRightIndicatorTime;
 
 // =============================================================================
-// FUEL CONSUMPTION (from CAN 0x580)
+// FUEL CONSUMPTION (only populated by profiles with a calibrated source)
 // =============================================================================
 
 /** Instantaneous fuel consumption in 0.1 L/100km units (e.g., 75 = 7.5 L/100km) */

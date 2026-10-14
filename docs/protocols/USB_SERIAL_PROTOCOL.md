@@ -64,7 +64,8 @@ Match raw CAN with `RX 0x`, not just `RX`: controller error messages such as
 before accumulating dashboard fields. `SYS DATA` is requested by the client;
 the firmware does not periodically publish that block itself. Its fields
 start with `Config:`, `Mode:`, `RPM:`, `Speed:`, `Steering:`, `Fuel:`,
-`Battery:`, `DTE:`, `Temp:`, `Doors:` and `Lights:`. Other commands have their
+`Battery:`, `DTE:`, `Temp:`, `Doors:`, `Lights:`, `FuelValid:`, `FuelConsValid:`,
+`Handbrake:`, `Brake:` and `FuelRaw:`. Other commands have their
 own headers and footers; a line of `=` is not a universal response terminator.
 
 `ODB TX` covers OBD request attempts only. It is not a capture of every CAN
@@ -168,6 +169,14 @@ while the stored factory default above remains 283.
 ### CAN - CAN Configuration Files (LittleFS Storage)
 
 Manages vehicle CAN configuration files stored on LittleFS filesystem.
+
+The corrected Juke JSON adds `HANDBRAKE`, `BRAKE_PEDAL` and
+`FUEL_COUNTER_RAW` targets. Install the matching new firmware **before**
+uploading this JSON: an older parser can treat an unknown target as
+`STEERING`. The new parser rejects missing or unknown targets and leaves
+the previously active profile in place. Application OTA does not update
+LittleFS; transfer `data/NissanJukeF15.json` separately, then activate it
+with `CAN LOAD NissanJukeF15.json`.
 
 #### CAN STATUS
 Display current CAN configuration status.
@@ -546,14 +555,38 @@ Mode:     REAL (Nissan Juke F15)
 RPM:      2500
 Speed:    60 km/h
 Steering: -150
-Fuel:     30 L
+Fuel:     0 L
 Battery:  14.1 V
 DTE:      350 km
 Temp:     28 C
 Doors:    0x00
 Lights:   H=1 P=0 HB=0 L=0 R=0
+FuelValid: 0
+FuelConsValid: INST=0 AVG=0
+Handbrake: 1
+Brake: 0
+FuelRaw: 147
 =========================
 ```
+
+This is a synthetic response after the configured Juke frames have been
+received. Existing fields retain their format; the five final lines are
+additional fields. A receiver can ignore fields it does not recognize.
+
+| Field | Meaning |
+| --- | --- |
+| `FuelValid: 0\|1` | Whether a configured fuel-level source has supplied a value; `0` makes `Fuel: 0 L` unavailable, not a measured empty tank |
+| `FuelConsValid: INST=0\|1 AVG=0\|1` | Availability of sources in 0.1 L/100 km for UART `0x22` / `0x23`; both remain 0 in the Juke preset |
+| `Handbrake: 0\|1\|unknown` | `0x5C5 B0 bit2`; observed 1 = applied |
+| `Brake: 0\|1\|unknown` | Raw switch bit `0x180 B7 bit0`; physical action and polarity still to verify |
+| `FuelRaw: 0..255\|unknown` | Unconverted `0x551 B1`; no validated physical unit or consumption conversion |
+
+Availability resets when a profile is loaded and becomes true when the
+corresponding configured frame is processed. It is not a physical validation
+or a freshness timeout. The three new state fields report `unknown` before
+their first configured frame. Mock mode provides synthetic fuel and
+consumption sources; it sends no OBD queries. These additions do not change
+`RX`, `ODB`, acknowledgment or dashboard block delimiters.
 
 #### SYS REBOOT
 Restart the device.

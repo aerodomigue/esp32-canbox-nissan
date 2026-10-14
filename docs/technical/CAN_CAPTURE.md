@@ -30,30 +30,38 @@ The actual decoding logic (byte extraction, formulas, target mapping) is defined
 
 ## Decoded CAN Frames (Nissan Juke F15)
 
-The following table describes the initial PR-head mappings restored in the default `NissanJukeF15.json`. Physical calibration remains unverified. The proposed replacements and their experimental profile have been removed.
+The following tables describe the corrected default `NissanJukeF15.json`.
+RPM and speed changes follow the [captured CAN/OBD evidence](../JUKE_F15_CAN_MAPPING.md),
+whose speed range remains limited. Steering, DTE, ambient temperature and
+odometer retain their unvalidated legacy interpretations.
 
 ### 1. Steering & Dynamics
 
 | CAN ID | Signal | Bytes | Formula | Unit | Notes |
 | --- | --- | --- | --- | --- | --- |
-| **0x002** | Steering Angle | [1-2] | NONE (raw INT16) | 0.1° | Signed, Big Endian. Center offset applied by ConfigManager |
-| **0x180** | Engine RPM | [0-1] | SCALE [1, 7, 0] | RPM | Initial `raw / 7` hypothesis |
-| **0x284** | Vehicle Speed | [0-1] | SCALE [1, 100, 0] | km/h | Initial offset, to compare with OBD |
+| **0x002** | Steering Angle | [1-2] | NONE (raw INT16) | Legacy angle assumption | Signed, Big Endian; scale, center and sign still to validate |
+| **0x180** | Engine RPM | [0-1] | SCALE [1, 8, 0] | RPM | Integer division; corroborated by OBD |
+| **0x180** | Brake pedal switch | [7] bit0 | BITMASK_EXTRACT [1, 0] | Raw boolean | Separate from parking brake; physical polarity needs checking |
+| **0x284** | Vehicle Speed | [4-5] | SCALE [1, 100, 0] | km/h | Integer division; corroborated at low speed |
 
 ### 2. Instrument Cluster (CAN ID 0x5C5)
 
 | Byte | Signal | Formula | Notes |
 | --- | --- | --- | --- |
-| **[0]** | Fuel Level | MAP_RANGE [255, 0, 0, 45] | Initial mapping hypothesis; byte may contain status flags |
-| **[1-3]** | Odometer | NONE (UINT24) | Total km (24-bit Big Endian) |
+| **[0] bit2** | Handbrake | BITMASK_EXTRACT [4, 2] | Observed 1 = applied; exposed in `SYS DATA` |
+| **[1-3]** | Odometer | NONE (UINT24) | Legacy 24-bit Big Endian interpretation; unit unvalidated |
+
+Whole-byte fuel decoding has been removed. `fuelLevel` remains zero for
+compatibility while `canAuxData.fuelLevelValid` is false; this is an unavailable
+measurement, not an empty tank.
 
 ### 3. Power Management
 
 | CAN ID | Signal | Bytes | Formula | Unit | Notes |
 | --- | --- | --- | --- | --- | --- |
 | **0x6F6** | Battery Voltage | [0] | NONE (UINT8) | 0.1V | Raw value in decivolts (e.g., 141 = 14.1V). Converted to float by `writeToGlobalData()` |
-| **0x540** | External Temp | [0] | SCALE [1, 1, -40] | °C | Ambient temperature |
-| **0x551** | Coolant Temp | [0] | SCALE [1, 1, -40] | °C | Separate from ambient temperature |
+| **0x540** | External Temp | [0] | SCALE [1, 1, -40] | °C | Legacy ambient candidate; independent reference pending |
+| **0x551** | Coolant Temp | [0] | SCALE [1, 1, -40] | °C | Corroborated by OBD over 61–67 °C |
 
 ### 4. Body Control Module (CAN ID 0x60D)
 
@@ -96,12 +104,15 @@ Bytes [0-2] form a **24-bit status word** (Big Endian BITMASK). Individual bits 
 | --- | --- | --- | --- |
 | **[6-7]** | Distance to Empty | SCALE [100, 338, 0] | Initial `raw * 100 / 338` hypothesis; 0x2DE replacement rejected |
 
-### 6. Fuel Consumption (CAN ID 0x580)
+### 6. Raw fuel-related counter (CAN ID 0x551)
 
 | Byte | Signal | Formula | Notes |
 | --- | --- | --- | --- |
-| **[3]** | Instant. Consumption | NONE (UINT8) | Initial byte; observed counter pattern, CAN units unverified |
-| **[4]** | Average Consumption | NONE (UINT8) | CAN units unverified; UART expects 0.1 L/100km |
+| **[1]** | `FUEL_COUNTER_RAW` | NONE (UINT8) | Raw 0–255, exposed as `FuelRaw`; no validated physical unit or time/cycle basis |
+
+The former `0x580` instantaneous and average-consumption fields are absent
+from the Juke preset. UART `0x22` / `0x23` are suppressed without available
+consumption sources. Mock output retains its synthetic sources.
 
 ---
 
@@ -192,10 +203,10 @@ logged separately and never overwrite decoded vehicle data or the preset.
      0x551
      0x60D            Output variables:
      0x6F6            currentSteer, engineRPM, vehicleSpeed,
-     0x54C            fuelLevel, currentOdo, voltBat, tempExt,
-     0x580            currentDoors, headlightsOn, highBeamOn,
+     0x54C            currentOdo, voltBat, tempExt,
+                      currentDoors, headlightsOn, highBeamOn,
                       parkingLightsOn, dteValue,
-                      fuelConsumptionInst, fuelConsumptionAvg, coolantTemp,
+                      coolantTemp, canAuxData (states/raw counter/availability),
                       lastLeftIndicatorTime, lastRightIndicatorTime
 ```
 

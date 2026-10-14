@@ -1,3 +1,4 @@
+#include "CanAuxData.h"
 #pragma once
 #include <stdint.h>
 

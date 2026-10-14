@@ -4,25 +4,66 @@
 
 Knowledge as of **14 October 2026**. Owner's vehicle: Juke F15 phase 1,
 MR16DDT engine, manual transmission. The logs do not identify the market,
-exact ECU versions or JSON actually loaded into LittleFS. “Current preset”
-means [`data/NissanJukeF15.json`](../data/NissanJukeF15.json) at revision
-`cd02abf`; its hash is included in the results.
+exact ECU versions or JSON actually loaded into LittleFS. The **baseline
+preset assessed in the evidence** is `data/NissanJukeF15.json` at revision
+`cd02abf`; its hash is included in the results. The published JSON/CSV
+statistics remain comparisons against that historical snapshot.
 
-This study extends the mapping documentation. It does not change the preset
-or firmware. Proposals are assessed against the bytes and references
-available, independently of their inclusion in an earlier PR.
+## Application in the current firmware and preset
 
-## Results
+The repository's [Juke preset](../data/NissanJukeF15.json) now applies the
+corroborated corrections and keeps uncalibrated raw data separate:
+
+| Target | CAN field / conversion | Scope and limitation |
+| --- | --- | --- |
+| `ENGINE_RPM` | `0x180 B0–B1 BE /8` | Integer rpm; supported by the OBD comparisons below |
+| `VEHICLE_SPEED` | `0x284 B4–B5 BE /100` | Integer km/h; corroborated over the captured low-speed range |
+| `HANDBRAKE` | `0x5C5 B0 bit2` | `SYS DATA` → `Handbrake`; observed 1 = applied |
+| `BRAKE_PEDAL` | `0x180 B7 bit0` | `SYS DATA` → `Brake`; source-defined switch bit, action/polarity still to verify |
+| `FUEL_COUNTER_RAW` | `0x551 B1`, unchanged 0–255 | `SYS DATA` → `FuelRaw`; no validated physical unit or time/cycle basis |
+
+The false fuel gauge from the whole `0x5C5 B0` byte and both `0x580`
+consumption fields have been removed. `Fuel: 0 L` remains for compatibility,
+with `FuelValid: 0`: it is **unavailable**, not an empty-tank measurement.
+`FuelConsValid: INST=0 AVG=0` means the Juke profile sends neither UART
+`0x22` nor `0x23`. Mock mode retains synthetic consumption output; a custom
+profile can supply an independently calibrated source in 0.1 L/100 km.
+
+`Handbrake`, `Brake` and `FuelRaw` are `unknown` until their configured CAN
+frame is received. Availability resets when a profile is loaded; it indicates
+reception, not physical calibration or a freshness timeout. Existing `RX`
+and `ODB` records, OBD polling, indicator handling and UART packet shapes
+remain unchanged. Steering, DTE, ambient temperature and odometer retain
+their legacy mappings and the limitations documented below.
+
+The [applied-preset replay](vehicle/nissan-juke-f15/evidence/20261014-210614-applied-preset.json)
+uses production integer divisions on the same capture: mean absolute error
+**7.389 rpm** across 36 pairs, **0.143 km/h** across 35 pairs and
+**0.029 °C** across 35 coolant pairs. These differ from the floating-point
+candidate statistics below. Replaying an existing low-speed capture does not
+establish high-speed/high-rpm calibration or a new hardware measurement.
+
+Install the matching **new firmware before the JSON**. Old parsers can map
+an unknown target to `STEERING`; the new parser rejects unknown or missing
+targets while preserving the active profile. Application-only OTA does not
+update LittleFS: transfer the JSON separately, then use
+`CAN LOAD NissanJukeF15.json`. See [installation](../README.md#installation--setup)
+and the [serial protocol](protocols/USB_SERIAL_PROTOCOL.md#sys-data).
+
+The following study records the evidence that led to these changes;
+proposals are assessed independently of their inclusion in an earlier PR.
+
+## Results against the historical baseline
 
 - Engine speed from `0x180`, bytes 0–1 BE divided by **8**, is strongly
-  supported by 36 OBD references; the preset divisor **7** is contradicted.
+  supported by 36 OBD references; the baseline preset divisor **7** is contradicted.
 - Vehicle speed from `0x284`, bytes **4–5** BE divided by 100, agrees well
-  with OBD over the captured range, **0–16 km/h**. The preset's bytes 0–1
-  do not directly represent this speed with its current factor.
+  with OBD over the captured range, **0–16 km/h**. The baseline preset's bytes 0–1
+  do not directly represent this speed with its old factor.
 - Engine coolant temperature `0x551[0]−40` agrees with OBD over **61–67 °C**.
 - The parking brake is strongly corroborated in **`0x5C5[0] & 0x04`**:
   a Juke-specific source, two transitions and the owner's account agree.
-- `0x580[3]`, used as instantaneous fuel consumption, follows an exact
+- `0x580[3]`, previously used as instantaneous fuel consumption, follows an exact
   cyclic counter; it does not provide a usable consumption reading.
 - A Juke-specific Racelogic definition is now available with precise
   fields. Its 2011–2018 coverage does not guarantee every engine,
@@ -97,16 +138,16 @@ capture, not universal validation. “Candidate” still requires an independent
 measurement. “Contradicted” concerns the preset interpretation, not whether
 the signal exists in the vehicle.
 
-| Signal | Field / formula assessed | Evidence and status | Difference from current preset |
+| Signal | Field / formula assessed | Evidence and status | Difference from baseline preset (`cd02abf`) |
 | --- | --- | --- | --- |
 | Engine speed | `0x180 B0–B1 BE /8`; copy `0x1F9 B2–B3 /8` | **Corroborated**: 36 references within 5 ms, mean absolute error 7.55 rpm, maximum 28.125; OBD 612.5–1,762.5 | `/7` gives a mean error of 131.22 rpm |
 | Vehicle speed | `0x284 B4–B5 BE /100` | **Corroborated over a limited range**: 35 references within 10 ms; mean absolute error 0.211 km/h, maximum 1.53 | Preset reads B0–B1; example 32 versus 16 km/h OBD |
 | Engine coolant temperature | `0x551 B0−40`, °C | **Corroborated**: 34/35 equal, one difference of 1 °C, within 51 ms | Current formula agrees |
 | Voltage | `0x6F6 B0 /10`, V | **Consistent**: mean absolute difference 0.139 V, maximum 0.44 V against ECU voltage | Keep the measurement points distinct; not battery calibration |
-| Parking brake | `0x5C5 B0 bit2` | **Strongly corroborated**: 1→0→1, owner's account and Juke Racelogic definition | No parking-brake field; this byte currently supplies fuel level |
+| Parking brake | `0x5C5 B0 bit2` | **Strongly corroborated**: 1→0→1, owner's account and Juke Racelogic definition | Baseline has no parking-brake field and uses this byte for fuel level |
 | Fuel level | Whole byte `0x5C5 B0` | **Contradicted as a direct fuel gauge**: 0x44→0x40→0x44 with the parking brake | Do not interpret combined states as litres; actual gauge unidentified |
-| Instantaneous fuel consumption | `0x580 B3` | **Contradicted**: 701 values, 700 exact transitions 0→2→4→6→0 | Current field behaves as a counter |
-| Other fuel-related data | Candidate `0x551 B1`, Racelogic channel in mm³ | **Needs characterisation**: time/cycle basis, possible accumulation and MR16DDT scale unresolved | No validated consumption in L/h or L/100 km |
+| Instantaneous fuel consumption | `0x580 B3` | **Contradicted**: 701 values, 700 exact transitions 0→2→4→6→0 | Baseline field behaves as a counter |
+| Other fuel-related data | Candidate `0x551 B1`, Racelogic channel in mm³, factor 1, offset 0 | **Needs characterisation**: time/cycle basis, possible accumulation and physical interpretation on MR16DDT unresolved | No validated consumption in L/h or L/100 km |
 | Average fuel consumption | `0x580 B4` | **Unvalidated**: 109→110→111; no synchronised cluster reference | Do not automatically interpret these as 10.9–11.1 L/100 km |
 | Distance to empty | `0x54C B6–B7 ×100/338`; alternative `0x2DE B6–B7 /10` | **Unvalidated**: preset formula constant at 305; alternative contains 824 `0xFFFF` values, then raw 2,707→2,687→2,684 | `0xFFFF` may be a sentinel; do not display 6,553.5 km. Expected unit bit stays clear |
 | Steering wheel | Preset `0x002 B1–B2 I16BE`; candidate `B0–B1 I16LE` | **Candidate**: known steering manoeuvre, but no calibrated zero, measured angle or direction | Field continuity does not establish degrees; rotational speed and angle are distinct |
@@ -151,9 +192,12 @@ The REF provides precise fields absent from the PDF alone. It corroborates
 speed, coolant temperature and the parking-brake bit. Its engine-speed
 definition only uses `0x180 B0×32`: the high-byte contribution to
 `U16BE(B0,B1)/8`, quantised in 32 rpm steps. This approximation does not
-replace the two bytes checked against OBD. Its fuel channel identifies
-`0x551 B1`; the observed counter behaviour validates neither the physical
-factor nor instantaneous consumption.
+replace the two bytes checked against OBD. Its `Fuel_Consumption` channel
+specifies `0x551`, Intel start bit 8, length 8, unsigned (`UINT8`),
+**factor 1, offset 0**, unit **mm³**: numerically the unmodified `B1` byte.
+The coefficient is supplied. What remains unresolved is its temporal/cycle
+meaning, possible accumulation and correspondence to fuel quantity on this
+MR16DDT; observed counter behaviour does not validate instantaneous consumption.
 
 The [RLVBCAN01 manual](https://www.racelogic.co.uk/_downloads/vbox/Manuals/Input_Modules/RLVBCAN01_Manual.pdf),
 pages 10–11, explains the numbering: VBOX Motorola bits 63–56 belong to B0
@@ -222,9 +266,9 @@ Candidate `0x551 B1` has 701 samples. Its 700 differences modulo 256 are
 accumulated units**, with one `255→0` rollover between lines 43,094 and
 43,231. This behaviour supports investigating an accumulated counter,
 not directly displaying the byte as instantaneous consumption. The
-physical unit per increment, possible resets and relationship to injection
-still require calibration; the supplier's mm³ label alone does not resolve
-them.
+REF defines a factor of 1 and offset of 0 in mm³; the counter's time/cycle
+basis, possible resets and relationship to injection on this MR16DDT still
+require verification. The supplier's unit label does not resolve them.
 
 ECU `0x7E8` advertises `01 10` (MAF), `01 44` (commanded equivalence
 ratio), `01 03`, `01 04`, `01 06`, `01 07` and `01 11`. The current eight
@@ -247,11 +291,14 @@ preserve the IDs, DLCs and bytes of the three captures: **1,013**, **165**
 and **92,754** frames respectively, with unchanged payloads. The 283
 published matches and the JSON binary transitions were checked against
 the original raw lines. These checks validate the tools and documentary
-evidence; this study performs no new hardware test or firmware change.
+evidence. This historical analysis stage performed no new hardware test or
+firmware change; the later implementation is described in the application
+section above, with the applied-preset replay kept separately.
 
 ## Reproduction and next captures
 
-Using the source file with the matching hash:
+Using the source file with the matching hash and the current repository
+preset produces a **new comparison**, not the published baseline results:
 
 ```bash
 python3 -B tools/analyze_can_log.py /path/to/canlog_20261014_210614_663_762622981087673198.txt \
@@ -270,7 +317,7 @@ and are not simultaneous.
 To resolve remaining fields: separate, timestamped parking-brake, door,
 light and indicator actions; centred steering followed by known angles
 and directions; cluster readings for fuel level, odometer, range and units;
-consumption parameter capture with an independent reference. Estimated
+consumption parameter capture with an independent reference, and a separate
+brake-pedal action to verify `0x180 B7 bit0`. Estimated
 manoeuvre distances do not replace a measurement. Additional OBD readings
-and preset changes need implementation and validation separate from this
-documentation review.
+and further preset changes still require their own implementation and validation.

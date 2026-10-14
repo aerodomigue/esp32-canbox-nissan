@@ -176,6 +176,9 @@ void MockDataGenerator::writeToGlobalData() {
     dteValue = (int16_t)_currentValues[static_cast<int>(OutputField::DTE)];
     fuelConsumptionInst = (uint16_t)_currentValues[static_cast<int>(OutputField::FUEL_CONS_INST)];
     fuelConsumptionAvg = (uint16_t)_currentValues[static_cast<int>(OutputField::FUEL_CONS_AVG)];
+    canAuxData.fuelLevelValid = true;
+    canAuxData.fuelConsumptionInstValid = true;
+    canAuxData.fuelConsumptionAvgValid = true;
 
     // === Door Bitmask ===
     // Build Toyota RAV4 format door bitmask from individual flags

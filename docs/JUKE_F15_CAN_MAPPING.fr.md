@@ -5,25 +5,70 @@
 État des connaissances au **14 octobre 2026**. Véhicule du propriétaire :
 Juke F15 phase 1, moteur MR16DDT, boîte manuelle. Le marché, la référence
 exacte des calculateurs et le JSON effectivement chargé dans LittleFS ne
-sont pas identifiés par les logs. Le « preset actuel » désigne ici
-[`data/NissanJukeF15.json`](../data/NissanJukeF15.json), à la révision
-`cd02abf`, dont l'empreinte figure dans les résultats.
+sont pas identifiés par les logs. Le **preset de référence évalué dans les
+preuves** est `data/NissanJukeF15.json` à la révision `cd02abf`, dont
+l'empreinte figure dans les résultats. Les statistiques JSON/CSV publiées
+restent des comparaisons avec cet état historique.
 
-Cette étude complète le mapping documentaire. Elle ne modifie pas le preset
-ni le firmware. Les propositions sont évaluées sur les octets et les
-références disponibles, indépendamment de leur présence dans une ancienne PR.
+## Application dans le firmware et le preset actuels
 
-## Résultat
+Le [preset Juke du dépôt](../data/NissanJukeF15.json) applique désormais les
+corrections corroborées et sépare les données brutes non calibrées :
+
+| Cible | Champ CAN / conversion | Portée et limite |
+| --- | --- | --- |
+| `ENGINE_RPM` | `0x180 B0–B1 BE /8` | Tr/min entiers ; étayé par les rapprochements OBD ci-dessous |
+| `VEHICLE_SPEED` | `0x284 B4–B5 BE /100` | Km/h entiers ; corroboré sur la plage de faible vitesse capturée |
+| `HANDBRAKE` | `0x5C5 B0 bit2` | `SYS DATA` → `Handbrake` ; état observé 1 = serré |
+| `BRAKE_PEDAL` | `0x180 B7 bit0` | `SYS DATA` → `Brake` ; bit de contact défini par la source, geste/polarité à vérifier |
+| `FUEL_COUNTER_RAW` | `0x551 B1`, inchangé 0–255 | `SYS DATA` → `FuelRaw` ; aucune unité physique ni base temps/cycle validée |
+
+La fausse jauge issue de l'octet entier `0x5C5 B0` et les deux champs de
+consommation `0x580` ont été retirés. `Fuel: 0 L` reste par compatibilité,
+avec `FuelValid: 0` : la mesure est **indisponible**, pas un réservoir vide.
+`FuelConsValid: INST=0 AVG=0` signifie que le profil Juke n'envoie ni UART
+`0x22` ni `0x23`. Le mode mock conserve ses consommations synthétiques ; un
+profil personnalisé peut fournir une source calibrée indépendamment en
+0,1 L/100 km.
+
+`Handbrake`, `Brake` et `FuelRaw` valent `unknown` avant réception de leur
+trame CAN configurée. La disponibilité est réinitialisée au chargement d'un
+profil ; elle indique une réception, pas une calibration physique ni un
+timeout de fraîcheur. Les lignes `RX` et `ODB`, le polling OBD, le traitement
+des clignotants et le format des paquets UART restent inchangés. Direction,
+autonomie, température extérieure et kilométrage gardent leurs mappings
+historiques et les limites documentées ci-dessous.
+
+Le [rejeu du preset appliqué](vehicle/nissan-juke-f15/evidence/20261014-210614-applied-preset.json)
+utilise les divisions entières de production sur la même capture : erreur
+absolue moyenne **7,389 tr/min** sur 36 paires, **0,143 km/h** sur 35 paires
+et **0,029 °C** sur 35 paires de température moteur. Ces valeurs diffèrent
+des statistiques des candidats en virgule flottante ci-dessous. Le rejeu
+d'une capture à faible vitesse n'établit ni une calibration à vitesse/régime
+élevés ni une nouvelle mesure matérielle.
+
+Installer le **nouveau firmware correspondant avant le JSON**. Les anciens
+parseurs peuvent convertir une cible inconnue en `STEERING` ; le nouveau
+parseur rejette les cibles inconnues ou absentes en conservant le profil
+actif. L'OTA applicative seule ne met pas LittleFS à jour : transférer le
+JSON séparément, puis envoyer `CAN LOAD NissanJukeF15.json`. Voir
+l'[installation](../README.fr.md#installation-et-configuration) et le
+[protocole série](protocols/USB_SERIAL_PROTOCOL.md#sys-data).
+
+L'étude qui suit conserve les preuves à l'origine de ces changements ; les
+propositions sont évaluées indépendamment de leur présence dans une ancienne PR.
+
+## Résultat face au preset historique
 
 - Le régime `0x180`, octets 0–1 BE divisés par **8**, est fortement étayé par
-  36 références OBD ; le diviseur **7** du preset est contredit.
+  36 références OBD ; le diviseur **7** de l'ancien preset est contredit.
 - La vitesse `0x284`, octets **4–5** BE divisés par 100, concorde bien avec
-  l'OBD sur la plage capturée, **0–16 km/h**. Les octets 0–1 du preset ne
-  représentent pas directement cette vitesse avec son facteur actuel.
+  l'OBD sur la plage capturée, **0–16 km/h**. Les octets 0–1 de l'ancien preset
+  ne représentent pas directement cette vitesse avec son ancien facteur.
 - La température moteur `0x551[0]−40` concorde avec l'OBD sur **61–67 °C**.
 - Le frein à main est fortement corroboré dans **`0x5C5[0] & 0x04`** :
   source Juke spécifique, deux transitions et récit du propriétaire.
-- `0x580[3]`, utilisé comme consommation instantanée, suit exactement un
+- `0x580[3]`, auparavant utilisé comme consommation instantanée, suit exactement un
   compteur cyclique ; il ne fournit pas une consommation exploitable.
 - Une définition Racelogic spécifique au Juke est maintenant disponible,
   avec des champs précis. Sa couverture 2011–2018 ne garantit pas chaque
@@ -98,16 +143,16 @@ dans cette capture, et non validation universelle. « Candidat » exige encore
 une mesure indépendante. « Contredit » concerne l'interprétation du preset,
 pas l'existence du signal dans le véhicule.
 
-| Signal | Champ / formule étudiée | Preuve et état | Écart avec le preset actuel |
+| Signal | Champ / formule étudiée | Preuve et état | Écart avec le preset historique (`cd02abf`) |
 | --- | --- | --- | --- |
 | Régime | `0x180 B0–B1 BE /8` ; copie `0x1F9 B2–B3 /8` | **Corroboré** : 36 références à ≤5 ms, erreur absolue moyenne 7,55 tr/min, maximum 28,125 ; OBD 612,5–1 762,5 | `/7` donne une erreur moyenne de 131,22 tr/min |
 | Vitesse | `0x284 B4–B5 BE /100` | **Corroboré sur plage limitée** : 35 références à ≤10 ms ; erreur absolue moyenne 0,211 km/h, maximum 1,53 | Le preset lit B0–B1 ; exemple 32 contre 16 km/h OBD |
 | Température moteur | `0x551 B0−40`, °C | **Corroboré** : 34/35 égales, un écart de 1 °C, à ≤51 ms | Formule actuelle concordante |
 | Tension | `0x6F6 B0 /10`, V | **Cohérent** : écart absolu moyen 0,139 V, maximum 0,44 V face à la tension ECU | Garder la distinction entre points de mesure ; pas une calibration de batterie |
-| Frein à main | `0x5C5 B0 bit2` | **Fortement corroboré** : 1→0→1, scénario utilisateur et définition Racelogic Juke | Aucun champ frein à main ; cet octet sert actuellement au niveau de carburant |
+| Frein à main | `0x5C5 B0 bit2` | **Fortement corroboré** : 1→0→1, scénario utilisateur et définition Racelogic Juke | Aucun champ frein à main dans l’ancien preset ; cet octet y sert au niveau de carburant |
 | Niveau de carburant | `0x5C5 B0` pris en entier | **Contredit comme jauge directe** : 0x44→0x40→0x44 avec le frein à main | Ne pas traiter les états combinés comme des litres ; vraie jauge non identifiée |
-| Consommation instantanée | `0x580 B3` | **Contredit** : 701 valeurs, 700 transitions exactes 0→2→4→6→0 | Le champ actuel est de type compteur |
-| Autre donnée carburant | Candidat `0x551 B1`, canal Racelogic en mm³ | **À caractériser** : unité temporelle/cycle, compte éventuel et facteur sur MR16DDT à établir | Aucune consommation L/h ou L/100 km validée |
+| Consommation instantanée | `0x580 B3` | **Contredit** : 701 valeurs, 700 transitions exactes 0→2→4→6→0 | Le champ de l’ancien preset est de type compteur |
+| Autre donnée carburant | Candidat `0x551 B1`, canal Racelogic en mm³, facteur 1, offset 0 | **À caractériser** : base temps/cycle, compte éventuel et interprétation physique sur MR16DDT à établir | Aucune consommation L/h ou L/100 km validée |
 | Consommation moyenne | `0x580 B4` | **Non validé** : 109→110→111 ; aucune valeur du combiné synchronisée | Ne pas interpréter automatiquement ces nombres comme 10,9–11,1 L/100 km |
 | Autonomie | `0x54C B6–B7 ×100/338` ; alternative `0x2DE B6–B7 /10` | **Non validé** : formule du preset constante à 305 ; alternative comprenant 824 valeurs `0xFFFF`, puis 2 707→2 687→2 684 bruts | `0xFFFF` peut être une sentinelle ; ne pas afficher 6 553,5 km. Le bit d’unité attendu reste nul |
 | Volant | Preset `0x002 B1–B2 I16BE` ; candidat `B0–B1 I16LE` | **Candidat** : séquence de braquage connue, mais pas de zéro, angle mesuré ou sens calibré | La continuité d'un champ n'établit pas des degrés ; vitesse de rotation et angle sont distincts |
@@ -154,9 +199,12 @@ Le REF apporte des champs précis que la fiche PDF seule ne fournissait pas.
 Il corrobore notamment la vitesse, la température et le bit de frein à main.
 Son régime se limite à `0x180 B0×32` : c'est la partie haute de
 `U16BE(B0,B1)/8`, quantifiée par pas de 32 tr/min. Cette approximation ne
-remplace pas les deux octets confrontés à l'OBD. Son canal carburant désigne
-`0x551 B1` ; le comportement de compteur observé ne valide ni le facteur
-physique ni une consommation instantanée.
+remplace pas les deux octets confrontés à l'OBD. Son canal `Fuel_Consumption`
+définit `0x551`, Intel start bit 8, longueur 8, non signé (`UINT8`),
+**facteur 1, offset 0**, unité **mm³** : numériquement l'octet `B1` inchangé.
+Le coefficient est fourni. Restent inconnus son sens temporel/cycle, le
+compte éventuel et sa correspondance à une quantité de carburant sur ce
+MR16DDT ; le comportement observé ne valide pas une consommation instantanée.
 
 Le [manuel RLVBCAN01](https://www.racelogic.co.uk/_downloads/vbox/Manuals/Input_Modules/RLVBCAN01_Manual.pdf),
 pages 10–11, explique la numérotation : en Motorola VBOX, les bits 63–56
@@ -225,10 +273,10 @@ Le candidat `0x551 B1` compte 701 valeurs. Ses 700 différences modulo 256
 se répartissent en 343 zéros, 330 incréments de 1, 25 de 2 et deux de 3,
 soit **386 unités cumulées**, avec un débordement `255→0` entre les lignes
 43 094 et 43 231. Ce comportement justifie une étude de compteur cumulé,
-pas l'affichage direct de l'octet comme consommation instantanée. L'unité
-physique par incrément, les éventuelles remises à zéro et la relation avec
-l'injection restent à calibrer ; le libellé mm³ du fournisseur ne les résout
-pas à lui seul.
+pas l'affichage direct de l'octet comme consommation instantanée. Le REF
+définit un facteur 1 et un offset 0 en mm³ ; la base temps/cycle du compteur,
+les éventuelles remises à zéro et sa relation à l'injection sur ce MR16DDT
+restent à vérifier. Le libellé d'unité ne les résout pas à lui seul.
 
 
 L'ECU `0x7E8` annonce `01 10` (MAF), `01 44` (rapport d'équivalence commandé),
@@ -252,12 +300,16 @@ réimportation conservent les IDs, DLC et octets des trois captures :
 **1 013**, **165** et **92 754** trames respectivement, sans altération des
 charges utiles. Les 283 rapprochements publiés et les transitions binaires
 du JSON ont été confrontés aux lignes brutes d'origine. Ces vérifications
-portent sur les outils et les preuves documentaires ; aucun nouvel essai
-matériel ni modification de firmware n'est réalisé dans cette étude.
+portent sur les outils et les preuves documentaires. Cette étape historique
+d'analyse n'a réalisé ni nouvel essai matériel ni modification de firmware ;
+l'implémentation ultérieure est décrite dans la section d'application en tête
+de page, avec son rejeu du preset conservé séparément.
 
 ## Reproduction et prochaines captures
 
-Avec le fichier source d'empreinte identique :
+Avec le fichier source d'empreinte identique et le preset actuel du dépôt,
+ces commandes produisent une **nouvelle comparaison**, distincte des
+résultats historiques publiés :
 
 ```bash
 python3 -B tools/analyze_can_log.py /chemin/vers/canlog_20261014_210614_663_762622981087673198.txt \
@@ -276,7 +328,8 @@ espacées d'environ deux secondes par paramètre, et non simultanées.
 Pour compléter les champs restant ouverts : gestes séparés et horodatés du
 frein à main, des portes, des feux et des clignotants ; volant centré puis
 angles et sens connus ; relevés du combiné pour jauge, kilométrage, autonomie
-et unités ; collecte des paramètres de consommation avec une référence.
+et unités ; collecte des paramètres de consommation avec une référence,
+puis geste séparé sur la pédale de frein pour vérifier `0x180 B7 bit0`.
 La distance estimée des manœuvres ne remplace pas une mesure. Les nouvelles
-lectures OBD et les changements de preset doivent faire l'objet d'une
-implémentation et d'une validation distinctes de ce bilan documentaire.
+lectures OBD et les prochains changements de preset doivent faire l’objet
+de leur propre implémentation et validation.

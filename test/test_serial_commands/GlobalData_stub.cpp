@@ -1,3 +1,6 @@
+#include "CanAuxData.h"
+CanAuxData canAuxData;
+
 #include <stdint.h>
 #include "Arduino.h"
 #include "LittleFS.h"
@@ -32,6 +35,7 @@ EspClass    ESP;
 FS          LittleFS;
 
 void resetVehicleData() {
+    canAuxData = {};
     currentSteer = 0; engineRPM = 0; vehicleSpeed = 0;
     currentDoors = 0; fuelLevel = 0; voltBat = 0.0f;
     dteValue = 0; tempExt = 0; coolantTemp = 0; currentOdo = 0;

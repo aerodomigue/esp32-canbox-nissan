@@ -1,5 +1,10 @@
 # Relecture et validation locale de la PR #10
 
+> **Bilan historique du retrait des propositions de la PR.** Les mentions
+> de « preset actif » ci-dessous décrivent cet état antérieur. Les corrections
+> ultérieures fondées sur les captures du 14 octobre sont présentées dans
+> le [mapping Juke actuel](JUKE_F15_CAN_MAPPING.fr.md), avec leurs limites.
+
 La [PR #10](https://github.com/aerodomigue/esp32-canbox-nissan/pull/10) et ses
 sept commentaires de conversation ont été relus. À la demande du propriétaire,
 les cinq propositions de mapping d’`anyzlo` sont **retirées** : le preset

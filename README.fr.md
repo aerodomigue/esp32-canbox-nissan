@@ -32,7 +32,7 @@ Le projet a démarré comme une solution dédiée à la **Nissan Juke F15**, mai
 
 - **Traduction en temps réel** des données CAN Nissan vers le protocole Toyota RAV4
 - **Angle de braquage** pour les lignes de guidage de la caméra de recul
-- **Données tableau de bord** : RPM, vitesse, tension batterie, température, niveau essence
+- **Données tableau de bord** : RPM, vitesse, tension batterie, température et états du véhicule ; niveau essence selon un mapping validé
 - **État des portes** avec mise à jour automatique sur changement
 - **Systèmes de sécurité** : Watchdog matériel, surveillance erreurs CAN, protection timeout
 
@@ -40,26 +40,27 @@ Le projet a démarré comme une solution dédiée à la **Nissan Juke F15**, mai
 
 | Fonctionnalité | Statut | Notes |
 | --- | --- | --- |
-| Régime Moteur (RPM) | Correction documentée, pas encore appliquée | OBD : `/8` concorde ; le preset utilise encore `/7` |
-| Vitesse Véhicule | Correction documentée, pas encore appliquée | OBD : `0x284` octets 4–5 concordent à faible vitesse ; le preset lit 0–1 |
-| Niveau Essence | Mapping contredit | `0x5C5[0]` contient notamment le frein à main ; ce n'est pas une jauge directe |
+| Régime Moteur (RPM) | Corrigé dans le preset | `0x180` octets 0–1 BE `/8`, corroboré par OBD |
+| Vitesse Véhicule | Corrigée dans le preset | `0x284` octets 4–5 BE `/100` ; corroboration OBD limitée aux faibles vitesses |
+| Niveau Essence | Indisponible dans le preset Juke | Fausse jauge `0x5C5[0]` retirée ; `FuelValid: 0` distingue la valeur de compatibilité `0 L` d'une mesure |
 | Tension Batterie | Cohérente avec l'OBD | Écart moyen 0,139 V ; points de mesure potentiellement différents |
 | Direction / Lignes Dynamiques | Fonction implémentée | Unités, zéro et sens d'angle à valider sur cette variante |
 | État des Portes | Fonction implémentée | Correspondance porte/bit à vérifier par gestes séparés |
 | Clignotants | ✅ Fonctionnement confirmé | Retour utilisateur après correction de l'état dashboard |
 | Feux | Fonction implémentée | Phares, route, veilleuses ; pas de séquence annotée dans le dernier log |
-| Frein à Main | Bit CAN identifié, non intégré | `0x5C5[0] & 0x04`, corroboré par source Juke et manœuvre utilisateur |
+| Frein à Main | Décodé dans le preset | `0x5C5[0] & 0x04`, corroboré par source Juke et manœuvre utilisateur ; disponible dans `SYS DATA` |
+| Pédale de frein | Bit de contact décodé | `0x180[7] & 0x01` ; geste et polarité à vérifier séparément sur le véhicule |
 | Température Extérieure | Calibration à vérifier | `0x540[0]−40` ; aucune référence indépendante dans le log |
-| Conso. Instantanée | Mapping actuel contredit | `0x580[3]` est cyclique ; candidat carburant `0x551[1]` à caractériser |
-| Conso. Moyenne | Unité à vérifier | Depuis CAN 0x580 ; référence véhicule nécessaire pour l'unité CAN |
+| Conso. Instantanée | Indisponible dans le preset Juke | `0x580[3]` retiré ; `0x551[1]` exposé uniquement comme `FuelRaw`, sans unité physique |
+| Conso. Moyenne | Indisponible dans le preset Juke | `0x580[4]` non validé retiré ; aucune trame UART de consommation sans source disponible |
 | Autonomie Restante | Unité à vérifier | Mapping initial CAN 0x54C restauré ; référence du combiné nécessaire |
 
 > **Note :** La documentation du protocole Raise/Toyota RAV4 utilisé par les autoradios Android est rare. Certaines fonctionnalités sont encore en cours de reverse-engineering par manque de spécifications officielles du protocole.
 
 Voir la **[Roadmap](ROADMAP.md)** pour les fonctionnalités à venir.
 Le [mapping CAN documenté FR/EN](docs/JUKE_F15_CAN_MAPPING.fr.md) contient les
-preuves CAN/OBD, les sources et les limites. Cette mise à jour documentaire
-ne change pas le preset chargé sur l'ESP32.
+preuves CAN/OBD, les sources et les limites. Le preset corrigé du dépôt doit
+être transféré séparément pour remplacer le JSON installé sur l'ESP32.
 
 ---
 
@@ -301,24 +302,33 @@ Une fois flashé, branchez l'ESP32 sur un port USB de votre autoradio Android. T
 - **Calibration** : Réglez les offsets du volant ou la capacité du réservoir.
 - **Mises à jour OTA** : Mettez à jour les futures versions du firmware par USB série depuis l'app avec **`firmware.ota`**. Le preset véhicule se charge séparément.
 
+Pour le preset Juke corrigé, installer **d'abord le firmware correspondant**,
+puis transférer `data/NissanJukeF15.json` et l'activer avec `CAN LOAD NissanJukeF15.json`.
+L'OTA applicative ne met **pas** LittleFS à jour. Un ancien firmware peut
+interpréter une cible inconnue comme `HANDBRAKE` en `STEERING` ; ne pas lui
+charger le nouveau JSON. Le nouveau parseur rejette les cibles inconnues ou
+absentes en conservant le profil précédemment actif.
+
 ---
 
 ## Données Supportées
 
 | Donnée | ID CAN | Fréq. envoi | Notes |
 | --- | --- | --- | --- |
-| Angle Volant | 0x002 | 200ms | Pour lignes caméra |
-| Régime Moteur | 0x180 | 333ms | Octets initiaux 0–1, big endian, brut / 7 ; calibration à vérifier |
-| Vitesse Véhicule | 0x284 | 500ms | Octets initiaux 0–1, big endian, brut / 100 ; calibration à vérifier |
-| Niveau Essence | 0x5C5 | — | Formule initiale MAP_RANGE [255, 0, 0, 45] ; mapping contesté |
+| Angle Volant | 0x002 | 200ms | Octets historiques 1–2 BE signés ; échelle, zéro et sens non validés |
+| Régime Moteur | 0x180 | 333ms | Octets 0–1, big endian, brut / 8 ; tr/min entiers |
+| Vitesse Véhicule | 0x284 | 500ms | Octets 4–5, big endian, brut / 100 ; km/h entiers |
+| Frein à Main | 0x5C5 | Sur requête `SYS DATA` | Octet 0 bit 2 ; `unknown` avant la première trame configurée |
+| Pédale de frein | 0x180 | Sur requête `SYS DATA` | Octet 7 bit 0 ; état brut de contact, polarité physique à vérifier |
+| Compteur carburant brut | 0x551 | Sur requête `SYS DATA` | Octet 1, 0–255 ; aucune unité physique ni conversion de consommation validée |
+| Niveau Essence | — | — | Aucune source Juke ; compatibilité `Fuel: 0 L` avec `FuelValid: 0` |
 | Tension Batterie | 0x6F6 | — | Sortie alternateur |
-| Température Extérieure | 0x540 | 5000ms | Température ambiante |
+| Température Extérieure | 0x540 | 5000ms | Octet historique 0 − 40 ; référence physique à vérifier |
 | Température Eau Moteur | 0x551 | 5000ms | Envoyée dans l’octet 0 de CMD 0x28 ; hypothèse non documentée et non vérifiée |
 | État Portes | 0x60D | 250ms | Toutes portes + coffre (ou sur changement) |
 | Autonomie | 0x54C | 5000ms | Octets initiaux 6–7, big endian, brut × 100 / 338 ; calibration à vérifier |
-| Conso. Instantanée | 0x580 | 1000ms | Octet initial 3, sans masque ; unité CAN inconnue, UART en 0.1 L/100km |
-| Conso. Moyenne | 0x580 | 5000ms | Unité CAN inconnue, UART en 0.1 L/100km |
-| Compteur km | 0x5C5 | 10000ms | Total km (24-bit) |
+| Conso. Instantanée / Moyenne | — | Non envoyées pour Juke | UART `0x22` / `0x23` exigent une source calibrée disponible ; le mode mock conserve ses valeurs synthétiques |
+| Compteur km | 0x5C5 | 10000ms | Octets historiques 1–3 BE (24 bits) ; unités non validées |
 
 ---
 

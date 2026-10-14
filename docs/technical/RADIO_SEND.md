@@ -22,6 +22,10 @@ USB logging path and does not replace the preset's values sent over UART.
 | 0x7D/04 | Odometer | 12 | 10000ms |
 | 0x7D/0A | Engine RPM | 3 | 333ms |
 
+`0x22` and `0x23` require available consumption sources in the stated UART
+units. They are not emitted by the corrected Juke preset, which has no
+validated L/100km source. Mock mode retains its synthetic output.
+
 ---
 
 ## Serial Specifications
@@ -255,9 +259,11 @@ Byte 2: Value LSB
 
 **Example:** 7.5 L/100km → 75 → 0x004B → Payload: `02 00 4B`
 
-This is the UART encoding. The active Nissan preset supplies `0x580` byte 3
-unchanged; its physical interpretation and scale still need calibration.
-OBD reference polling does not alter that value.
+This is the UART encoding when an available source provides 0.1 L/100km.
+The corrected Nissan Juke preset has no such source: its former `0x580`
+byte 3 counter mapping was removed, so it does not send `0x22`. Mock mode
+retains synthetic consumption output. `0x551` byte 1 is exposed only as a
+raw counter and is never passed to this encoder as L/100km.
 
 ---
 
@@ -281,8 +287,9 @@ Byte 2: Value LSB
 
 **Notes:**
 
-- The current sender uses the same three-byte shape as `0x22`, sourced from
-  active-preset `0x580` byte 4. That CAN byte is not a validated trip average.
+- When an available average-consumption source exists, the current sender
+  uses the same three-byte shape as `0x22`. The corrected Juke preset removes
+  unvalidated `0x580` byte 4 and does not send `0x23`; mock mode still does.
 - No average is computed or persisted by `RadioSend.cpp`, and no historical
   trip values are appended to the packet.
 - Raise V2.21 page 5 specifies **13 payload bytes** for `0x23`: unit, current
@@ -293,7 +300,7 @@ Byte 2: Value LSB
   firmware supplies only the RPM-derived IG proxy described under `0x24`;
   head-unit display of this three-byte `0x23` packet is not guaranteed.
 
-**Synthetic current wire example:** 9.8 L/100km (`98`) produces the full
+**Synthetic wire example with an available source:** 9.8 L/100km (`98`) produces the full
 seven-byte frame `2E 23 03 02 00 62 75`. This example verifies encoding,
 not the accuracy of the source CAN value or acceptance by DUDU7.
 

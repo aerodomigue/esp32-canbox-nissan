@@ -13,6 +13,8 @@
 #include "SerialCommand.h"
 #include "UsbConsole.h"
 #include "Update.h"
+#include "MockDataGenerator.h"
+#include "RadioSend.h"
 
 extern void setup();
 extern void loop();
@@ -206,7 +208,7 @@ void test_raw_can_keeps_payload_flags_and_unconfigured_frames() {
     TEST_ASSERT_TRUE(hasLine(Serial.captured, "ODB RAW_RX 0x7E8 [8]: 03 41 0D 64 00 00 00 00 | t_ms=2000 ext=0 rtr=0"));
     TEST_ASSERT_TRUE(hasLine(Serial.captured, "RX 0x7E8 [2]: DE AD | t_ms=2000 ext=1 rtr=0"));
     TEST_ASSERT_TRUE(hasLine(Serial.captured, "RX 0x000 [0]: | t_ms=2000 ext=0 rtr=0"));
-    TEST_ASSERT_EQUAL_UINT16(182, engineRPM);  // Initial preset /7; RTR/extended never overwrite it.
+    TEST_ASSERT_EQUAL_UINT16(159, engineRPM);  // Corrected /8; RTR/extended never overwrite it.
     TEST_ASSERT_EQUAL_UINT32(1, canProcessor.getFramesProcessed());
     TEST_ASSERT_EQUAL_UINT32(3, canProcessor.getUnknownFrames());
     assertRawLinesComplete(Serial.captured);
@@ -215,7 +217,7 @@ void test_raw_can_keeps_payload_flags_and_unconfigured_frames() {
 void test_obd_reference_sys_data_and_partial_command_keep_complete_lines() {
     TEST_ASSERT_TRUE(ESP32Can.enqueue(frame(0x180, {0x04, 0xFB, 0, 0, 0, 0, 0, 0})));
     enableLoggingThroughLoop();
-    TEST_ASSERT_EQUAL_UINT16(182, engineRPM);
+    TEST_ASSERT_EQUAL_UINT16(159, engineRPM);
     StreamingSimulation::advance(1);
     TEST_ASSERT_TRUE(ESP32Can.enqueue(frame(0x7E8, {0x06, 0x41, 0x00, 0x00, 0x18, 0x00, 0x00, 0x00})));
     loop();
@@ -225,7 +227,7 @@ void test_obd_reference_sys_data_and_partial_command_keep_complete_lines() {
     StreamingSimulation::advance(1);
     TEST_ASSERT_TRUE(ESP32Can.enqueue(frame(0x7E8, {0x04, 0x41, 0x0C, 0x0A, 0x0C, 0x00, 0x00, 0x00})));
     loop();
-    TEST_ASSERT_EQUAL_UINT16(182, engineRPM);  // 643 rpm OBD reference is kept separate.
+    TEST_ASSERT_EQUAL_UINT16(159, engineRPM);  // 643 rpm OBD reference is kept separate.
     const std::regex reference("^ODB RX t_ms=2501 seq=[0-9]+ request_id=0x7E0 ecu=0x7E8 pid=0x0C name=rpm value=643\\.000 unit=rpm latency_ms=1$");
     bool matched = false;
     for (const auto& line : lines(Serial.captured)) matched |= std::regex_match(line, reference);
@@ -240,10 +242,109 @@ void test_obd_reference_sys_data_and_partial_command_keep_complete_lines() {
     Serial.inject("TA\n");
     loop();
     TEST_ASSERT_TRUE(hasLine(Serial.captured, "=== Live Vehicle Data ==="));
-    TEST_ASSERT_TRUE(hasLine(Serial.captured, "RPM:      182"));
+    TEST_ASSERT_TRUE(hasLine(Serial.captured, "RPM:      159"));
     TEST_ASSERT_TRUE(hasLine(Serial.captured, "Speed:    0 km/h"));
     TEST_ASSERT_TRUE(hasLine(Serial.captured, "========================="));
     assertRawLinesComplete(Serial.captured);
+}
+
+static unsigned radioCommandCount(uint8_t command) {
+    unsigned count = 0;
+    const auto& bytes = RadioSerial.captured;
+    for (size_t offset = 0; offset < bytes.size();) {
+        TEST_ASSERT_TRUE(offset + 4 <= bytes.size());
+        TEST_ASSERT_EQUAL_HEX8(0x2E, bytes[offset]);
+        size_t length = bytes[offset + 2] + 4;
+        TEST_ASSERT_TRUE(offset + length <= bytes.size());
+        if (bytes[offset + 1] == command) ++count;
+        offset += length;
+    }
+    return count;
+}
+
+void test_sys_data_distinguishes_unknown_from_observed_zero() {
+    Serial.inject("SYS DATA\n");
+    loop();
+    flushConsole();
+    TEST_ASSERT_TRUE(hasLine(Serial.captured, "Handbrake: unknown"));
+    TEST_ASSERT_TRUE(hasLine(Serial.captured, "Brake: unknown"));
+    TEST_ASSERT_TRUE(hasLine(Serial.captured, "FuelRaw: unknown"));
+    TEST_ASSERT_TRUE(hasLine(Serial.captured, "FuelValid: 0"));
+
+    TEST_ASSERT_TRUE(ESP32Can.enqueue(frame(0x5C5, {0x40, 0x03, 0xC4, 0xA1, 0, 0x0C, 0, 0x7F})));
+    TEST_ASSERT_TRUE(ESP32Can.enqueue(frame(0x180, {0x15, 0xE0, 0x31, 0xF3, 0x11, 0, 0x30, 0x14})));
+    TEST_ASSERT_TRUE(ESP32Can.enqueue(frame(0x551, {0x67, 0, 0, 0x80, 0xFF, 2, 0x80, 0xFF})));
+    loop();
+    Serial.clearOutput();
+    Serial.inject("SYS DATA\n");
+    loop();
+    flushConsole();
+    TEST_ASSERT_TRUE(hasLine(Serial.captured, "Handbrake: 0"));
+    TEST_ASSERT_TRUE(hasLine(Serial.captured, "Brake: 0"));
+    TEST_ASSERT_TRUE(hasLine(Serial.captured, "FuelRaw: 0"));
+    TEST_ASSERT_TRUE(hasLine(Serial.captured, "FuelConsValid: INST=0 AVG=0"));
+    assertRawLinesComplete(Serial.captured);
+}
+
+void test_juke_raw_fuel_and_brakes_keep_logs_and_do_not_transmit_consumption() {
+    enableLoggingThroughLoop();
+    Serial.clearOutput();
+    TEST_ASSERT_TRUE(ESP32Can.enqueue(frame(0x5C5, {0x44, 0x03, 0xC4, 0xA1, 0, 0x0C, 0, 0x7F})));
+    TEST_ASSERT_TRUE(ESP32Can.enqueue(frame(0x180, {0x15, 0xE0, 0x31, 0xF3, 0x11, 0, 0x30, 0x15})));
+    TEST_ASSERT_TRUE(ESP32Can.enqueue(frame(0x551, {0x66, 0x34, 0, 0x80, 0xFF, 2, 0x80, 0xFF})));
+    TEST_ASSERT_TRUE(ESP32Can.enqueue(frame(0x580, {0, 0, 0x80, 6, 111, 0, 0, 0})));
+    loop();
+    TEST_ASSERT_TRUE(hasLine(Serial.captured, "RX 0x551 [8]: 66 34 00 80 FF 02 80 FF | t_ms=2000 ext=0 rtr=0"));
+    TEST_ASSERT_EQUAL_UINT32(4, countPrefix(Serial.captured, "RX "));
+    Serial.inject("SYS DATA\n");
+    loop();
+    flushConsole();
+    TEST_ASSERT_TRUE(hasLine(Serial.captured, "Handbrake: 1"));
+    TEST_ASSERT_TRUE(hasLine(Serial.captured, "Brake: 1"));
+    TEST_ASSERT_TRUE(hasLine(Serial.captured, "FuelRaw: 52"));
+    TEST_ASSERT_TRUE(hasLine(Serial.captured, "FuelValid: 0"));
+    TEST_ASSERT_TRUE(hasLine(Serial.captured, "FuelConsValid: INST=0 AVG=0"));
+    TEST_ASSERT_EQUAL_UINT16(0, fuelConsumptionInst);
+    TEST_ASSERT_EQUAL_UINT16(0, fuelConsumptionAvg);
+    RadioSerial.clear();
+    StreamingSimulation::advance(6000);
+    loop();
+    TEST_ASSERT_EQUAL_UINT32(0, radioCommandCount(0x22));
+    TEST_ASSERT_EQUAL_UINT32(0, radioCommandCount(0x23));
+    TEST_ASSERT_GREATER_THAN_UINT32(0, radioCommandCount(0x7D));
+    assertRawLinesComplete(Serial.captured);
+}
+
+void test_mock_consumption_is_available_and_profile_reload_clears_it() {
+    MockDataGenerator generator;
+    generator.begin();
+    TEST_ASSERT_TRUE(canAuxData.fuelLevelValid);
+    TEST_ASSERT_TRUE(canAuxData.fuelConsumptionInstValid);
+    TEST_ASSERT_TRUE(canAuxData.fuelConsumptionAvgValid);
+    processRadioUpdates();  // Normalize persistent timers after the test clock reset.
+    RadioSerial.clear();
+    StreamingSimulation::advance(6000);
+    processRadioUpdates();
+    TEST_ASSERT_EQUAL_UINT32(1, radioCommandCount(0x22));
+    TEST_ASSERT_EQUAL_UINT32(1, radioCommandCount(0x23));
+    canAuxData.handbrakeValid = true;
+    canAuxData.brakePedalValid = true;
+    canAuxData.fuelCounterValid = true;
+    TEST_ASSERT_TRUE(canProcessor.loadFromJson("/NissanJukeF15.json"));
+    TEST_ASSERT_FALSE(canAuxData.handbrakeValid);
+    TEST_ASSERT_FALSE(canAuxData.brakePedalValid);
+    TEST_ASSERT_FALSE(canAuxData.fuelCounterValid);
+    TEST_ASSERT_FALSE(canAuxData.fuelLevelValid);
+    TEST_ASSERT_FALSE(canAuxData.fuelConsumptionInstValid);
+    TEST_ASSERT_FALSE(canAuxData.fuelConsumptionAvgValid);
+    TEST_ASSERT_EQUAL_UINT8(0, fuelLevel);
+    TEST_ASSERT_EQUAL_UINT16(0, fuelConsumptionInst);
+    TEST_ASSERT_EQUAL_UINT16(0, fuelConsumptionAvg);
+    RadioSerial.clear();
+    StreamingSimulation::advance(6000);
+    processRadioUpdates();
+    TEST_ASSERT_EQUAL_UINT32(0, radioCommandCount(0x22));
+    TEST_ASSERT_EQUAL_UINT32(0, radioCommandCount(0x23));
 }
 
 static void assertIndicatorOutputs(bool left, bool right) {
@@ -509,7 +610,7 @@ void test_serial_processes_one_command_per_loop_without_stopping_can() {
     loop();
     TEST_ASSERT_TRUE(isCanLogEnabled());
     TEST_ASSERT_GREATER_THAN_INT(0, Serial.available());
-    TEST_ASSERT_EQUAL_UINT16(182, engineRPM);
+    TEST_ASSERT_EQUAL_UINT16(159, engineRPM);
     loop();
     TEST_ASSERT_FALSE(isCanLogEnabled());
     TEST_ASSERT_FALSE(obdCalibration.enabled());
@@ -667,6 +768,9 @@ int main() {
     RUN_TEST(test_loop_drains_only_32_frames_then_continues_while_obd_waits);
     RUN_TEST(test_raw_can_keeps_payload_flags_and_unconfigured_frames);
     RUN_TEST(test_obd_reference_sys_data_and_partial_command_keep_complete_lines);
+    RUN_TEST(test_sys_data_distinguishes_unknown_from_observed_zero);
+    RUN_TEST(test_juke_raw_fuel_and_brakes_keep_logs_and_do_not_transmit_consumption);
+    RUN_TEST(test_mock_consumption_is_available_and_profile_reload_clears_it);
     RUN_TEST(test_sys_data_indicators_match_left_right_and_hazard_can_frames);
     RUN_TEST(test_sys_data_indicators_expire_at_configured_timeout_without_new_can);
     RUN_TEST(test_sys_data_indicator_refresh_and_zero_frame_keep_radio_hold_time);

@@ -26,6 +26,7 @@
 #include "ConfigManager.h"
 #include <LittleFS.h>
 #include <ArduinoJson.h>
+#include <utility>
 
 // =============================================================================
 // CONSTRUCTOR
@@ -134,10 +135,11 @@ bool CanConfigProcessor::loadFromJson(const char* path) {
         return false;
     }
 
-    // Clear any existing profile data
-    _profile.frames.clear();
-    _profile.name = doc["name"] | "Unknown";
-    _profile.isMock = doc["isMock"] | false;  // Default to real CAN if not specified
+    // Build a candidate first. An unsupported target must not replace the
+    // active profile or silently write an unrelated field such as steering.
+    VehicleProfile nextProfile;
+    nextProfile.name = doc["name"] | "Unknown";
+    nextProfile.isMock = doc["isMock"] | false;
 
     // Parse frames array
     JsonArray framesArray = doc["frames"];
@@ -158,7 +160,11 @@ bool CanConfigProcessor::loadFromJson(const char* path) {
             FieldConfig field;
 
             // Target GlobalData field
-            field.target = parseOutputField(fieldObj["target"] | "STEERING");
+            field.target = parseOutputField(fieldObj["target"].as<const char*>());
+            if (field.target == OutputField::FIELD_COUNT) {
+                Console.println("[CanConfig] Unknown or missing output target");
+                return false;
+            }
 
             // Byte extraction parameters
             field.startByte = fieldObj["startByte"] | 0;
@@ -186,15 +192,19 @@ bool CanConfigProcessor::loadFromJson(const char* path) {
             frame.fields.push_back(field);
         }
 
-        _profile.frames.push_back(frame);
+        nextProfile.frames.push_back(frame);
     }
 
-    // Update mock mode flag from config
-    _mockMode = _profile.isMock;
-
-    bool isValid = _profile.isMock || _profile.frames.size() > 0;
+    bool isValid = nextProfile.isMock || !nextProfile.frames.empty();
 
     if (isValid) {
+        _profile = std::move(nextProfile);
+        _mockMode = _profile.isMock;
+        // Never retain a previous profile's fuel values or observed flags.
+        canAuxData = {};
+        fuelLevel = 0;
+        fuelConsumptionInst = 0;
+        fuelConsumptionAvg = 0;
         const char* filename = (path[0] == '/') ? path + 1 : path;
         const char* currentFile = configGetVehicleFile();
         bool isVehicleSwitch = (currentFile[0] == '\0') || (strcmp(currentFile, filename) != 0);
@@ -395,9 +405,9 @@ int32_t CanConfigProcessor::extractRawValue(const uint8_t* data, const FieldConf
  * Formula Types:
  * - NONE: Return raw value unchanged
  * - SCALE: (value * multiplier / divisor) + offset
- *          Example: RPM raw 17500 with params[1,7,0] → 2500
+ *          Example: RPM raw 20000 with params[1,8,0] → 2500
  * - MAP_RANGE: Arduino map() function
- *          Example: active Juke fuel params[255,0,0,45], raw 255→0 gives 0→45
+ *          Example: params[255,0,0,45], raw 255→0 gives 0→45
  * - BITMASK_EXTRACT: (value & mask) >> shift
  *          Example: Extract bit 20 from 24-bit status word
  */
@@ -456,6 +466,7 @@ void CanConfigProcessor::writeToGlobalData(OutputField target, int32_t value) {
             break;
         case OutputField::FUEL_LEVEL:
             fuelLevel = (uint8_t)value;
+            canAuxData.fuelLevelValid = true;
             break;
         case OutputField::ODOMETER:
             currentOdo = (uint32_t)value;
@@ -472,9 +483,23 @@ void CanConfigProcessor::writeToGlobalData(OutputField target, int32_t value) {
             break;
         case OutputField::FUEL_CONS_INST:
             fuelConsumptionInst = (uint16_t)value;
+            canAuxData.fuelConsumptionInstValid = true;
             break;
         case OutputField::FUEL_CONS_AVG:
             fuelConsumptionAvg = (uint16_t)value;
+            canAuxData.fuelConsumptionAvgValid = true;
+            break;
+        case OutputField::HANDBRAKE:
+            canAuxData.handbrake = (value != 0);
+            canAuxData.handbrakeValid = true;
+            break;
+        case OutputField::BRAKE_PEDAL:
+            canAuxData.brakePedal = (value != 0);
+            canAuxData.brakePedalValid = true;
+            break;
+        case OutputField::FUEL_COUNTER_RAW:
+            canAuxData.fuelCounterRaw = (uint8_t)value;
+            canAuxData.fuelCounterValid = true;
             break;
 
         // === Door Status Flags ===

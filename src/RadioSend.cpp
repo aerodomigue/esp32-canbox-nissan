@@ -421,18 +421,22 @@ void processRadioUpdates() {
     // =========================================================================
     // 6. INSTANTANEOUS FUEL CONSUMPTION (CMD 0x22) - 1s interval
     // =========================================================================
-    // Instantaneous consumption from active preset 0x580 byte[3] (unit unverified).
+    // Only publish a configured L/100km reading, never a raw CAN counter.
     if (now - lastFuelConsTime >= FUEL_CONS_INTERVAL_MS) {
-        sendFuelConsumptionMessage(fuelConsumptionInst);
+        if (canAuxData.fuelConsumptionInstValid) {
+            sendFuelConsumptionMessage(fuelConsumptionInst);
+        }
         lastFuelConsTime = now;
     }
 
     // =========================================================================
     // 6b. AVERAGE FUEL CONSUMPTION (CMD 0x23) - 5s interval
     // =========================================================================
-    // Average consumption from Nissan CAN 0x580 byte[4]
+    // The Juke capture has no validated average-consumption source.
     if (now - lastFuelConsAvgTime >= FUEL_CONS_AVG_INTERVAL_MS) {
-        sendFuelConsumptionAvgMessage(fuelConsumptionAvg);
+        if (canAuxData.fuelConsumptionAvgValid) {
+            sendFuelConsumptionAvgMessage(fuelConsumptionAvg);
+        }
         lastFuelConsAvgTime = now;
     }
 

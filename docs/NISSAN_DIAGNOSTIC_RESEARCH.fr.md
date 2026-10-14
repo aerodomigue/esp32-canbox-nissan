@@ -43,10 +43,13 @@ Les deux autres lectures existantes sont la température du liquide de
 refroidissement (`01 05`) et la pression absolue du collecteur (`01 0B`).
 Implémentation : [ObdCalibration.cpp](../src/ObdCalibration.cpp).
 Les trames CAN lues restent capturées brutes, même sans référence OBD décodée.
-Le frein à main n'a pas non plus de champ dans le preset actuel.
+Le preset Juke actuel décode directement le bit de frein à main depuis le
+CAN périodique ; il n'interroge pas de commande de diagnostic constructeur.
 
 La [nouvelle étude des trames périodiques](JUKE_F15_CAN_MAPPING.fr.md) identifie
-néanmoins son bit CAN `0x5C5[0] & 0x04`, corroboré par la manœuvre du propriétaire.
+néanmoins son bit CAN `0x5C5[0] & 0x04`, corroboré par la manœuvre du propriétaire
+et désormais exposé comme `Handbrake` dans `SYS DATA`. `Brake` utilise la
+définition distincte `0x180 B7 bit0` ; geste physique et polarité restent à vérifier.
 Une lecture CAN périodique et une commande de diagnostic sont deux preuves
 différentes. Les captures récentes n'interrogent que quatre des huit PIDs :
 `0C`, `0D`, `05` et `42`. Le MAF `10` et le rapport commandé `44` sont annoncés
