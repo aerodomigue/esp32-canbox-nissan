@@ -45,6 +45,13 @@ Implementation: [ObdCalibration.cpp](../src/ObdCalibration.cpp).
 Received CAN frames are still captured raw, even without a decoded OBD
 reference. The current preset also has no parking brake field.
 
+The [new periodic-frame study](JUKE_F15_CAN_MAPPING.md) nevertheless identifies
+its CAN bit `0x5C5[0] & 0x04`, corroborated by the owner's maneuver.
+A periodic CAN reading and a diagnostic command are different kinds of evidence.
+The recent captures query only four of the eight PIDs: `0C`, `0D`, `05` and `42`.
+MAF `10` and commanded equivalence ratio `44` are advertised by the ECU but
+are absent from the current polling list.
+
 ## Sources and leads examined
 
 ### Published responses for a 2012 Juke
@@ -131,6 +138,13 @@ The [Racelogic Juke F15 2011–2018 data sheet](https://www.racelogic.co.uk/_dow
 lists several of the signals being sought, including parking brake, doors,
 lighting and consumption. This list confirms coverage claimed by the supplier,
 not public diagnostic commands or their formulas.
+
+**14 October addendum:** the [public VBOX page](https://vboxautomotive.co.uk/en/can-database-documents)
+also links the Juke REF file with IDs, fields and factors for periodic CAN
+messages. The [documented mapping](JUKE_F15_CAN_MAPPING.md) compares those
+definitions with captures, notably for parking brake and speed. The PDF
+alone did not contain these offsets; the REF still does not provide the
+corresponding CONSULT commands.
 
 ## Evidence needed for a verifiable integration
 

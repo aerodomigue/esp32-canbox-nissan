@@ -1,143 +1,116 @@
-# Nissan Juke F15 - Documentation Technique
+# Nissan Juke F15 service manuals
 
-Documentation officielle Nissan pour le Juke F15 (Plateforme B, 2010-2019).
+[Français](README.fr.md)
 
-**Taille totale :** ~79 MB (57 fichiers PDF)
+## Edition and applicability
 
-## Sources
+This archive contains **57 Nissan service-manual PDFs** (78.5 MiB of PDF content).
+[FWD.pdf](FWD.pdf#page=2) identifies the manual as **2012 Nissan Juke**.
+The relevant chapters checked for this project carry **Revision: 2011 October / 2012 JUKE**.
+The foreword and identification information place this collection in the **North American** service context.
+A publication date in 2011 does not make it a model-year 2011 manual.
 
-Documentation récupérée depuis [NICOclub Nissan Service Manuals](https://www.nicoclub.com/nissan-service-manuals).
+The project vehicle is a **2011 phase-one F15, 1.6 DIG-T MR16DDT, manual transmission**.
+These documents are useful evidence about that vehicle family, but equipment, market and model-year differences must be checked.
+LAN-27 covers MR16DDT variants with M/T or CVT, 2WD or AWD, and optional Integrated Control System;
+TCM, AWD and HVAC/display functions must not be assumed present on every vehicle.
 
-> **Note**: Ces documents sont archivés ici pour préserver l'accès en cas de fermeture du site source.
+## What these manuals establish
 
----
+- **LAN-24–31:** CAN wiring principles, equipment variants, and signal transmit/receive matrices.
+  Signal names and transmitting units do not supply numeric arbitration IDs, byte offsets or bit masks.
+- **MWI-6, MWI-15–16:** the combination meter receives engine and vehicle-speed signals;
+  fuel level and ambient-temperature sensors also have direct wired inputs.
+  The meter calculates current/average fuel consumption and distance to empty.
+- **MWI-20–22, BRC-38–40 and EXL diagnostic sections:** CONSULT monitor names identify observable values.
+  They do not specify the diagnostic CAN address, service, PID/DID and response layout needed to read them independently.
+- **FL-31:** this edition specifies approximately 50.0 L for 2WD and 45.0 L for AWD.
+  This does not validate a 45 L calibration for the project's 2011 manual vehicle.
 
-## Sommaire des Manuels
+The archived manuals do **not validate the active preset's CAN IDs, RPM divisor, steering offset or fuel scaling**.
+A physical CAN capture and observations on the target vehicle are still needed to confirm a mapping.
+Nissan vehicle CAN and the [Raise Toyota UART protocol](../../protocols/raise-toyota-rav4/) used toward the head unit are separate protocols.
+See [the CAN mapping analysis](../../JUKE_F15_CAN_MAPPING.md) for the project's current evidence and limits.
 
-### 📋 Général
-| Fichier | Description | Taille |
-|---------|-------------|--------|
-| `GI.pdf` | General Information (informations générales) | 1.5 MB |
-| `DEF.pdf` | Definitions (définitions, abréviations) | 614 KB |
-| `MA.pdf` | Maintenance (entretien, révisions) | 928 KB |
+## File index
 
-### 🔧 Moteur & Transmission
-| Fichier | Description | Taille |
-|---------|-------------|--------|
-| `EM.pdf` | Engine Mechanical (moteur mécanique) | 4.5 MB |
-| `EC.pdf` | Engine Control (contrôle moteur, ECU) | 5.6 MB |
-| `LU.pdf` | Lubrication (lubrification) | 703 KB |
-| `CO.pdf` | Cooling (refroidissement) | 928 KB |
-| `EX.pdf` | Exhaust (échappement) | 328 KB |
-| `EXL.pdf` | Exhaust Line (ligne d'échappement) | 1.4 MB |
-| `TM.pdf` | Transmission Manual (boîte de vitesses) | 5.4 MB |
-| `CL.pdf` | Clutch (embrayage) | 535 KB |
+English section names follow the **Quick Reference Index in FWD.pdf**.
+Filenames are preserved, including the lowercase `acc.pdf`.
+In particular, MWI is the meter system, FL is fuel, EXL is exterior lighting,
+GW is glass/window, and PCS is power control.
 
-### ⚡ Électrique & Électronique
-| Fichier | Description | Taille |
-|---------|-------------|--------|
-| `PG.pdf` | Power Generation (génération électrique, alternateur) | 4.4 MB |
-| `CHG.pdf` | Charging (charge batterie) | 522 KB |
-| `GW.pdf` | Gateway (passerelle réseau) | 819 KB |
-| `LAN.pdf` | **LAN (CAN Bus, réseau communication)** ⭐ | 1.3 MB |
-| `BCS.pdf` | **Body Control System (BCM, carrosserie)** ⭐ | 1.5 MB |
+| File | Section |
+| --- | --- |
+| [FWD.pdf](FWD.pdf) | Foreword and quick reference index |
+| [GI.pdf](GI.pdf) | General information |
+| [acc.pdf](acc.pdf) | Accelerator control system |
+| [EM.pdf](EM.pdf) | Engine mechanical |
+| [EC.pdf](EC.pdf) | Engine control system |
+| [LU.pdf](LU.pdf) | Engine lubrication system |
+| [CO.pdf](CO.pdf) | Engine cooling system |
+| [FL.pdf](FL.pdf) | Fuel system |
+| [EX.pdf](EX.pdf) | Exhaust system |
+| [STR.pdf](STR.pdf) | Starting system |
+| [CL.pdf](CL.pdf) | Clutch |
+| [TM.pdf](TM.pdf) | Transaxle and transmission |
+| [DLN.pdf](DLN.pdf) | Driveline |
+| [FAX.pdf](FAX.pdf) | Front axle |
+| [RAX.pdf](RAX.pdf) | Rear axle |
+| [FSU.pdf](FSU.pdf) | Front suspension |
+| [RSU.pdf](RSU.pdf) | Rear suspension |
+| [WT.pdf](WT.pdf) | Road wheels and tires |
+| [BR.pdf](BR.pdf) | Brake system |
+| [PB.pdf](PB.pdf) | Parking brake system |
+| [BRC.pdf](BRC.pdf) | Brake control system |
+| [ST.pdf](ST.pdf) | Steering system |
+| [STC.pdf](STC.pdf) | Steering control system |
+| [SB.pdf](SB.pdf) | Seat belt |
+| [SR.pdf](SR.pdf) | SRS airbag |
+| [SRC.pdf](SRC.pdf) | SRS airbag control system |
+| [VTL.pdf](VTL.pdf) | Ventilation system |
+| [HA.pdf](HA.pdf) | Heater and air conditioning system |
+| [HAC.pdf](HAC.pdf) | Heater and air conditioning control system |
+| [INT.pdf](INT.pdf) | Interior |
+| [IP.pdf](IP.pdf) | Instrument panel |
+| [SE.pdf](SE.pdf) | Seat |
+| [DLK.pdf](DLK.pdf) | Door and lock |
+| [SEC.pdf](SEC.pdf) | Security control system |
+| [GW.pdf](GW.pdf) | Glass and window system |
+| [PWC.pdf](PWC.pdf) | Power window control system |
+| [RF.pdf](RF.pdf) | Roof |
+| [EXT.pdf](EXT.pdf) | Exterior |
+| [BRM.pdf](BRM.pdf) | Body repair |
+| [MIR.pdf](MIR.pdf) | Mirrors |
+| [EXL.pdf](EXL.pdf) | Exterior lighting system |
+| [INL.pdf](INL.pdf) | Interior lighting system |
+| [WW.pdf](WW.pdf) | Wiper and washer |
+| [DEF.pdf](DEF.pdf) | Defogger |
+| [HRN.pdf](HRN.pdf) | Horn |
+| [PWO.pdf](PWO.pdf) | Power outlet |
+| [BCS.pdf](BCS.pdf) | Body control system |
+| [LAN.pdf](LAN.pdf) | LAN system, including CAN communication |
+| [PCS.pdf](PCS.pdf) | Power control system |
+| [CHG.pdf](CHG.pdf) | Charging system |
+| [PG.pdf](PG.pdf) | Power supply, ground and circuit elements |
+| [MWI.pdf](MWI.pdf) | Meter, warning lamp and indicator |
+| [WCS.pdf](WCS.pdf) | Warning chime system |
+| [AV.pdf](AV.pdf) | Audio, visual and navigation system |
+| [CCS.pdf](CCS.pdf) | Cruise control system |
+| [DMS.pdf](DMS.pdf) | Drive mode system |
+| [MA.pdf](MA.pdf) | Maintenance |
 
-> ⭐ **Documents clés pour le projet CAN** : `LAN.pdf` et `BCS.pdf` contiennent les informations sur le bus CAN et les IDs des modules.
+## Source and Git LFS
 
-### 🚗 Chassis & Suspension
-| Fichier | Description | Taille |
-|---------|-------------|--------|
-| `FAX.pdf` | Front Axle (essieu avant) | 729 KB |
-| `RAX.pdf` | Rear Axle (essieu arrière) | 579 KB |
-| `FSU.pdf` | Front Suspension Unit (suspension avant) | 531 KB |
-| `RSU.pdf` | Rear Suspension Unit (suspension arrière) | 714 KB |
-| `ST.pdf` | Suspension/Steering (suspension/direction) | 586 KB |
-| `STR.pdf` | Steering (direction) | 692 KB |
-| `STC.pdf` | Steering Control (contrôle direction) | 485 KB |
-| `SR.pdf` | Suspension Rear (suspension arrière) | 894 KB |
-| `SRC.pdf` | Suspension Rear Control (contrôle susp. arr.) | 1.3 MB |
-| `FWD.pdf` | Front Wheel Drive (traction avant) | 493 KB |
+The repository archives Nissan documents obtained through
+[NICOclub Nissan service manuals](https://www.nicoclub.com/nissan-service-manuals).
+Document titles, edition and printed section pages are the evidence;
+the directory name alone does not establish applicability to all F15 model years.
 
-### 🛑 Freinage
-| Fichier | Description | Taille |
-|---------|-------------|--------|
-| `BR.pdf` | Brake (freinage) | 1.4 MB |
-| `BRM.pdf` | Brake Manual (manuel freinage) | 4.7 MB |
-| `BRC.pdf` | Brake Control (contrôle freinage, ABS) | 1.8 MB |
-| `PB.pdf` | Parking Brake (frein de stationnement) | 436 KB |
+The PDFs use **Git LFS**. A file containing `version https://git-lfs.github.com/spec/v1`
+is a pointer, not a readable PDF. Fetch LFS content when needed:
 
-### 🛡️ Sécurité
-| Fichier | Description | Taille |
-|---------|-------------|--------|
-| `SB.pdf` | Seat Belt (ceintures de sécurité) | 571 KB |
-| `PCS.pdf` | Pre-Collision System (système anti-collision) | 1.4 MB |
-| `SEC.pdf` | Security (sécurité, antidémarrage) | 1.7 MB |
-| `DMS.pdf` | Driver Monitoring System (surveillance conducteur) | 584 KB |
+```sh
+git lfs pull --include="docs/vehicle/nissan-juke-f15/*.pdf"
+```
 
-### 🚪 Carrosserie & Accès
-| Fichier | Description | Taille |
-|---------|-------------|--------|
-| `DLK.pdf` | Door Lock (verrouillage portes) | 3.6 MB |
-| `DLN.pdf` | Door Lock Network (réseau verrouillage) | 3.3 MB |
-| `EXT.pdf` | Exterior (extérieur) | 1.6 MB |
-| `MIR.pdf` | Mirrors (rétroviseurs) | 678 KB |
-| `RF.pdf` | Roof (toit) | 817 KB |
-| `WT.pdf` | Window/Trim (vitres/garnitures) | 752 KB |
-
-### 🪟 Intérieur & Confort
-| Fichier | Description | Taille |
-|---------|-------------|--------|
-| `INT.pdf` | Interior (intérieur) | 1.7 MB |
-| `SE.pdf` | Seats (sièges) | 1.3 MB |
-| `IP.pdf` | Instrument Panel (tableau de bord) | 1.4 MB |
-| `INL.pdf` | Instrument Panel Lights (éclairage TB) | 801 KB |
-| `HA.pdf` | HVAC (climatisation, chauffage) | 1.8 MB |
-| `HAC.pdf` | HVAC Control (contrôle climatisation) | 1.9 MB |
-| `CCS.pdf` | Climate Control System (système climatisation) | 199 KB |
-
-### 💡 Éclairage & Visibilité
-| Fichier | Description | Taille |
-|---------|-------------|--------|
-| `FL.pdf` | Front Lighting (éclairage avant) | 999 KB |
-| `MWI.pdf` | Windshield Wipers (essuie-glaces) | 893 KB |
-| `WW.pdf` | Windshield Washer/Wiper (lave-glace/essuie-glace) | 1.2 MB |
-| `HRN.pdf` | Horn (klaxon) | 295 KB |
-
-### 🎵 Audio & Multimédia
-| Fichier | Description | Taille |
-|---------|-------------|--------|
-| `AV.pdf` | Audio/Visual (audio-vidéo, autoradio) | 2.5 MB |
-
-### 🔌 Divers Électrique
-| Fichier | Description | Taille |
-|---------|-------------|--------|
-| `ACC.pdf` | Accessory (accessoires électriques) | 232 KB |
-| `PWC.pdf` | Power Control (contrôle alimentation) | 641 KB |
-| `PWO.pdf` | Power Outlet (prises électriques) | 249 KB |
-| `WCS.pdf` | Wiring/Communication System (câblage/réseau) | 624 KB |
-| `VTL.pdf` | Vehicle Tools/Lights (outils/éclairages) | 837 KB |
-
----
-
-## Utilisation pour le Projet CAN
-
-Ces documents ont été utilisés pour :
-- **Identifier les IDs CAN** et le format des trames (via `LAN.pdf`, `BCS.pdf`)
-- **Mapper les signaux** du bus CAN Cabin (steering, RPM, speed, doors, fuel)
-- Comprendre le **câblage du port OBD-II** (CAN-H/CAN-L pins 6/14)
-- Valider les **calibrations** (réservoir 45L, diviseur RPM, offset volant)
-- Localiser les **modules BCM** et leurs protocoles
-
-### Documents Recommandés
-
-Pour travailler sur le CAN bus, commencer par :
-1. `LAN.pdf` - Architecture réseau CAN, IDs des modules
-2. `BCS.pdf` - Body Control System, signaux carrosserie
-3. `EC.pdf` - Engine Control, données moteur (RPM, etc.)
-4. `IP.pdf` - Instrument Panel, dashboard signals
-
----
-
-## Licence
-
-Ces documents sont la propriété de **Nissan Motor Co., Ltd.** Ils sont fournis à titre de référence technique uniquement pour le reverse engineering du protocole CAN à des fins de recherche et de compatibilité avec des équipements aftermarket.
+The service documents retain their Nissan copyright notices.

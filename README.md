@@ -40,23 +40,26 @@ The project started as a custom solution for the **Nissan Juke F15**, but has si
 
 | Feature | Status | Notes |
 | --- | --- | --- |
-| Engine RPM | Calibration pending | Decoder implemented; historical log gives an implausible idle value |
-| Vehicle Speed | Calibration pending | Initial preset restored; compare with OBD reference measurements |
-| Fuel Tank Level | Mapping disputed | Initial 0–45 formula restored; byte 0 may contain status flags |
-| Battery Voltage | ✅ Working | |
-| Steering / Dynamic Guidelines | ✅ Working | Calibrated for Juke F15 |
-| Door Status | ✅ Working | All 4 doors + trunk |
-| Indicators | ✅ Working | Left/right turn signals |
-| Lights | ✅ Working | Headlights, high beam, parking lights |
-| Handbrake | ❌ Not supported | Toyota RAV4 protocol does not define this command (marked TBD in spec) |
-| External Temperature | ✅ Working | From CAN 0x540 (ambient temperature) |
-| Instant Fuel Consumption | Unit unverified | From CAN 0x580; CAN units require a vehicle reference |
+| Engine RPM | Correction documented, not yet applied | OBD supports `/8`; the preset still uses `/7` |
+| Vehicle Speed | Correction documented, not yet applied | OBD supports `0x284` bytes 4–5 at low speed; the preset reads 0–1 |
+| Fuel Tank Level | Mapping contradicted | `0x5C5[0]` includes the parking brake state; it is not a direct fuel gauge |
+| Battery Voltage | Consistent with OBD | Mean absolute difference 0.139 V; potentially different measurement points |
+| Steering / Dynamic Guidelines | Feature implemented | Angle units, zero and sign need validation on this variant |
+| Door Status | Feature implemented | Verify each door/bit correspondence with separate actions |
+| Indicators | ✅ Operation confirmed | Owner feedback after the dashboard state fix |
+| Lights | Feature implemented | Headlights, high beam, parking lights; no annotated sequence in the latest capture |
+| Handbrake | CAN bit identified, not integrated | `0x5C5[0] & 0x04`, corroborated by Juke source and owner maneuver |
+| External Temperature | Calibration pending | `0x540[0]−40`; no independent reference in the log |
+| Instant Fuel Consumption | Current mapping contradicted | `0x580[3]` cycles; candidate fuel field `0x551[1]` needs characterization |
 | Average Fuel Consumption | Unit unverified | From CAN 0x580; CAN units require a vehicle reference |
 | Distance to Empty | Unit unverified | Initial CAN 0x54C mapping restored; dashboard reference needed |
 
 > **Note:** Documentation for the Raise/Toyota RAV4 protocol used by Android head units is scarce. Some features are still being reverse-engineered due to lack of official protocol specifications.
 
 See the **[Roadmap](ROADMAP.md)** for upcoming features.
+The [documented CAN mapping in EN/FR](docs/JUKE_F15_CAN_MAPPING.md) records
+CAN/OBD evidence, sources and limitations. This documentation update does
+not change the preset installed on the ESP32.
 
 ---
 
@@ -263,8 +266,10 @@ The LED (GPIO 8) provides quick diagnostics without requiring a PC connection:
 For local builds and tests, see [Development](docs/DEVELOPMENT.md).
 The [PR #10 validation report](docs/PR10_VALIDATION.fr.md) records the decoder
 fixes, rejected mapping proposals and completed validation.
-The [2011 DIG-T CAN analysis](docs/JUKE_2011_CAN_ANALYSIS.fr.md) documents the
-historical logger defect, conflicting mappings, and a reproducible analysis tool.
+The [2011 Juke F15 mapping](docs/JUKE_F15_CAN_MAPPING.md) compares recent
+captures, OBD references and public Racelogic definitions.
+The [historical analysis (French)](docs/JUKE_2011_CAN_ANALYSIS.fr.md) preserves
+the old logger diagnosis and its limitations.
 The proposed PR mappings and their experimental fixture have been removed. `LOG ON`
 now records timestamped raw CAN and starts supported OBD service 01 reference
 queries; all diagnostic lines begin with `ODB`. See
@@ -333,6 +338,10 @@ Features:
 ## References & Credits
 
 ### Nissan CAN Documentation
+
+- [Juke F15 mapping and capture evidence](docs/JUKE_F15_CAN_MAPPING.md)
+- [Nissan PDF catalog and model-year limitations](docs/vehicle/nissan-juke-f15/README.md)
+- [Racelogic / VBOX: CAN documents and definitions](https://vboxautomotive.co.uk/en/can-database-documents)
 - [NICOclub / Nissan Service Manuals](https://www.nicoclub.com/nissan-service-manuals)
 - [Comma.ai / OpenDBC](https://github.com/commaai/opendbc/tree/master)
 - [jackm / Carhack Nissan](https://github.com/jackm/carhack/blob/master/nissan.md)

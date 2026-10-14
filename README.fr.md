@@ -40,23 +40,26 @@ Le projet a démarré comme une solution dédiée à la **Nissan Juke F15**, mai
 
 | Fonctionnalité | Statut | Notes |
 | --- | --- | --- |
-| Régime Moteur (RPM) | Calibration à vérifier | Décodeur implémenté ; valeur de ralenti incohérente dans l'ancien log |
-| Vitesse Véhicule | Calibration à vérifier | Preset initial restauré ; comparaison avec les références OBD |
-| Niveau Essence | Mapping contesté | Formule initiale 0–45 restaurée ; l'octet 0 pourrait contenir des états |
-| Tension Batterie | ✅ Fonctionnel | |
-| Direction / Lignes Dynamiques | ✅ Fonctionnel | Calibré pour Juke F15 |
-| État des Portes | ✅ Fonctionnel | 4 portes + coffre |
-| Clignotants | ✅ Fonctionnel | Gauche/droite |
-| Feux | ✅ Fonctionnel | Phares, feux de route, veilleuses |
-| Frein à Main | ❌ Non supporté | Le protocole Toyota RAV4 ne définit pas cette commande (marqué TBD dans le spec) |
-| Température Extérieure | ✅ Fonctionnel | Depuis CAN 0x540 (température ambiante) |
-| Conso. Instantanée | Unité à vérifier | Depuis CAN 0x580 ; référence véhicule nécessaire pour l'unité CAN |
+| Régime Moteur (RPM) | Correction documentée, pas encore appliquée | OBD : `/8` concorde ; le preset utilise encore `/7` |
+| Vitesse Véhicule | Correction documentée, pas encore appliquée | OBD : `0x284` octets 4–5 concordent à faible vitesse ; le preset lit 0–1 |
+| Niveau Essence | Mapping contredit | `0x5C5[0]` contient notamment le frein à main ; ce n'est pas une jauge directe |
+| Tension Batterie | Cohérente avec l'OBD | Écart moyen 0,139 V ; points de mesure potentiellement différents |
+| Direction / Lignes Dynamiques | Fonction implémentée | Unités, zéro et sens d'angle à valider sur cette variante |
+| État des Portes | Fonction implémentée | Correspondance porte/bit à vérifier par gestes séparés |
+| Clignotants | ✅ Fonctionnement confirmé | Retour utilisateur après correction de l'état dashboard |
+| Feux | Fonction implémentée | Phares, route, veilleuses ; pas de séquence annotée dans le dernier log |
+| Frein à Main | Bit CAN identifié, non intégré | `0x5C5[0] & 0x04`, corroboré par source Juke et manœuvre utilisateur |
+| Température Extérieure | Calibration à vérifier | `0x540[0]−40` ; aucune référence indépendante dans le log |
+| Conso. Instantanée | Mapping actuel contredit | `0x580[3]` est cyclique ; candidat carburant `0x551[1]` à caractériser |
 | Conso. Moyenne | Unité à vérifier | Depuis CAN 0x580 ; référence véhicule nécessaire pour l'unité CAN |
 | Autonomie Restante | Unité à vérifier | Mapping initial CAN 0x54C restauré ; référence du combiné nécessaire |
 
 > **Note :** La documentation du protocole Raise/Toyota RAV4 utilisé par les autoradios Android est rare. Certaines fonctionnalités sont encore en cours de reverse-engineering par manque de spécifications officielles du protocole.
 
 Voir la **[Roadmap](ROADMAP.md)** pour les fonctionnalités à venir.
+Le [mapping CAN documenté FR/EN](docs/JUKE_F15_CAN_MAPPING.fr.md) contient les
+preuves CAN/OBD, les sources et les limites. Cette mise à jour documentaire
+ne change pas le preset chargé sur l'ESP32.
 
 ---
 
@@ -263,8 +266,10 @@ La LED (GPIO 8) permet un diagnostic rapide sans connexion PC :
 Pour compiler et tester localement, voir [Développement](docs/DEVELOPMENT.md).
 Le [rapport de validation de la PR #10](docs/PR10_VALIDATION.fr.md) décrit les
 correctifs de décodage, le retrait des propositions et les vérifications réalisées.
-L'[analyse CAN du DIG-T 2011](docs/JUKE_2011_CAN_ANALYSIS.fr.md) documente le
-défaut de l'ancien enregistreur, les mappings contradictoires et le parseur reproductible.
+Le [mapping du Juke F15 2011](docs/JUKE_F15_CAN_MAPPING.fr.md) confronte les
+captures récentes, les références OBD et les définitions publiques Racelogic.
+L'[analyse historique](docs/JUKE_2011_CAN_ANALYSIS.fr.md) conserve le diagnostic
+de l'ancien enregistreur et ses limites.
 Les propositions de la PR et leur profil expérimental ont été retirés. `LOG ON`
 enregistre maintenant les trames CAN brutes horodatées et lance les lectures
 OBD service 01 supportées ; chaque ligne de diagnostic commence par `ODB`.
@@ -333,6 +338,10 @@ Fonctionnalités :
 ## Références & Crédits
 
 ### Documentation CAN Nissan
+
+- [Mapping Juke F15 et preuves de capture](docs/JUKE_F15_CAN_MAPPING.fr.md)
+- [Catalogue des PDF Nissan et limites de millésime](docs/vehicle/nissan-juke-f15/README.fr.md)
+- [Racelogic / VBOX : documents et définitions CAN](https://vboxautomotive.co.uk/en/can-database-documents)
 - [NICOclub / Manuels Nissan](https://www.nicoclub.com/nissan-service-manuals)
 - [Comma.ai / OpenDBC](https://github.com/commaai/opendbc/tree/master)
 - [jackm / Carhack Nissan](https://github.com/jackm/carhack/blob/master/nissan.md)

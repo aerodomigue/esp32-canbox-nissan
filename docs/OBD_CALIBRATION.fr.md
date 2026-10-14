@@ -18,6 +18,13 @@ vitesse octets 0–1, carburant `[255,0,0,45]`, autonomie `0x54C ×100/338`,
 consommation instantanée octet 3. Ce retour ne valide pas physiquement ces
 anciens mappings ; la capture sert précisément à les vérifier.
 
+La [capture CAN/OBD du 14 octobre et le mapping documenté](JUKE_F15_CAN_MAPPING.fr.md)
+apportent maintenant des preuves : régime `/8`, vitesse octets 4–5 et
+température moteur concordent avec les références ; le champ de consommation
+instantanée du preset est un compteur cyclique. Ces résultats ne sont pas
+encore appliqués au JSON actif. Le bit CAN du frein à main est corroboré par
+le scénario utilisateur et une définition Juke, sans nouvelle commande OBD.
+
 La [recherche des commandes Nissan et le tableau de couverture](NISSAN_DIAGNOSTIC_RESEARCH.fr.md)
 précisent les valeurs réellement vérifiables. Aucune lecture constructeur
 supplémentaire n'a été validée pour le Juke 2011 MR16DDT manuel : portes,

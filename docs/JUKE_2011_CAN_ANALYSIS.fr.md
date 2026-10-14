@@ -1,4 +1,11 @@
-# Analyse CAN — Juke 2011 1.6 DIG-T, boîte manuelle
+# Analyse historique CAN — Juke 2011 1.6 DIG-T, boîte manuelle
+
+> **Mise à jour du 14 octobre 2026 :** cette page conserve l'analyse du vieil
+> export sans horodatages. Le [mapping courant en français](JUKE_F15_CAN_MAPPING.fr.md)
+> et sa [version anglaise](JUKE_F15_CAN_MAPPING.md) intègrent désormais les
+> captures CAN/OBD récentes, les manœuvres du propriétaire et les définitions
+> Racelogic. Les limites de l'ancien enregistreur ne s'appliquent pas
+> automatiquement aux nouveaux fichiers.
 
 L'analyse distingue les octets réellement présents, les hypothèses issues
 d'autres Nissan et les mesures qui restent à faire. **L'ancien export ne
@@ -182,3 +189,7 @@ commandes `0x23` et `0x24`. Les statistiques de trajet, l'estimation du réservo
 et le relais de climatisation proposés n'ont pas été introduits. Une nouvelle
 capture documentée avec les références OBD reste nécessaire avant de présenter
 le carburant, le régime ou les unités de consommation comme calibrés sur cette voiture.
+Cette étape est maintenant partiellement réalisée : voir le
+[bilan des captures récentes](JUKE_F15_CAN_MAPPING.fr.md), qui établit le régime,
+la vitesse à faible allure et le bit de frein à main, tout en gardant ouvertes
+les unités de consommation et la jauge.

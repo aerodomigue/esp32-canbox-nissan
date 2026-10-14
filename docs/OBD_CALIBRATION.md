@@ -17,6 +17,13 @@ range `0x54C ×100/338`, and instantaneous consumption byte 3. Restoring these
 older mappings does not physically validate them; the capture is intended
 to check them.
 
+The [14 October CAN/OBD capture and documented mapping](JUKE_F15_CAN_MAPPING.md)
+now provide evidence: RPM `/8`, speed bytes 4–5 and coolant agree with the
+references; the preset's instantaneous consumption field is a cycling counter.
+These results have not yet been applied to the active JSON. The parking brake
+CAN bit is corroborated by the owner's sequence and a Juke definition,
+without a new OBD command.
+
 The [Nissan command research and coverage table](NISSAN_DIAGNOSTIC_RESEARCH.md)
 explain which values can actually be checked. No additional manufacturer
 query has been validated for the 2011 Juke MR16DDT with manual transmission:

@@ -45,6 +45,13 @@ Implémentation : [ObdCalibration.cpp](../src/ObdCalibration.cpp).
 Les trames CAN lues restent capturées brutes, même sans référence OBD décodée.
 Le frein à main n'a pas non plus de champ dans le preset actuel.
 
+La [nouvelle étude des trames périodiques](JUKE_F15_CAN_MAPPING.fr.md) identifie
+néanmoins son bit CAN `0x5C5[0] & 0x04`, corroboré par la manœuvre du propriétaire.
+Une lecture CAN périodique et une commande de diagnostic sont deux preuves
+différentes. Les captures récentes n'interrogent que quatre des huit PIDs :
+`0C`, `0D`, `05` et `42`. Le MAF `10` et le rapport commandé `44` sont annoncés
+par l'ECU mais ne figurent pas dans la liste actuelle de lectures.
+
 ## Sources et pistes examinées
 
 ### Réponses publiées pour un Juke 2012
@@ -132,6 +139,13 @@ La [fiche Racelogic Juke F15 2011–2018](https://www.racelogic.co.uk/_downloads
 liste plusieurs signaux recherchés, dont frein à main, portes, éclairage et
 consommation. Cette liste confirme une couverture annoncée par le fournisseur,
 pas des commandes diagnostiques publiques ni leurs formules.
+
+**Complément du 14 octobre :** la [page VBOX publique](https://vboxautomotive.co.uk/en/can-database-documents)
+donne aussi accès au fichier REF Juke avec IDs, champs et facteurs des messages
+CAN périodiques. Le [mapping documenté](JUKE_F15_CAN_MAPPING.fr.md) confronte
+ces définitions aux captures, notamment pour le frein à main et la vitesse.
+La fiche PDF seule ne contenait pas ces offsets ; le REF ne fournit toujours
+pas les commandes CONSULT correspondant aux signaux.
 
 ## Ce qui permettrait une intégration vérifiable
 
