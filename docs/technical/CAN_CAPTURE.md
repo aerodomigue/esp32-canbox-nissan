@@ -168,7 +168,7 @@ ODB RX t_ms=1008 seq=2 request_id=0x7E0 ecu=0x7E8 pid=0x0C name=rpm value=643.00
 
 The example is synthetic. Payload bytes are unchanged; `t_ms` is software
 dequeue time, not a hardware bus timestamp. All diagnostic records begin with
-the requested `ODB` prefix. See [calibration capture and comparison](../OBD_CALIBRATION.fr.md)
+the requested `ODB` prefix. See [calibration capture and comparison](../OBD_CALIBRATION.md)
 for capabilities discovery, units, timeouts and host analysis commands.
 
 Logging is disabled at boot. `LOG OFF` stops capture and new OBD requests;

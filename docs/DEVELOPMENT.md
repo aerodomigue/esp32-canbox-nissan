@@ -74,7 +74,7 @@ For a new `LOG ON` capture containing `ODB RX` references, run:
 
 It keeps session/ECU/PID/unit streams separate and writes `comparison.json` plus
 `matches.csv`. No mapping is changed automatically. See
-[OBD reference capture](OBD_CALIBRATION.fr.md) for the protocol and limitations.
+[OBD reference capture](OBD_CALIBRATION.md) for the protocol and limitations.
 
 ## ESP32-C3 build
 

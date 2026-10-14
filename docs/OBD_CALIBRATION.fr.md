@@ -1,5 +1,7 @@
 # Capture CAN et références OBD pour calibration
 
+> **Langues :** **Français** | [English](OBD_CALIBRATION.md)
+
 `LOG ON` active en mode véhicule réel deux fonctions : l'enregistrement de
 toutes les trames lues, avec leurs octets bruts inchangés, et les lectures
 OBD-II **service 01** pour disposer de références indépendantes. Chaque ligne

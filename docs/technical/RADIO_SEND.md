@@ -383,7 +383,7 @@ service 01 references on USB; OBD diagnostic lines start with the exact
 `ODB` prefix. `LOG OFF` stops new requests. Mock mode and OTA suspend OBD
 polling. These references do not update GlobalData or the UART packets.
 See the [USB LOG command](../protocols/USB_SERIAL_PROTOCOL.md#log---raw-can-capture-and-obd-reference-polling)
-and [calibration guide](../OBD_CALIBRATION.fr.md) for capture instructions.
+and [calibration guide](../OBD_CALIBRATION.md) for capture instructions.
 
 ---
 

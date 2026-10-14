@@ -254,7 +254,7 @@ Map value from one range to another: `map(value, inMin, inMax, outMin, outMax)`
 
 This is the restored initial mapping, not a validated physical tank capacity.
 The proposed PR replacements and their experimental profile have been removed.
-Use [OBD reference capture](OBD_CALIBRATION.fr.md) to collect reference measurements.
+Use [OBD reference capture](OBD_CALIBRATION.md) to collect reference measurements.
 
 ### BITMASK_EXTRACT
 
@@ -387,7 +387,7 @@ sends no OBD queries, and OTA pauses polling.
 
 Save the complete output without time/color prefixes so the comparison tools
 can read both raw frames and references. Stop with `LOG OFF`. See
-[OBD capture and comparison](OBD_CALIBRATION.fr.md). Reference values never
+[OBD capture and comparison](OBD_CALIBRATION.md). Reference values never
 modify your preset automatically.
 
 ---

@@ -1,5 +1,7 @@
 # Diagnostic Nissan — Juke F15 2011, 1.6 DIG-T, boîte manuelle
 
+> **Langues :** **Français** | [English](NISSAN_DIAGNOSTIC_RESEARCH.md)
+
 Recherche effectuée le **14 octobre 2026** pour compléter les références
 `ODB` de calibration. Véhicule cible : moteur **MR16DDT**, boîte manuelle.
 

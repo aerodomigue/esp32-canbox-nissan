@@ -515,7 +515,7 @@ of previously admitted lines rather than discard a partially transmitted one.
 Sustained USB saturation can still cause whole-record losses. Save captures without terminal color
 or timestamp prefixes, for example with
 `.venv/bin/pio device monitor --filter direct`. See the
-[calibration guide](../OBD_CALIBRATION.fr.md) for analysis and limitations.
+[calibration guide](../OBD_CALIBRATION.md) for analysis and limitations.
 
 ---
 

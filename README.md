@@ -199,7 +199,7 @@ carry the attempt time. Payload bytes remain unchanged.
 Send `LOG OFF` to stop capture and new requests. Mock mode sends no OBD
 requests, and OTA pauses polling. References never change the active preset
 or the values sent to the radio. See the
-[capture and comparison guide](docs/OBD_CALIBRATION.fr.md) for PID units,
+[capture and comparison guide](docs/OBD_CALIBRATION.md) for PID units,
 timeouts, driver loss counters and recording commands.
 
 CAN reception continues while an OBD request is pending. A 64 KiB USB FIFO
@@ -268,7 +268,7 @@ historical logger defect, conflicting mappings, and a reproducible analysis tool
 The proposed PR mappings and their experimental fixture have been removed. `LOG ON`
 now records timestamped raw CAN and starts supported OBD service 01 reference
 queries; all diagnostic lines begin with `ODB`. See
-[OBD calibration logging](docs/OBD_CALIBRATION.fr.md).
+[OBD calibration logging](docs/OBD_CALIBRATION.md).
 
 Setting up your ESP32 CANBox Bridge follows a simple two-step process:
 
