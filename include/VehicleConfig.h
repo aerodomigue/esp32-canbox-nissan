@@ -42,6 +42,7 @@
 
 #include <Arduino.h>
 #include <vector>
+#include "FuelConsumptionEstimator.h"
 
 // =============================================================================
 // DATA TYPE DEFINITIONS
@@ -176,6 +177,8 @@ struct VehicleProfile {
     bool isMock;                       // true = mock mode (generate simulated data)
                                        // false = real CAN mode (read from bus)
     std::vector<FrameConfig> frames;   // All CAN frames to process
+    FuelConsumptionConfig fuelConsumption;
+    bool fuelConsumptionCalibrated = false;
 };
 
 // =============================================================================

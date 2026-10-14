@@ -2,10 +2,11 @@
 
 The `RadioSend.cpp` module communicates with the Android head unit MCU via the **Toyota RAV4 / Raise protocol** over UART.
 
-This guide describes the current implementation, including its unresolved
-differences from the protocol documents. The documented 13-byte `0x23` payload
-and proposed third `0x24` byte `0x06` are not implemented. OBD calibration runs on the
-USB logging path and does not replace the preset's values sent over UART.
+This guide describes the current implementation and its remaining protocol
+limitations. Consumption uses the documented three-byte `0x22` and 13-byte
+`0x23` payloads. Door command `0x24` keeps its documented two-byte payload.
+OBD calibration runs on the USB logging path and does not replace the preset's
+values sent over UART.
 
 ## Commands Summary
 
@@ -13,7 +14,7 @@ USB logging path and does not replace the preset's values sent over UART.
 | --- | --- | --- | --- |
 | 0x21 | Trip Info (Avg Speed, Time, Range) | 7 | 5000ms |
 | 0x22 | Instantaneous Fuel Consumption | 3 | 1000ms |
-| 0x23 | Average Fuel Consumption | 3 | 5000ms |
+| 0x23 | Current Trip / Historical Fuel Consumption | 13 | 5000ms |
 | 0x24 | Door Status + IG Proxy | 2 | 250ms |
 | 0x28 | Outside Temperature | 12 | 5000ms |
 | 0x29 | Steering Wheel Angle | 2 | 200ms |
@@ -22,9 +23,13 @@ USB logging path and does not replace the preset's values sent over UART.
 | 0x7D/04 | Odometer | 12 | 10000ms |
 | 0x7D/0A | Engine RPM | 3 | 333ms |
 
-`0x22` and `0x23` require available consumption sources in the stated UART
-units. They are not emitted by the corrected Juke preset, which has no
-validated L/100km source. Mock mode retains its synthetic output.
+`0x22` requires an available consumption value in the stated UART units.
+The Juke preset's `fuelConsumption` configuration enables an experimental
+conversion from the `0x551 B1` counter and vehicle speed. Its provisional
+80 mm³ per increment factor is not calibrated for the Juke MR16DDT.
+`0x23` sends a current-trip value when available, or `0xFFFF` while a derived
+trip is unavailable. Mock mode retains synthetic consumption values with
+the same documented packet formats.
 
 ---
 
@@ -260,48 +265,71 @@ Byte 2: Value LSB
 **Example:** 7.5 L/100km → 75 → 0x004B → Payload: `02 00 4B`
 
 This is the UART encoding when an available source provides 0.1 L/100km.
-The corrected Nissan Juke preset has no such source: its former `0x580`
-byte 3 counter mapping was removed, so it does not send `0x22`. Mock mode
-retains synthetic consumption output. `0x551` byte 1 is exposed only as a
-raw counter and is never passed to this encoder as L/100km.
+The Juke preset computes an estimate from successive modulo-256 differences
+of `0x551 B1` and distance integrated from vehicle speed. The raw byte is
+never sent directly as L/100km. Its `fuelConsumption` configuration uses
+a provisional 80 mm³ per increment, based on a
+[Clio III calibration](https://x0r.fr/blog/39#comment-396), and must be calibrated
+on the Juke MR16DDT before treating the result as a measured consumption.
+The VBOX label and factor 1 do not independently validate this conversion.
+
+At a confirmed stationary state, the Juke conversion sends zero for the
+L/100km display, matching the Nissan cluster convention documented in
+[MWI, page 16](../vehicle/nissan-juke-f15/MWI.pdf). Fuel consumed while stationary
+still contributes to the trip total. This display convention does not mean
+the engine uses no fuel. When the input data is unavailable or stale, no
+instantaneous packet is sent: Raise does not document an invalid marker
+for `0x22`. No L/h unit is defined for this command.
+
+Mock mode retains synthetic consumption output. Head-unit display of
+instantaneous consumption requires IG ON according to Raise V2.21 page 5.
 
 ---
 
-### 5b. Average Fuel Consumption (Command 0x23)
+### 5b. Current Trip / Historical Fuel Consumption (Command 0x23)
 
 | Field | Value |
 | --- | --- |
 | **Update Rate** | 5000ms |
-| **Payload Length** | 3 bytes |
+| **Payload Length** | 13 bytes |
 
 **Payload Structure:**
 ```
 Byte 0: Unit (0x02 = L/100km)
-Byte 1: Value MSB
-Byte 2: Value LSB
+Bytes 1–2: Current-trip consumption, uint16 BE
+Bytes 3–4: Historical trip 1, uint16 BE
+Bytes 5–6: Historical trip 2, uint16 BE
+Bytes 7–8: Historical trip 3, uint16 BE
+Bytes 9–10: Historical trip 4, uint16 BE
+Bytes 11–12: Historical trip 5, uint16 BE
 ```
 
 **Formula:** `consumption_L100km = (Byte1 << 8 | Byte2) / 10.0`
 
-**Example:** 8.2 L/100km → 82 → 0x0052 → Payload: `02 00 52`
+**Invalid value:** `0xFFFF` independently marks each unavailable trip.
+
+**Example:** 8.2 L/100km → 82 → `0x0052`, with five unknown historical trips:
+`02 00 52 FF FF FF FF FF FF FF FF FF FF`.
 
 **Notes:**
 
-- When an available average-consumption source exists, the current sender
-  uses the same three-byte shape as `0x22`. The corrected Juke preset removes
-  unvalidated `0x580` byte 4 and does not send `0x23`; mock mode still does.
-- No average is computed or persisted by `RadioSend.cpp`, and no historical
-  trip values are appended to the packet.
-- Raise V2.21 page 5 specifies **13 payload bytes** for `0x23`: unit, current
-  trip consumption and five historical values, each BE uint16. `0xFFFF`
-  denotes an invalid value. The current three-byte implementation differs
-  from that document; the 13-byte format is not transmitted.
+- The payload follows Raise V2.21 page 5. The former three-byte implementation
+  omitted required historical fields and has been replaced.
+- The Juke conversion calculates current-trip consumption from total fuel
+  divided by total distance. This is a session estimate using the same
+  provisional factor as instantaneous consumption, not the Nissan cluster's
+  stored average. It does not restore the unvalidated `0x580 B4` mapping.
+- `RadioSend.cpp` only encodes the supplied average. It does not calculate or
+  persist trips; all five historical values are `0xFFFF`.
+- When derived consumption is enabled but its average is unavailable,
+  the current-trip value is also `0xFFFF`. Profiles without derived
+  consumption and without an available direct source emit no `0x23` packet.
 - The specification gates current-trip consumption display on IG ON. The
-  firmware supplies only the RPM-derived IG proxy described under `0x24`;
-  head-unit display of this three-byte `0x23` packet is not guaranteed.
+  firmware supplies the RPM-derived IG proxy described under `0x24`.
 
 **Synthetic wire example with an available source:** 9.8 L/100km (`98`) produces the full
-seven-byte frame `2E 23 03 02 00 62 75`. This example verifies encoding,
+17-byte frame `2E 23 0D 02 00 62 FF FF FF FF FF FF FF FF FF FF 75`.
+This example verifies encoding,
 not the accuracy of the source CAN value or acceptance by DUDU7.
 
 ---

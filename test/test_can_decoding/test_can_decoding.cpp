@@ -11,6 +11,9 @@
 
 #include <unity.h>
 #include <string>
+#include <fstream>
+#include <functional>
+#include <unistd.h>
 #include "CanConfigProcessor.h"
 #include "ConfigManager_mock.h"
 #include "GlobalData.h"
@@ -513,6 +516,110 @@ void test_profile_reload_clears_observation_availability() {
     TEST_ASSERT_EQUAL_UINT16(0, fuelConsumptionAvg);
 }
 
+static void feedFuelReference(uint32_t start, unsigned steps = 100) {
+    // 36.50 km/h and 10 ticks/s at 80 mm3/tick => 7.9 L/100 km.
+    uint8_t speed[] = {0, 0, 0, 0, 0x0E, 0x42, 0, 0};
+    uint8_t fuel[] = {0x67, 250, 0, 0x80, 0xFF, 2, 0x80, 0xFF};
+    for (unsigned i = 0; i <= steps; ++i) {
+        fuel[1] = static_cast<uint8_t>(250 + i);
+        TEST_ASSERT_TRUE(proc.processFrame(makeFrame(0x284, speed, 8), start + i * 100));
+        const CanFrame raw = makeFrame(0x551, fuel, 8);
+        TEST_ASSERT_TRUE(proc.processFrame(raw, start + i * 100));
+        TEST_ASSERT_EQUAL_HEX8_ARRAY(fuel, raw.data, 8);
+    }
+}
+
+static bool loadChangedFuelProfile(const std::function<void(JsonDocument&)>& change) {
+    LittleFS.basePath = "data";
+    File file = LittleFS.open("/NissanJukeF15.json", "r");
+    JsonDocument doc;
+    TEST_ASSERT_FALSE(deserializeJson(doc, file));
+    file.close();
+    change(doc);
+    char directory[] = "/tmp/juke-fuel-config-XXXXXX";
+    TEST_ASSERT_NOT_NULL(mkdtemp(directory));
+    const std::string path = std::string(directory) + "/vehicle.json";
+    std::string text;
+    serializeJson(doc, text);
+    { std::ofstream output(path); output << text; }
+    LittleFS.basePath = directory;
+    const bool loaded = proc.loadFromJson("/vehicle.json");
+    unlink(path.c_str());
+    rmdir(directory);
+    LittleFS.basePath = "data";
+    return loaded;
+}
+
+void test_fuel_config_uses_precise_speed_and_counter_rollover() {
+    feedFuelReference(1000);
+    TEST_ASSERT_EQUAL_UINT8(36, vehicleSpeed);  // Legacy dashboard still truncates.
+    TEST_ASSERT_TRUE(canAuxData.fuelConsumptionDerived);
+    TEST_ASSERT_TRUE(canAuxData.fuelConsumptionEstimated);
+    TEST_ASSERT_TRUE(canAuxData.fuelConsumptionInstValid);
+    TEST_ASSERT_TRUE(canAuxData.fuelConsumptionAvgValid);
+    TEST_ASSERT_EQUAL_UINT16(79, fuelConsumptionInst);  // Truncated speed would give 80.
+    TEST_ASSERT_EQUAL_UINT16(79, fuelConsumptionAvg);
+    TEST_ASSERT_EQUAL_UINT8(94, canAuxData.fuelCounterRaw);
+    proc.updateFuelConsumption(11501);
+    TEST_ASSERT_FALSE(canAuxData.fuelConsumptionInstValid);
+    TEST_ASSERT_FALSE(canAuxData.fuelConsumptionAvgValid);
+    TEST_ASSERT_TRUE(proc.loadFromJson("/NissanJukeF15.json"));
+    TEST_ASSERT_FALSE(canAuxData.fuelCounterValid);
+}
+
+void test_fuel_coefficient_is_configurable_and_can_be_disabled() {
+    TEST_ASSERT_TRUE(loadChangedFuelProfile([](JsonDocument& doc) {
+        doc["fuelConsumption"]["mm3PerTick"] = 103.7;
+    }));
+    feedFuelReference(1000);
+    TEST_ASSERT_EQUAL_UINT16(102, fuelConsumptionInst);
+    TEST_ASSERT_EQUAL_UINT16(102, fuelConsumptionAvg);
+    TEST_ASSERT_TRUE(canAuxData.fuelConsumptionEstimated);
+    TEST_ASSERT_TRUE(loadChangedFuelProfile([](JsonDocument& doc) {
+        doc["fuelConsumption"]["enabled"] = false;
+    }));
+    feedFuelReference(20000);
+    TEST_ASSERT_FALSE(canAuxData.fuelConsumptionDerived);
+    TEST_ASSERT_FALSE(canAuxData.fuelConsumptionEstimated);
+    TEST_ASSERT_FALSE(canAuxData.fuelConsumptionInstValid);
+    TEST_ASSERT_FALSE(canAuxData.fuelConsumptionAvgValid);
+    TEST_ASSERT_TRUE(canAuxData.fuelCounterValid);
+}
+
+void test_fuel_precise_speed_honours_legacy_zero_multiplier_fallback() {
+    TEST_ASSERT_TRUE(loadChangedFuelProfile([](JsonDocument& doc) {
+        doc["frames"][2]["fields"][0]["params"][0] = 0;
+    }));
+    feedFuelReference(1000);
+    TEST_ASSERT_EQUAL_UINT8(36, vehicleSpeed);
+    TEST_ASSERT_EQUAL_UINT16(79, fuelConsumptionInst);
+}
+
+void test_invalid_fuel_config_preserves_active_profile_and_estimate() {
+    feedFuelReference(1000);
+    const std::function<void(JsonDocument&)> invalid[] = {
+        [](JsonDocument& d) { d["fuelConsumption"]["mm3PerTick"] = 0; },
+        [](JsonDocument& d) { d["fuelConsumption"]["mm3PerTick"] = -80; },
+        [](JsonDocument& d) { d["fuelConsumption"].remove("mm3PerTick"); },
+        [](JsonDocument& d) { d["fuelConsumption"]["enabled"] = "true"; },
+        [](JsonDocument& d) { d["fuelConsumption"]["calibration"] = "typo"; },
+        [](JsonDocument& d) { d["fuelConsumption"]["calibration"] = 42; },
+        [](JsonDocument& d) { d["fuelConsumption"]["windowMs"] = 0; },
+        [](JsonDocument& d) { d["fuelConsumption"]["windowMs"] = 1000.5; },
+        [](JsonDocument& d) { d["fuelConsumption"]["maxGapMs"] = -1; },
+        [](JsonDocument& d) { d["fuelConsumption"]["maxTicksPerSecond"] = 600; },
+        [](JsonDocument& d) { d["frames"][6]["fields"][1]["target"] = "FUEL_CONS_INST"; },
+        [](JsonDocument& d) { d["frames"][6]["fields"][1]["formula"] = "SCALE"; },
+        [](JsonDocument& d) { d["frames"][2]["fields"][0]["params"][1] = 0; }
+    };
+    for (const auto& change : invalid) {
+        TEST_ASSERT_FALSE(loadChangedFuelProfile(change));
+        TEST_ASSERT_EQUAL_STRING("Nissan Juke F15", proc.getProfileName());
+        TEST_ASSERT_TRUE(canAuxData.fuelConsumptionInstValid);
+        TEST_ASSERT_EQUAL_UINT16(79, fuelConsumptionInst);
+    }
+}
+
 void test_oversized_dlc_rejected() {
     engineRPM = 903;
     // makeFrame copies at most eight bytes even though the DLC is invalid.
@@ -703,6 +810,10 @@ int main(int argc, char** argv) {
     RUN_TEST(test_invalid_field_lengths_rejected);
     RUN_TEST(test_unknown_target_rejects_profile_without_replacing_previous_mapping);
     RUN_TEST(test_profile_reload_clears_observation_availability);
+    RUN_TEST(test_fuel_config_uses_precise_speed_and_counter_rollover);
+    RUN_TEST(test_fuel_coefficient_is_configurable_and_can_be_disabled);
+    RUN_TEST(test_fuel_precise_speed_honours_legacy_zero_multiplier_fallback);
+    RUN_TEST(test_invalid_fuel_config_preserves_active_profile_and_estimate);
 
     // Standard data frames only
     RUN_TEST(test_rtr_configured_id_preserves_state);

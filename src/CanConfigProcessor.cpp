@@ -28,6 +28,60 @@
 #include <ArduinoJson.h>
 #include <utility>
 
+namespace {
+bool parseFuelConsumption(JsonVariantConst value, VehicleProfile& profile) {
+    if (value.isNull()) return true;  // Older profiles keep their existing behaviour.
+    if (!value.is<JsonObjectConst>() || !value["enabled"].is<bool>()) return false;
+    auto& config = profile.fuelConsumption;
+    config.enabled = value["enabled"].as<bool>();
+    if (!config.enabled) return true;
+    if (profile.isMock || !value["mm3PerTick"].is<double>()) return false;
+
+    const auto number = [&](const char* key, double& result) {
+        if (value[key].isNull()) return true;
+        if (!value[key].is<double>()) return false;
+        result = value[key].as<double>();
+        return true;
+    };
+    const auto duration = [&](const char* key, uint32_t& result) {
+        if (value[key].isNull()) return true;
+        if (!value[key].is<uint32_t>()) return false;
+        result = value[key].as<uint32_t>();
+        return true;
+    };
+    if (!number("mm3PerTick", config.mm3PerTick) ||
+        !number("minSpeedKmh", config.minSpeedKmh) ||
+        !number("minAverageDistanceM", config.minAverageDistanceM) ||
+        !number("maxTicksPerSecond", config.maxTicksPerSecond) ||
+        !duration("windowMs", config.windowMs) ||
+        !duration("maxGapMs", config.maxGapMs) || !config.isValid()) return false;
+
+    if (!value["calibration"].isNull() && !value["calibration"].is<const char*>()) return false;
+    const char* calibration = value["calibration"] | "provisional";
+    if (strcmp(calibration, "calibrated") == 0) profile.fuelConsumptionCalibrated = true;
+    else if (strcmp(calibration, "provisional") != 0) return false;
+
+    unsigned counters = 0, speeds = 0;
+    for (const auto& frame : profile.frames) {
+        for (const auto& field : frame.fields) {
+            // Derived and direct consumption must never compete for the output.
+            if (field.target == OutputField::FUEL_CONS_INST ||
+                field.target == OutputField::FUEL_CONS_AVG) return false;
+            if (field.target == OutputField::FUEL_COUNTER_RAW) {
+                if (field.dataType != DataType::UINT8 || field.byteCount != 1 ||
+                    field.formula != FormulaType::NONE) return false;
+                ++counters;
+            }
+            if (field.target == OutputField::VEHICLE_SPEED) {
+                if (field.formula == FormulaType::SCALE && field.params[1] <= 0) return false;
+                ++speeds;
+            }
+        }
+    }
+    return counters == 1 && speeds == 1;
+}
+}  // namespace
+
 // =============================================================================
 // CONSTRUCTOR
 // =============================================================================
@@ -195,6 +249,11 @@ bool CanConfigProcessor::loadFromJson(const char* path) {
         nextProfile.frames.push_back(frame);
     }
 
+    if (!parseFuelConsumption(doc["fuelConsumption"], nextProfile)) {
+        Console.println("[CanConfig] Invalid fuelConsumption settings or sources");
+        return false;
+    }
+
     bool isValid = nextProfile.isMock || !nextProfile.frames.empty();
 
     if (isValid) {
@@ -202,6 +261,10 @@ bool CanConfigProcessor::loadFromJson(const char* path) {
         _mockMode = _profile.isMock;
         // Never retain a previous profile's fuel values or observed flags.
         canAuxData = {};
+        _fuelEstimator.configure(_profile.fuelConsumption);
+        canAuxData.fuelConsumptionDerived = _profile.fuelConsumption.enabled;
+        canAuxData.fuelConsumptionEstimated = _profile.fuelConsumption.enabled &&
+                                             !_profile.fuelConsumptionCalibrated;
         fuelLevel = 0;
         fuelConsumptionInst = 0;
         fuelConsumptionAvg = 0;
@@ -315,6 +378,10 @@ const FrameConfig* CanConfigProcessor::findFrameConfig(uint16_t canId) const {
  * 3. Write to GlobalData
  */
 bool CanConfigProcessor::processFrame(const CanFrame& frame) {
+    return processFrame(frame, static_cast<uint32_t>(millis()));
+}
+
+bool CanConfigProcessor::processFrame(const CanFrame& frame, uint32_t receivedAt) {
     if (frame.extd || frame.rtr || frame.identifier > 0x7FF ||
         frame.data_length_code > sizeof(frame.data)) {
         return false;
@@ -349,9 +416,49 @@ bool CanConfigProcessor::processFrame(const CanFrame& frame) {
 
         // Step 3: Write to appropriate GlobalData variable
         writeToGlobalData(field.target, convertedValue);
+
+        if (_profile.fuelConsumption.enabled) {
+            if (field.target == OutputField::VEHICLE_SPEED) {
+                // Keep fractional km/h for distance, while preserving the legacy
+                // integer dashboard/radio speed field. No raw frame is modified.
+                double speedKmh = convertedValue;
+                if (field.formula == FormulaType::SCALE) {
+                    const double multiplier = field.params[0] == 0 ? 1 : field.params[0];
+                    speedKmh = static_cast<double>(rawValue) * multiplier /
+                               field.params[1] + field.params[2];
+                } else if (field.formula == FormulaType::MAP_RANGE &&
+                           field.params[1] != field.params[0]) {
+                    speedKmh = (static_cast<double>(rawValue) - field.params[0]) *
+                               (static_cast<double>(field.params[3]) - field.params[2]) /
+                               (static_cast<double>(field.params[1]) - field.params[0]) +
+                               field.params[2];
+                }
+                _fuelEstimator.onSpeed(speedKmh, receivedAt);
+            } else if (field.target == OutputField::FUEL_COUNTER_RAW) {
+                _fuelEstimator.onCounter(static_cast<uint8_t>(rawValue), receivedAt);
+            }
+        }
     }
 
+    updateFuelConsumption(receivedAt);
     return true;
+}
+
+void CanConfigProcessor::updateFuelConsumption(uint32_t now) {
+    if (_mockMode || !_profile.fuelConsumption.enabled) {
+        canAuxData.fuelConsumptionDerived = false;
+        canAuxData.fuelConsumptionEstimated = false;
+        return;
+    }
+    // CAN LOAD/RELOAD reset GlobalData after loading the profile. Restore
+    // configuration flags independently of observed-value availability.
+    canAuxData.fuelConsumptionDerived = true;
+    canAuxData.fuelConsumptionEstimated = !_profile.fuelConsumptionCalibrated;
+    _fuelEstimator.tick(now);
+    canAuxData.fuelConsumptionInstValid = _fuelEstimator.instantaneousValid();
+    canAuxData.fuelConsumptionAvgValid = _fuelEstimator.averageValid();
+    fuelConsumptionInst = canAuxData.fuelConsumptionInstValid ? _fuelEstimator.instantaneous() : 0;
+    fuelConsumptionAvg = canAuxData.fuelConsumptionAvgValid ? _fuelEstimator.average() : 0;
 }
 
 // =============================================================================

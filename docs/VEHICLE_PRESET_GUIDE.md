@@ -55,6 +55,7 @@ A vehicle preset is a JSON file that tells the ESP32 how to decode CAN frames fr
 | `name` | string | Vehicle name (displayed in logs) |
 | `isMock` | boolean | `true` = simulate data, `false` = read real CAN |
 | `vehicleParams` | object (optional) | Calibration overrides for this model — see [Vehicle Parameters](#vehicle-parameters-vehicleparams) |
+| `fuelConsumption` | object (optional) | Derive radio consumption from a raw counter and speed — see [Counter-based fuel consumption](#counter-based-fuel-consumption-fuelconsumption) |
 | `frames` | array | List of CAN frames to decode |
 
 ### Frame Object
@@ -142,6 +143,87 @@ The steering parameters (`steerScale`, `steerOffset`, `steerInvert`) have **no f
 
 ---
 
+## Counter-based fuel consumption (`fuelConsumption`)
+
+The Juke preset adds this **root-level** object. It enables an experimental
+conversion of modulo-256 counter increments from `0x551 B1` into the
+Raise/Toyota RAV4 radio format. The **80 mm³/increment coefficient is
+provisional on the Juke MR16DDT**: it comes from a
+[Clio III calibration report](https://x0r.fr/blog/39#comment-396), not a
+Juke measurement. The archived VBOX REF retains its original factor 1;
+this configurable conversion does not alter that source file.
+
+```json
+{
+  "fuelConsumption": {
+    "enabled": true,
+    "calibration": "provisional",
+    "source": "https://x0r.fr/blog/39#comment-396",
+    "mm3PerTick": 80,
+    "windowMs": 1000,
+    "maxGapMs": 500,
+    "minSpeedKmh": 2,
+    "minAverageDistanceM": 100,
+    "maxTicksPerSecond": 400
+  }
+}
+```
+
+This is a root-object fragment to insert alongside `frames`, not a complete
+preset. Unlike `vehicleParams`, these settings are read from the JSON on
+every load and are not NVS overrides.
+
+| Key | Meaning |
+| --- | --- |
+| `enabled` | Enable the estimator; omission of the object preserves older profiles' behaviour |
+| `calibration` | `provisional` (default) or `calibrated`; only mark calibrated after an independent check on the vehicle |
+| `source` | Documentary provenance of the coefficient; does not calibrate the signal |
+| `mm3PerTick` | Required finite, positive volume per modulo-256 increment; adjustable after calibration |
+| `windowMs` | Instantaneous consumption calculation window, 100–10000 ms; Juke: 1000 ms |
+| `maxGapMs` | Maximum gap in either source before invalidating and reinitialising the session, 100–1000 ms; Juke: 500 ms |
+| `minSpeedKmh` | Below this speed, publish instantaneous 0 with fresh sources; this display convention does not mean zero fuel flow |
+| `minAverageDistanceM` | Minimum session distance for average consumption, 100 m |
+| `maxTicksPerSecond` | Plausibility limit on counter progression, 400 increments/s |
+
+An enabled estimator requires exactly one `FUEL_COUNTER_RAW` field
+(`UINT8`, `byteCount: 1`, `formula: "NONE"`) and one `VEHICLE_SPEED` field.
+It rejects profiles with competing direct `FUEL_CONS_INST` or
+`FUEL_CONS_AVG` fields. Invalid settings leave the active profile unchanged.
+The rate and gap must satisfy `maxTicksPerSecond * maxGapMs / 1000 + 1 < 256`
+to keep the plausibility budget below a full counter rollover.
+
+The firmware accumulates `(current - previous) modulo 256` and multiplies
+by `mm3PerTick`. It integrates speed to obtain distance using the fractional
+Juke value `U16BE(0x284 B4,B5)/100` before truncation for dashboard output.
+For nonzero distance, **radio units (0.1 L/100 km) = volume in mm³ / distance
+in metres**. Instantaneous consumption uses the configured window; average
+consumption uses the session since initialisation, including fuel consumed
+while stationary, once its distance threshold is reached.
+
+Profile reload, reboot, a source gap beyond `maxGapMs`, or an implausible
+increment resets the session. A counter reset that resembles an ordinary
+rollover cannot always be detected. This is not the factory trip average
+and it does not survive a restart. The short parking capture does not
+calibrate the coefficient or establish long-trip accuracy.
+
+`SYS DATA` reports availability through `FuelConsValid` and the provisional
+coefficient through `FuelConsEstimated: 1`. Availability is not a calibration
+claim. The radio receives unit `0x02` and unsigned big-endian values:
+`0x22` has a 3-byte payload; `0x23` has a 13-byte payload with the current
+average and five unavailable history slots (`0xFFFF`). An unavailable
+average is also `0xFFFF`. Stale instantaneous values are not transmitted
+because no invalid marker is documented for `0x22`; an existing radio
+display may therefore retain its previous reading. See
+[radio protocol](technical/RADIO_SEND.md) for packet details.
+The radio format has no calibration flag; `FuelConsEstimated` is available
+only in `SYS DATA`.
+
+Install the matching firmware first, transfer the updated JSON separately,
+then run `CAN LOAD NissanJukeF15.json`; application OTA alone does not
+replace the profile in LittleFS. `RX` and `ODB` log formats are unchanged.
+
+---
+
 ## Targets
 
 Variables that can be updated from CAN data:
@@ -163,12 +245,12 @@ Variables that can be updated from CAN data:
 | `FUEL_CONS_AVG` | Average consumption | 0.1 L/100km |
 | `FUEL_COUNTER_RAW` | Raw fuel-related byte, separate from consumption | No validated physical unit |
 
-`FUEL_LEVEL`, `FUEL_CONS_INST` and `FUEL_CONS_AVG` require a calibrated source
-in the specified unit. Their availability becomes true after a configured
-frame supplies a value; absent targets stay unavailable after profile load.
-The Juke preset has none of these three targets and sends no consumption
-UART packets. Mock mode retains synthetic values. `FUEL_COUNTER_RAW` is
-exposed separately as `FuelRaw` and must not be treated as L/h or L/100km.
+Direct `FUEL_LEVEL`, `FUEL_CONS_INST` and `FUEL_CONS_AVG` targets require
+sources in the specified units. Their availability becomes true after a
+configured frame supplies a value. The Juke has no fuel-level source and
+derives consumption separately through `fuelConsumption` above. Mock mode
+retains synthetic values. `FUEL_COUNTER_RAW` remains exposed as the unchanged
+`FuelRaw` byte; it must not be displayed directly as L/h or L/100km.
 
 ### Additional vehicle states (boolean)
 

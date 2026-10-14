@@ -1,6 +1,17 @@
 {
   "name": "Nissan Juke F15",
   "isMock": false,
+  "fuelConsumption": {
+    "enabled": true,
+    "calibration": "provisional",
+    "source": "https://x0r.fr/blog/39#comment-396",
+    "mm3PerTick": 80,
+    "windowMs": 1000,
+    "maxGapMs": 500,
+    "minSpeedKmh": 2,
+    "minAverageDistanceM": 100,
+    "maxTicksPerSecond": 400
+  },
   "vehicleParams": {
     "steerScale": 300,
     "steerOffset": 100,

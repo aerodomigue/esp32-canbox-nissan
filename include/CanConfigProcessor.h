@@ -77,6 +77,12 @@ public:
      */
     bool processFrame(const CanFrame& frame);
 
+    // Explicit dequeue time keeps derived consumption aligned with raw logs.
+    bool processFrame(const CanFrame& frame, uint32_t receivedAt);
+
+    // Call even without CAN traffic so expired sources stop reaching the radio.
+    void updateFuelConsumption(uint32_t now);
+
     /**
      * @brief Check if running in mock mode
      *
@@ -111,6 +117,7 @@ private:
     bool _mockMode;                 // true = simulating data, false = real CAN
     uint32_t _framesProcessed;      // Statistics: processed frame count
     uint32_t _unknownFrames;        // Statistics: unknown CAN ID count
+    FuelConsumptionEstimator _fuelEstimator;
 
     /**
      * @brief Find frame configuration for a CAN ID

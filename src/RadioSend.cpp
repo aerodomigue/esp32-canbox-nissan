@@ -272,20 +272,27 @@ void sendFuelConsumptionMessage(uint16_t consumption_01) {
 
 /**
  * @brief Send average/history fuel consumption
- * @param consumption_01 Average consumption in 0.1 L/100km units
+ * @param consumption_01 Current-trip consumption in 0.1 L/100km units,
+ *                       or 0xFFFF when unavailable
  *
- * Per Chinese protocol document (Toyota RAV4):
- * - Cmd = 0x23, Len = 0x03
+ * Per Raise V2.21, page 5 (Toyota RAV4):
+ * - Cmd = 0x23, Len = 0x0D
  * - Data0: Unit (0x02 = L/100km)
- * - Data1-2: Value (Big Endian), divide by 10 to get L/100km
+ * - Data1-2: Current trip (Big Endian), divide by 10 to get L/100km
+ * - Data3-12: Five historical trips, 0xFFFF each when unavailable
  */
 void sendFuelConsumptionAvgMessage(uint16_t consumption_01) {
-    uint8_t payload[3] = {
+    uint8_t payload[13] = {
         FUEL_UNIT_L100KM,                        // Unit: L/100km
         (uint8_t)((consumption_01 >> 8) & 0xFF), // Value MSB
-        (uint8_t)(consumption_01 & 0xFF)         // Value LSB
+        (uint8_t)(consumption_01 & 0xFF),        // Value LSB
+        0xFF, 0xFF,                            // Historical trip 1: unavailable
+        0xFF, 0xFF,                            // Historical trip 2: unavailable
+        0xFF, 0xFF,                            // Historical trip 3: unavailable
+        0xFF, 0xFF,                            // Historical trip 4: unavailable
+        0xFF, 0xFF                             // Historical trip 5: unavailable
     };
-    sendCanboxMessage(CMD_FUEL_CONS_AVG, payload, 3);
+    sendCanboxMessage(CMD_FUEL_CONS_AVG, payload, sizeof(payload));
 }
 
 /**
@@ -432,10 +439,13 @@ void processRadioUpdates() {
     // =========================================================================
     // 6b. AVERAGE FUEL CONSUMPTION (CMD 0x23) - 5s interval
     // =========================================================================
-    // The Juke capture has no validated average-consumption source.
+    // Derived profiles explicitly clear unavailable trip data using the
+    // protocol's invalid marker; other profiles retain source availability.
     if (now - lastFuelConsAvgTime >= FUEL_CONS_AVG_INTERVAL_MS) {
-        if (canAuxData.fuelConsumptionAvgValid) {
-            sendFuelConsumptionAvgMessage(fuelConsumptionAvg);
+        if (canAuxData.fuelConsumptionAvgValid || canAuxData.fuelConsumptionDerived) {
+            sendFuelConsumptionAvgMessage(canAuxData.fuelConsumptionAvgValid
+                                              ? fuelConsumptionAvg
+                                              : 0xFFFF);
         }
         lastFuelConsAvgTime = now;
     }

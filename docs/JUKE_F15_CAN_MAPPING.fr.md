@@ -12,8 +12,9 @@ restent des comparaisons avec cet état historique.
 
 ## Application dans le firmware et le preset actuels
 
-Le [preset Juke du dépôt](../data/NissanJukeF15.json) applique désormais les
-corrections corroborées et sépare les données brutes non calibrées :
+Le [preset Juke du dépôt](../data/NissanJukeF15.json) applique les corrections
+corroborées et conserve l'octet brut à côté d'une estimation provisoire de
+consommation :
 
 | Cible | Champ CAN / conversion | Portée et limite |
 | --- | --- | --- |
@@ -21,21 +22,37 @@ corrections corroborées et sépare les données brutes non calibrées :
 | `VEHICLE_SPEED` | `0x284 B4–B5 BE /100` | Km/h entiers ; corroboré sur la plage de faible vitesse capturée |
 | `HANDBRAKE` | `0x5C5 B0 bit2` | `SYS DATA` → `Handbrake` ; état observé 1 = serré |
 | `BRAKE_PEDAL` | `0x180 B7 bit0` | `SYS DATA` → `Brake` ; bit de contact défini par la source, geste/polarité à vérifier |
-| `FUEL_COUNTER_RAW` | `0x551 B1`, inchangé 0–255 | `SYS DATA` → `FuelRaw` ; aucune unité physique ni base temps/cycle validée |
+| `FUEL_COUNTER_RAW` | `0x551 B1`, inchangé 0–255 | `SYS DATA` → `FuelRaw` ; conversion séparée du compteur avec un coefficient provisoire |
 
 La fausse jauge issue de l'octet entier `0x5C5 B0` et les deux champs de
 consommation `0x580` ont été retirés. `Fuel: 0 L` reste par compatibilité,
 avec `FuelValid: 0` : la mesure est **indisponible**, pas un réservoir vide.
-`FuelConsValid: INST=0 AVG=0` signifie que le profil Juke n'envoie ni UART
-`0x22` ni `0x23`. Le mode mock conserve ses consommations synthétiques ; un
-profil personnalisé peut fournir une source calibrée indépendamment en
-0,1 L/100 km.
+L'objet `fuelConsumption` active désormais une estimation à partir des
+incréments modulo 256 de `0x551 B1`, avec **80 mm³/incrément, non encore
+calibré sur ce Juke**, et de la distance intégrée depuis la vitesse précise
+`0x284 B4–B5 /100`. Elle alimente les commandes UART `0x22` / `0x23` en
+0,1 L/100 km. `FuelConsValid` indique la disponibilité ;
+`FuelConsEstimated: 1` signale le coefficient provisoire. Le mode mock
+conserve ses consommations synthétiques.
+
+La consommation instantanée utilise une fenêtre de 1 s et affiche zéro
+en dessous de 2 km/h si les sources sont fraîches ; cela ne signifie pas
+un débit carburant nul. La moyenne inclut le carburant consommé à l'arrêt
+et devient disponible après 100 m dans la session. Un rechargement, un
+redémarrage, une coupure de source supérieure à 500 ms ou un incrément
+invraisemblable réinitialise la session. Certaines remises à zéro du compteur
+sont impossibles à distinguer d'un débordement. Une valeur instantanée
+indisponible n'est pas émise ; la radio peut conserver le dernier affichage.
+La moyenne indisponible et les cinq historiques inutilisés valent `0xFFFF`
+dans la charge utile corrigée de 13 octets de `0x23`. Voir le
+[guide de configuration](VEHICLE_PRESET_GUIDE.md#counter-based-fuel-consumption-fuelconsumption)
+et le [protocole radio](technical/RADIO_SEND.md).
 
 `Handbrake`, `Brake` et `FuelRaw` valent `unknown` avant réception de leur
 trame CAN configurée. La disponibilité est réinitialisée au chargement d'un
 profil ; elle indique une réception, pas une calibration physique ni un
-timeout de fraîcheur. Les lignes `RX` et `ODB`, le polling OBD, le traitement
-des clignotants et le format des paquets UART restent inchangés. Direction,
+timeout de fraîcheur pour ces champs bruts. Les lignes `RX` et `ODB`, le
+polling OBD et le traitement des clignotants restent inchangés. Direction,
 autonomie, température extérieure et kilométrage gardent leurs mappings
 historiques et les limites documentées ci-dessous.
 
@@ -271,7 +288,7 @@ importées sans confrontation. Les recherches de commandes CONSULT restent
 dans le [bilan diagnostic](NISSAN_DIAGNOSTIC_RESEARCH.fr.md) : une définition
 CAN périodique ne fournit pas une commande de diagnostic constructeur.
 
-## Consommation : données encore nécessaires
+## Consommation : conversion provisoire et calibration restante
 
 Le candidat `0x551 B1` compte 701 valeurs. Ses 700 différences modulo 256
 se répartissent en 343 zéros, 330 incréments de 1, 25 de 2 et deux de 3,
@@ -281,6 +298,19 @@ pas l'affichage direct de l'octet comme consommation instantanée. Le REF
 définit un facteur 1 et un offset 0 en mm³ ; la base temps/cycle du compteur,
 les éventuelles remises à zéro et sa relation à l'injection sur ce MR16DDT
 restent à vérifier. Le libellé d'unité ne les résout pas à lui seul.
+
+Une [analyse de Clio III](https://x0r.fr/blog/39#comment-396) identifie le
+même compteur et obtient 80 mm³/incrément par comparaison avec l'ordinateur
+de bord. C'est le réglage **provisoire** actuel de `mm3PerTick`, pas le
+résultat d'une calibration du Juke ni un remplacement du facteur 1 du REF
+archivé. Appliqué aux 386 incréments sur 71,7 s, il donnerait **30,88 mL**
+et **1,55 L/h** en moyenne. Leur plausibilité ne valide pas cette échelle.
+La distance capturée est inférieure au seuil configuré de 100 m :
+l'estimateur de production ne publie donc pas de moyenne de trajet pour
+ce rejeu. Ajuster le coefficient avec une référence indépendante sur le
+véhicule avant de passer `calibration` à `calibrated`. Installer le firmware
+correspondant puis transférer séparément le JSON avant
+`CAN LOAD NissanJukeF15.json`.
 
 
 L'ECU `0x7E8` annonce `01 10` (MAF), `01 44` (rapport d'équivalence commandé),

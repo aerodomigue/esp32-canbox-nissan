@@ -79,13 +79,13 @@ extern unsigned long lastLeftIndicatorTime;
 extern unsigned long lastRightIndicatorTime;
 
 // =============================================================================
-// FUEL CONSUMPTION (only populated by profiles with a calibrated source)
+// FUEL CONSUMPTION (direct sources or configurable counter-based estimates)
 // =============================================================================
 
-/** Instantaneous fuel consumption in 0.1 L/100km units (e.g., 75 = 7.5 L/100km) */
+/** Instantaneous 0.1 L/100km; check canAuxData validity and estimated flags. */
 extern uint16_t fuelConsumptionInst;
 
-/** Average fuel consumption in 0.1 L/100km units */
+/** Average 0.1 L/100km; check canAuxData validity and estimated flags. */
 extern uint16_t fuelConsumptionAvg;
 
 // =============================================================================

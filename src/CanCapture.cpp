@@ -27,7 +27,7 @@ extern CanConfigProcessor canProcessor;
  */
 void handleCanCapture(const CanFrame& rxFrame, uint32_t receivedAt) {
     // Process frame through configurable processor
-    bool processed = canProcessor.processFrame(rxFrame);
+    bool processed = canProcessor.processFrame(rxFrame, receivedAt);
 
     // LED heartbeat on steering frame (0x002) for activity indication
     // This is kept regardless of configuration for visual feedback

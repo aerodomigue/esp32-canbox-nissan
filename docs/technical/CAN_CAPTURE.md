@@ -42,7 +42,7 @@ odometer retain their unvalidated legacy interpretations.
 | **0x002** | Steering Angle | [1-2] | NONE (raw INT16) | Legacy angle assumption | Signed, Big Endian; scale, center and sign still to validate |
 | **0x180** | Engine RPM | [0-1] | SCALE [1, 8, 0] | RPM | Integer division; corroborated by OBD |
 | **0x180** | Brake pedal switch | [7] bit0 | BITMASK_EXTRACT [1, 0] | Raw boolean | Separate from parking brake; physical polarity needs checking |
-| **0x284** | Vehicle Speed | [4-5] | SCALE [1, 100, 0] | km/h | Integer division; corroborated at low speed |
+| **0x284** | Vehicle Speed | [4-5] | SCALE [1, 100, 0] | km/h | Integer dashboard value; fractional value retained for consumption distance; corroborated at low speed |
 
 ### 2. Instrument Cluster (CAN ID 0x5C5)
 
@@ -104,15 +104,30 @@ Bytes [0-2] form a **24-bit status word** (Big Endian BITMASK). Individual bits 
 | --- | --- | --- | --- |
 | **[6-7]** | Distance to Empty | SCALE [100, 338, 0] | Initial `raw * 100 / 338` hypothesis; 0x2DE replacement rejected |
 
-### 6. Raw fuel-related counter (CAN ID 0x551)
+### 6. Fuel counter and derived consumption (CAN ID 0x551)
 
 | Byte | Signal | Formula | Notes |
 | --- | --- | --- | --- |
-| **[1]** | `FUEL_COUNTER_RAW` | NONE (UINT8) | Raw 0–255, exposed as `FuelRaw`; no validated physical unit or time/cycle basis |
+| **[1]** | `FUEL_COUNTER_RAW` | NONE (UINT8) | Raw 0–255, exposed unchanged as `FuelRaw`; increments feed the provisional consumption estimator |
 
 The former `0x580` instantaneous and average-consumption fields are absent
-from the Juke preset. UART `0x22` / `0x23` are suppressed without available
-consumption sources. Mock output retains its synthetic sources.
+from the Juke preset. Its root-level `fuelConsumption` settings instead
+convert modulo-256 increments of `0x551 B1` using **80 mm³/increment,
+provisional and not calibrated on this Juke**, and distance integrated from
+the fractional `0x284 B4–B5 /100` speed. The resulting radio value is
+`volume_mm3 / distance_m`, in 0.1 L/100 km.
+
+The instantaneous window is 1 s, with a zero display below 2 km/h when both
+sources are fresh. Average consumption includes stationary fuel use and
+starts after 100 m in the current session. Reload, reboot, a source gap
+over 500 ms or an implausible counter increment reinitialises the session.
+`FuelConsEstimated: 1` distinguishes the provisional coefficient from
+`FuelConsValid`, which only describes availability. UART `0x22` is omitted
+when instantaneous consumption is unavailable; `0x23` sends `0xFFFF` for
+an unavailable average and its five unavailable historical values. Mock
+output retains its synthetic sources. See the
+[configuration and limitations](../VEHICLE_PRESET_GUIDE.md#counter-based-fuel-consumption-fuelconsumption)
+and [radio packet format](RADIO_SEND.md).
 
 ---
 
@@ -127,7 +142,7 @@ Before any CAN frame is processed, `CanConfigProcessor::begin()` runs once durin
 ```
 1. LittleFS mounted
 2. Vehicle JSON file located (NVS → /vehicle.json → /NissanJukeF15.json)
-3. JSON parsed: name, isMock, vehicleParams, frames
+3. JSON parsed: name, isMock, vehicleParams, fuelConsumption, frames
 4. Vehicle switch detection:
    ├─ Same file as previously loaded → NVS calibration preserved, vehicleParams skipped
    └─ Different file (or first boot) → configReset() → vehicleParams applied → configSave()

@@ -262,6 +262,20 @@ static unsigned radioCommandCount(uint8_t command) {
     return count;
 }
 
+static std::vector<uint8_t> lastRadioPayload(uint8_t command) {
+    std::vector<uint8_t> result;
+    const auto& bytes = RadioSerial.captured;
+    for (size_t offset = 0; offset + 4 <= bytes.size();) {
+        const size_t length = bytes[offset + 2];
+        TEST_ASSERT_TRUE(offset + length + 4 <= bytes.size());
+        if (bytes[offset + 1] == command) {
+            result.assign(bytes.begin() + offset + 3, bytes.begin() + offset + 3 + length);
+        }
+        offset += length + 4;
+    }
+    return result;
+}
+
 void test_sys_data_distinguishes_unknown_from_observed_zero() {
     Serial.inject("SYS DATA\n");
     loop();
@@ -286,7 +300,7 @@ void test_sys_data_distinguishes_unknown_from_observed_zero() {
     assertRawLinesComplete(Serial.captured);
 }
 
-void test_juke_raw_fuel_and_brakes_keep_logs_and_do_not_transmit_consumption() {
+void test_juke_raw_fuel_without_fresh_speed_keeps_logs_and_clears_radio_average() {
     enableLoggingThroughLoop();
     Serial.clearOutput();
     TEST_ASSERT_TRUE(ESP32Can.enqueue(frame(0x5C5, {0x44, 0x03, 0xC4, 0xA1, 0, 0x0C, 0, 0x7F})));
@@ -310,7 +324,11 @@ void test_juke_raw_fuel_and_brakes_keep_logs_and_do_not_transmit_consumption() {
     StreamingSimulation::advance(6000);
     loop();
     TEST_ASSERT_EQUAL_UINT32(0, radioCommandCount(0x22));
-    TEST_ASSERT_EQUAL_UINT32(0, radioCommandCount(0x23));
+    TEST_ASSERT_EQUAL_UINT32(1, radioCommandCount(0x23));
+    const auto average = lastRadioPayload(0x23);
+    TEST_ASSERT_EQUAL_UINT32(13, average.size());
+    TEST_ASSERT_EQUAL_HEX8(0x02, average[0]);
+    for (size_t i = 1; i < average.size(); ++i) TEST_ASSERT_EQUAL_HEX8(0xFF, average[i]);
     TEST_ASSERT_GREATER_THAN_UINT32(0, radioCommandCount(0x7D));
     assertRawLinesComplete(Serial.captured);
 }
@@ -344,7 +362,68 @@ void test_mock_consumption_is_available_and_profile_reload_clears_it() {
     StreamingSimulation::advance(6000);
     processRadioUpdates();
     TEST_ASSERT_EQUAL_UINT32(0, radioCommandCount(0x22));
-    TEST_ASSERT_EQUAL_UINT32(0, radioCommandCount(0x23));
+    TEST_ASSERT_EQUAL_UINT32(1, radioCommandCount(0x23));
+}
+
+void test_fuel_conversion_reaches_radio_without_changing_raw_or_obd_streams() {
+    enableLoggingThroughLoop();
+    RadioSerial.clear();
+    Serial.clearOutput();
+    // 36.50 km/h, ten 80 mm3 increments/s, across a modulo-256 wrap.
+    for (unsigned i = 0; i <= 150; ++i) {
+        if (i) StreamingSimulation::advance(100);
+        TEST_ASSERT_TRUE(ESP32Can.enqueue(frame(0x284, {0, 0, 0, 0, 0x0E, 0x42, 0, 0})));
+        TEST_ASSERT_TRUE(ESP32Can.enqueue(frame(0x551, {0x67, static_cast<uint8_t>(250 + i), 0, 0x80, 0xFF, 2, 0x80, 0xFF})));
+        loop();
+    }
+    flushConsole();
+    const auto instant = lastRadioPayload(0x22);
+    const uint8_t expectedInstant[] = {0x02, 0x00, 0x4F};  // 7.9 L/100km.
+    TEST_ASSERT_EQUAL_UINT32(3, instant.size());
+    TEST_ASSERT_EQUAL_HEX8_ARRAY(expectedInstant, instant.data(), 3);
+    TEST_ASSERT_TRUE(canAuxData.fuelConsumptionAvgValid);
+    TEST_ASSERT_EQUAL_UINT16(79, fuelConsumptionAvg);
+    const auto average = lastRadioPayload(0x23);
+    TEST_ASSERT_EQUAL_UINT32(13, average.size());
+    TEST_ASSERT_EQUAL_HEX8_ARRAY(expectedInstant, average.data(), 3);
+    for (size_t i = 3; i < average.size(); ++i) TEST_ASSERT_EQUAL_HEX8(0xFF, average[i]);
+    TEST_ASSERT_EQUAL_UINT32(302, countPrefix(Serial.captured, "RX "));
+    TEST_ASSERT_GREATER_THAN_UINT32(0, countPrefix(Serial.captured, "ODB TX "));
+    assertRawLinesComplete(Serial.captured);
+    Serial.inject("SYS DATA\n");
+    loop();
+    flushConsole();
+    TEST_ASSERT_TRUE(hasLine(Serial.captured, "FuelConsEstimated: 1"));
+    TEST_ASSERT_TRUE(hasLine(Serial.captured, "FuelConsValid: INST=1 AVG=1"));
+
+    RadioSerial.clear();
+    StreamingSimulation::advance(6000);
+    loop();  // No CAN: the production loop must expire both estimates.
+    TEST_ASSERT_FALSE(canAuxData.fuelConsumptionInstValid);
+    TEST_ASSERT_FALSE(canAuxData.fuelConsumptionAvgValid);
+    TEST_ASSERT_EQUAL_UINT32(0, radioCommandCount(0x22));
+    const auto staleAverage = lastRadioPayload(0x23);
+    TEST_ASSERT_EQUAL_UINT32(13, staleAverage.size());
+    for (size_t i = 1; i < staleAverage.size(); ++i) TEST_ASSERT_EQUAL_HEX8(0xFF, staleAverage[i]);
+}
+
+void test_fuel_configuration_flags_survive_can_commands_and_clear_in_mock() {
+    for (const char* command : {"CAN LOAD NissanJukeF15.json\n", "CAN RELOAD\n"}) {
+        Serial.inject(command);
+        loop();
+        TEST_ASSERT_FALSE(canProcessor.isMockMode());
+        TEST_ASSERT_TRUE(canAuxData.fuelConsumptionDerived);
+        TEST_ASSERT_TRUE(canAuxData.fuelConsumptionEstimated);
+        TEST_ASSERT_FALSE(canAuxData.fuelConsumptionInstValid);
+        TEST_ASSERT_FALSE(canAuxData.fuelConsumptionAvgValid);
+    }
+    Serial.inject("CAN LOAD MockDemo.json\n");
+    loop();
+    TEST_ASSERT_TRUE(canProcessor.isMockMode());
+    TEST_ASSERT_FALSE(canAuxData.fuelConsumptionDerived);
+    TEST_ASSERT_FALSE(canAuxData.fuelConsumptionEstimated);
+    TEST_ASSERT_TRUE(canAuxData.fuelConsumptionInstValid);
+    TEST_ASSERT_TRUE(canAuxData.fuelConsumptionAvgValid);
 }
 
 static void assertIndicatorOutputs(bool left, bool right) {
@@ -769,8 +848,10 @@ int main() {
     RUN_TEST(test_raw_can_keeps_payload_flags_and_unconfigured_frames);
     RUN_TEST(test_obd_reference_sys_data_and_partial_command_keep_complete_lines);
     RUN_TEST(test_sys_data_distinguishes_unknown_from_observed_zero);
-    RUN_TEST(test_juke_raw_fuel_and_brakes_keep_logs_and_do_not_transmit_consumption);
+    RUN_TEST(test_juke_raw_fuel_without_fresh_speed_keeps_logs_and_clears_radio_average);
     RUN_TEST(test_mock_consumption_is_available_and_profile_reload_clears_it);
+    RUN_TEST(test_fuel_conversion_reaches_radio_without_changing_raw_or_obd_streams);
+    RUN_TEST(test_fuel_configuration_flags_survive_can_commands_and_clear_in_mock);
     RUN_TEST(test_sys_data_indicators_match_left_right_and_hazard_can_frames);
     RUN_TEST(test_sys_data_indicators_expire_at_configured_timeout_without_new_can);
     RUN_TEST(test_sys_data_indicator_refresh_and_zero_frame_keep_radio_hold_time);

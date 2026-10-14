@@ -51,8 +51,8 @@ The project started as a custom solution for the **Nissan Juke F15**, but has si
 | Handbrake | Decoded in the preset | `0x5C5[0] & 0x04`, corroborated by Juke source and owner maneuver; available in `SYS DATA` |
 | Brake pedal | Raw switch bit decoded | `0x180[7] & 0x01`; action and polarity still need a separate vehicle check |
 | External Temperature | Calibration pending | `0x540[0]−40`; no independent reference in the log |
-| Instant Fuel Consumption | Unavailable in the Juke preset | `0x580[3]` removed; `0x551[1]` exposed only as `FuelRaw`, without a physical unit |
-| Average Fuel Consumption | Unavailable in the Juke preset | Unvalidated `0x580[4]` removed; no consumption UART message without an available source |
+| Instant Fuel Consumption | Provisional estimate | `0x551[1]` counter increments and `0x284` speed; 80 mm³/increment awaits Juke calibration; 1 s window |
+| Average Fuel Consumption | Provisional session estimate | Available after 100 m; includes stationary fuel use; resets on reload, restart or source discontinuity |
 | Distance to Empty | Unit unverified | Initial CAN 0x54C mapping restored; dashboard reference needed |
 
 > **Note:** Documentation for the Raise/Toyota RAV4 protocol used by Android head units is scarce. Some features are still being reverse-engineered due to lack of official protocol specifications.
@@ -320,14 +320,14 @@ previous active profile.
 | Vehicle Speed | 0x284 | 500ms | Bytes 4–5, big endian, raw / 100; integer km/h |
 | Handbrake | 0x5C5 | On `SYS DATA` request | Byte 0 bit 2; `unknown` before the first configured frame |
 | Brake pedal | 0x180 | On `SYS DATA` request | Byte 7 bit 0; raw switch state, physical polarity pending |
-| Fuel raw counter | 0x551 | On `SYS DATA` request | Byte 1, 0–255; no validated physical unit or consumption conversion |
+| Fuel raw counter | 0x551 | On `SYS DATA` request | Byte 1 remains raw 0–255; `FuelConsEstimated: 1` identifies the separate provisional conversion |
 | Fuel Level | — | — | No Juke source; compatibility `Fuel: 0 L` with `FuelValid: 0` |
 | Battery Voltage | 0x6F6 | — | Alternator output |
 | External Temperature | 0x540 | 5000ms | Legacy byte 0 − 40; physical reference pending |
 | Coolant Temperature | 0x551 | 5000ms | Sent in CMD 0x28 byte 0 as an undocumented, unverified hypothesis |
 | Door Status | 0x60D | 250ms | All doors + trunk (or on change) |
 | Distance to Empty | 0x54C | 5000ms | Initial bytes 6–7, big endian, raw * 100 / 338; calibration pending |
-| Instant / Average Fuel Consumption | — | Not sent for Juke | UART `0x22` / `0x23` require an available calibrated source; mock mode retains synthetic output |
+| Instant / Average Fuel Consumption | 0x551 + 0x284 | 1000ms / 5000ms | Provisional 0.1 L/100 km; unavailable instant omitted, unavailable average `0xFFFF`; [settings and limits](docs/VEHICLE_PRESET_GUIDE.md#counter-based-fuel-consumption-fuelconsumption) |
 | Odometer | 0x5C5 | 10000ms | Legacy bytes 1–3 BE (24-bit); units unvalidated |
 
 ---

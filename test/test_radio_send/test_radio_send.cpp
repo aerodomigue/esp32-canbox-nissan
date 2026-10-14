@@ -244,13 +244,47 @@ void test_fuel_inst_zero() {
 }
 
 // =============================================================================
-// CMD 0x23 — Average fuel consumption (same encoding as 0x22)
+// CMD 0x23 — Current trip + five historical trips (Raise V2.21 page 5)
+// Payload length is 13; unavailable trips use 0xFFFF, not a zero consumption.
 // =============================================================================
 
 void test_fuel_avg_9_8_l100km() {
     sendFuelConsumptionAvgMessage(98);  // 9.8 L/100km
-    // 2E 23 03 02 00 62 75
-    uint8_t exp[] = {0x2E, 0x23, 0x03, 0x02, 0x00, 0x62, 0x75};
+    uint8_t exp[] = {
+        0x2E, 0x23, 0x0D, 0x02, 0x00, 0x62,
+        0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+        0x75
+    };
+    assertFrame(exp, sizeof(exp));
+}
+
+void test_fuel_avg_big_endian_value() {
+    sendFuelConsumptionAvgMessage(300);  // 30.0 L/100km; exercise both value bytes
+    uint8_t exp[] = {
+        0x2E, 0x23, 0x0D, 0x02, 0x01, 0x2C,
+        0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+        0xAA
+    };
+    assertFrame(exp, sizeof(exp));
+}
+
+void test_fuel_avg_zero_is_valid_trip() {
+    sendFuelConsumptionAvgMessage(0);
+    uint8_t exp[] = {
+        0x2E, 0x23, 0x0D, 0x02, 0x00, 0x00,
+        0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+        0xD7
+    };
+    assertFrame(exp, sizeof(exp));
+}
+
+void test_fuel_avg_unavailable_trip() {
+    sendFuelConsumptionAvgMessage(0xFFFF);
+    uint8_t exp[] = {
+        0x2E, 0x23, 0x0D, 0x02, 0xFF, 0xFF,
+        0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+        0xD9
+    };
     assertFrame(exp, sizeof(exp));
 }
 
@@ -345,6 +379,9 @@ int main(int argc, char** argv) {
     RUN_TEST(test_fuel_inst_6_5_l100km);
     RUN_TEST(test_fuel_inst_zero);
     RUN_TEST(test_fuel_avg_9_8_l100km);
+    RUN_TEST(test_fuel_avg_big_endian_value);
+    RUN_TEST(test_fuel_avg_zero_is_valid_trip);
+    RUN_TEST(test_fuel_avg_unavailable_trip);
 
     // Lights
     RUN_TEST(test_lights_off);

@@ -151,6 +151,7 @@ void loop() {
     Console.drain();
 
     // Process serial commands (non-blocking)
+    canProcessor.updateFuelConsumption(now);
     serialCommandProcess();
 
     // ==========================================================================
@@ -248,6 +249,7 @@ void loop() {
     // ==========================================================================
     // RADIO TRANSMISSION (both modes)
     // ==========================================================================
+    canProcessor.updateFuelConsumption(millis());
     processRadioUpdates();
     Console.drain();
 }

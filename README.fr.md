@@ -51,8 +51,8 @@ Le projet a démarré comme une solution dédiée à la **Nissan Juke F15**, mai
 | Frein à Main | Décodé dans le preset | `0x5C5[0] & 0x04`, corroboré par source Juke et manœuvre utilisateur ; disponible dans `SYS DATA` |
 | Pédale de frein | Bit de contact décodé | `0x180[7] & 0x01` ; geste et polarité à vérifier séparément sur le véhicule |
 | Température Extérieure | Calibration à vérifier | `0x540[0]−40` ; aucune référence indépendante dans le log |
-| Conso. Instantanée | Indisponible dans le preset Juke | `0x580[3]` retiré ; `0x551[1]` exposé uniquement comme `FuelRaw`, sans unité physique |
-| Conso. Moyenne | Indisponible dans le preset Juke | `0x580[4]` non validé retiré ; aucune trame UART de consommation sans source disponible |
+| Conso. Instantanée | Estimation provisoire | Incréments du compteur `0x551[1]` et vitesse `0x284` ; 80 mm³/incrément à calibrer sur le Juke ; fenêtre de 1 s |
+| Conso. Moyenne | Estimation provisoire de session | Disponible après 100 m, inclut le carburant consommé à l’arrêt ; réinitialisée au rechargement, redémarrage ou interruption des sources |
 | Autonomie Restante | Unité à vérifier | Mapping initial CAN 0x54C restauré ; référence du combiné nécessaire |
 
 > **Note :** La documentation du protocole Raise/Toyota RAV4 utilisé par les autoradios Android est rare. Certaines fonctionnalités sont encore en cours de reverse-engineering par manque de spécifications officielles du protocole.
@@ -320,14 +320,14 @@ absentes en conservant le profil précédemment actif.
 | Vitesse Véhicule | 0x284 | 500ms | Octets 4–5, big endian, brut / 100 ; km/h entiers |
 | Frein à Main | 0x5C5 | Sur requête `SYS DATA` | Octet 0 bit 2 ; `unknown` avant la première trame configurée |
 | Pédale de frein | 0x180 | Sur requête `SYS DATA` | Octet 7 bit 0 ; état brut de contact, polarité physique à vérifier |
-| Compteur carburant brut | 0x551 | Sur requête `SYS DATA` | Octet 1, 0–255 ; aucune unité physique ni conversion de consommation validée |
+| Compteur carburant brut | 0x551 | Sur requête `SYS DATA` | Octet 1 conservé brut 0–255 ; `FuelConsEstimated: 1` identifie la conversion provisoire séparée |
 | Niveau Essence | — | — | Aucune source Juke ; compatibilité `Fuel: 0 L` avec `FuelValid: 0` |
 | Tension Batterie | 0x6F6 | — | Sortie alternateur |
 | Température Extérieure | 0x540 | 5000ms | Octet historique 0 − 40 ; référence physique à vérifier |
 | Température Eau Moteur | 0x551 | 5000ms | Envoyée dans l’octet 0 de CMD 0x28 ; hypothèse non documentée et non vérifiée |
 | État Portes | 0x60D | 250ms | Toutes portes + coffre (ou sur changement) |
 | Autonomie | 0x54C | 5000ms | Octets initiaux 6–7, big endian, brut × 100 / 338 ; calibration à vérifier |
-| Conso. Instantanée / Moyenne | — | Non envoyées pour Juke | UART `0x22` / `0x23` exigent une source calibrée disponible ; le mode mock conserve ses valeurs synthétiques |
+| Conso. Instantanée / Moyenne | 0x551 + 0x284 | 1000ms / 5000ms | Estimation en 0,1 L/100 km ; instantanée indisponible non émise, moyenne indisponible `0xFFFF` ; [réglages et limites](docs/VEHICLE_PRESET_GUIDE.md#counter-based-fuel-consumption-fuelconsumption) |
 | Compteur km | 0x5C5 | 10000ms | Octets historiques 1–3 BE (24 bits) ; unités non validées |
 
 ---

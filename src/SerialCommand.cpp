@@ -1144,6 +1144,7 @@ static void handleSysCommand(const char* args) {
         Console.printf("FuelValid: %d\n", canAuxData.fuelLevelValid);
         Console.printf("FuelConsValid: INST=%d AVG=%d\n",
             canAuxData.fuelConsumptionInstValid, canAuxData.fuelConsumptionAvgValid);
+        Console.printf("FuelConsEstimated: %d\n", canAuxData.fuelConsumptionEstimated);
         if (canAuxData.handbrakeValid) Console.printf("Handbrake: %d\n", canAuxData.handbrake);
         else Console.println("Handbrake: unknown");
         if (canAuxData.brakePedalValid) Console.printf("Brake: %d\n", canAuxData.brakePedal);

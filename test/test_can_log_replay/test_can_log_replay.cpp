@@ -30,7 +30,7 @@ enum class ParseResult { SKIP, FRAME, INVALID };
 
 // Validate DLC and the complete payload before the decoder can read any bytes.
 // This test harness accepts only standard IDs used by this Nissan profile.
-static ParseResult parseCaptureLine(const std::string& line, CanFrame& frame) {
+static ParseResult parseCaptureLine(const std::string& line, CanFrame& frame, uint32_t* receivedAt = nullptr) {
     const size_t first = line.find_first_not_of(" \t\r");
     if (first == std::string::npos || line[first] == '#') return ParseResult::SKIP;
     if (line.compare(first, 4, "ODB ") == 0) return ParseResult::SKIP;
@@ -44,6 +44,7 @@ static ParseResult parseCaptureLine(const std::string& line, CanFrame& frame) {
     if (!std::regex_match(line, match, record)) {
         if (!std::regex_match(line, match, timestampedRecord)) return ParseResult::INVALID;
         if (match[5].str() != "0" || match[6].str() != "0") return ParseResult::INVALID;
+        if (receivedAt) *receivedAt = static_cast<uint32_t>(std::stoul(match[4].str()));
     }
 
     const unsigned long id = std::stoul(match[1].str(), nullptr, 16);
@@ -73,16 +74,23 @@ struct ReplayStats {
     uint32_t handled = 0;
     uint32_t unknown = 0;
     uint32_t decoderRejected = 0;
+    uint32_t instantaneousAvailable = 0;
+    uint16_t maximumInstantaneous = 0;
     std::map<uint32_t, uint32_t> ids;
 };
 
-static void processParsedFrame(ReplayStats& stats, const CanFrame& frame) {
+static void processParsedFrame(ReplayStats& stats, const CanFrame& frame, uint32_t receivedAt = 0) {
     ++stats.parsed;
     ++stats.ids[frame.identifier];
     const uint32_t unknownBefore = proc.getUnknownFrames();
-    if (proc.processFrame(frame)) ++stats.handled;
+    if (proc.processFrame(frame, receivedAt)) ++stats.handled;
     else if (proc.getUnknownFrames() != unknownBefore) ++stats.unknown;
     else ++stats.decoderRejected;
+    proc.updateFuelConsumption(receivedAt);
+    if (frame.identifier == 0x551 && canAuxData.fuelConsumptionInstValid) {
+        ++stats.instantaneousAvailable;
+        stats.maximumInstantaneous = std::max(stats.maximumInstantaneous, fuelConsumptionInst);
+    }
 }
 
 static ReplayStats replayFile(const char* path) {
@@ -92,13 +100,14 @@ static ReplayStats replayFile(const char* path) {
     std::string line;
     while (std::getline(input, line)) {
         CanFrame frame = {};
-        const ParseResult result = parseCaptureLine(line, frame);
+        uint32_t receivedAt = 0;
+        const ParseResult result = parseCaptureLine(line, frame, &receivedAt);
         if (result == ParseResult::SKIP) continue;
         if (result == ParseResult::INVALID) {
             ++stats.rejected;
             continue;
         }
-        processParsedFrame(stats, frame);
+        processParsedFrame(stats, frame, receivedAt);
     }
     TEST_ASSERT_FALSE_MESSAGE(input.bad(), "Cannot read CAN capture");
     return stats;
@@ -291,6 +300,11 @@ void test_optional_external_log_replay() {
            "fuel_counter=%u valid=%u\n", canAuxData.handbrake, canAuxData.handbrakeValid,
            canAuxData.brakePedal, canAuxData.brakePedalValid,
            canAuxData.fuelCounterRaw, canAuxData.fuelCounterValid);
+    printf("Estimated fuel: available_counter_samples=%u maximum_01_L100=%u "
+           "last_inst_valid=%u last_avg_valid=%u provisional=%u\n",
+           stats.instantaneousAvailable, stats.maximumInstantaneous,
+           canAuxData.fuelConsumptionInstValid, canAuxData.fuelConsumptionAvgValid,
+           canAuxData.fuelConsumptionEstimated);
     printf("Replay checks decoding; low-speed references do not calibrate all operating conditions.\n");
 }
 

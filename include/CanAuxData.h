@@ -15,6 +15,8 @@ struct CanAuxData {
     bool fuelLevelValid = false;
     bool fuelConsumptionInstValid = false;
     bool fuelConsumptionAvgValid = false;
+    bool fuelConsumptionDerived = false;
+    bool fuelConsumptionEstimated = false;
 };
 
 extern CanAuxData canAuxData;

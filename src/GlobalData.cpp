@@ -68,10 +68,10 @@ unsigned long lastRightIndicatorTime = 0;
 // FUEL CONSUMPTION
 // =============================================================================
 
-/** Instantaneous fuel consumption (0.1 L/100km units) - 0 = unknown */
+/** Instantaneous 0.1 L/100km; availability is in canAuxData, not the value. */
 uint16_t fuelConsumptionInst = 0;
 
-/** Average fuel consumption (0.1 L/100km units) - 0 = unknown */
+/** Average 0.1 L/100km; availability is in canAuxData, not the value. */
 uint16_t fuelConsumptionAvg = 0;
 
 // =============================================================================
