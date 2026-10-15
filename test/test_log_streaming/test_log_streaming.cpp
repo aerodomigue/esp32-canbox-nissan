@@ -333,18 +333,48 @@ void test_juke_raw_fuel_without_fresh_speed_keeps_logs_and_clears_radio_average(
     assertRawLinesComplete(Serial.captured);
 }
 
+void test_f15_can_load_and_reload_replace_saved_cfg_overrides() {
+    for (const char* reload : {"CAN LOAD NissanJukeF15.json\n", "CAN RELOAD\n"}) {
+        for (const char* command : {
+            "CFG SET steerScale 9999\n", "CFG SET steerOffset 100\n",
+            "CFG SET steerInvert 0\n", "CFG SET indTimeout 900\n",
+            "CFG SET rpmDiv 4\n", "CFG SET tankCap 60\n",
+            "CFG SET dteDiv 200\n", "CFG SAVE\n"
+        }) {
+            Serial.inject(command);
+            loop();
+        }
+        TEST_ASSERT_EQUAL_UINT16(9999, configGetSteerScale());
+        Serial.inject(reload);
+        loop();
+        TEST_ASSERT_EQUAL_UINT16(500, configGetSteerScale());
+        TEST_ASSERT_EQUAL_INT16(0, configGetSteerOffset());
+        TEST_ASSERT_TRUE(configGetSteerInvert());
+        TEST_ASSERT_EQUAL_UINT16(500, configGetIndicatorTimeout());
+        TEST_ASSERT_EQUAL_UINT8(8, configGetRpmDivisor());
+        TEST_ASSERT_EQUAL_UINT8(45, configGetTankCapacity());
+        TEST_ASSERT_EQUAL_UINT16(338, configGetDteDivisor());
+        Serial.clearOutput();
+        Serial.inject("CFG GET steerScale\n");
+        loop();
+        flushConsole();
+        TEST_ASSERT_TRUE(hasLine(Serial.captured, "steerScale = 500"));
+    }
+}
+
 void test_f15_steering_reaches_rav4_with_profile_calibration() {
     // A fresh selection applies the real JSON's calibration, not mock defaults.
     configSetVehicleFile("");
     TEST_ASSERT_TRUE(canProcessor.loadFromJson("/NissanJukeF15.json"));
-    TEST_ASSERT_EQUAL_UINT16(1000, configGetSteerScale());
+    TEST_ASSERT_EQUAL_UINT16(500, configGetSteerScale());
     TEST_ASSERT_EQUAL_INT16(0, configGetSteerOffset());
     TEST_ASSERT_TRUE(configGetSteerInvert());
     processRadioUpdates();  // Normalize timers after the test clock reset.
 
     const struct { int16_t raw; int16_t uart; } cases[] = {
-        {0, 0}, {-3000, 300}, {3000, -300}, {-5057, 500}, {3887, -388},
-        {-5000, 500}, {5000, -500}, {-32768, 500}, {32767, -500}
+        {0, 0}, {-3000, 150}, {3000, -150}, {-5057, 252}, {3887, -194},
+        {-5088, 254}, {5013, -250}, {-5000, 250}, {5000, -250},
+        {-32768, 500}, {32767, -500}
     };
     for (const auto& sample : cases) {
         const uint16_t raw = static_cast<uint16_t>(sample.raw);
@@ -894,6 +924,7 @@ int main() {
     RUN_TEST(test_obd_reference_sys_data_and_partial_command_keep_complete_lines);
     RUN_TEST(test_sys_data_distinguishes_unknown_from_observed_zero);
     RUN_TEST(test_juke_raw_fuel_without_fresh_speed_keeps_logs_and_clears_radio_average);
+    RUN_TEST(test_f15_can_load_and_reload_replace_saved_cfg_overrides);
     RUN_TEST(test_f15_steering_reaches_rav4_with_profile_calibration);
     RUN_TEST(test_mock_consumption_is_available_and_profile_reload_clears_it);
     RUN_TEST(test_fuel_conversion_reaches_radio_without_changing_raw_or_obd_streams);

@@ -46,7 +46,7 @@ consumption estimate:
 
 | Target | CAN field / conversion | Scope and limitation |
 | --- | --- | --- |
-| `STEERING` | `0x002 B0–B1 I16LE`, raw 0.1° units | Corrected extraction; preset `scale=1000`, confirmed owner setting `500`; `offset=0`, inversion; UART `0x29` bounded to ±500 |
+| `STEERING` | `0x002 B0–B1 I16LE`, raw 0.1° units | Corrected extraction; preset and confirmed owner setting `scale=500`; `offset=0`, inversion; UART `0x29` bounded to ±500 |
 | `ENGINE_RPM` | `0x180 B0–B1 BE /8` | Integer rpm; supported by the OBD comparisons below |
 | `VEHICLE_SPEED` | `0x284 B4–B5 BE /100` | Integer km/h; corroborated over the captured low-speed range |
 | `HANDBRAKE` | `0x5C5 B0 bit2` | `SYS DATA` → `Handbrake`; observed 1 = applied |
@@ -110,22 +110,27 @@ with `steerScale=500`, `steerOffset=0`, `steerInvert=true`:
 `UART = clamp(-trunc(raw/20), -500, 500)`. The limit matches the `0x29`
 decoder in the [examined APK](technical/RADIO_SEND.md#1-steering-wheel-angle-command-0x29).
 The starting value of `1000` made the guidelines turn too far; `500` halves
-that gain. The repository JSON retains `1000`; the calibration used on the
-vehicle is stored separately in NVS.
+that gain. The repository JSON now specifies `500` and takes priority over
+saved local calibration on every load and reboot.
 Toyota CAN `0x025` and its possible factor do not establish this UART unit.
 
-When updating the same preset, explicitly update the saved calibration after
-transferring the JSON and running `CAN LOAD NissanJukeF15.json`:
+Install the matching firmware and transfer the updated JSON, then activate
+and check it with:
 
 ```text
-CFG SET steerScale 500
-CFG SET steerOffset 0
-CFG SET steerInvert 1
-CFG SAVE
+CAN LOAD NissanJukeF15.json
+CFG LIST
 ```
 
-Loading the same filename preserves NVS values; application OTA updates
-neither the LittleFS JSON nor these settings. No CANBox Manager change is needed.
+All seven `vehicleParams` are explicit: `steerScale=500`, `steerOffset=0`,
+`steerInvert=true`, `indTimeout=500`, `rpmDiv=8`, `tankCap=45`, `dteDiv=338`.
+The last three are stored but unused: `8`/`338` mirror the `frames` divisors;
+`45` is a legacy placeholder, not a validated tank capacity. RPM and DTE
+still use their `frames` formulas. Explicit JSON keys replace
+local values even for the same filename. `CFG SET`/`CFG SAVE` do not edit
+the JSON; shared permanent changes must be written into that file.
+Application OTA alone does not replace the LittleFS JSON. No CANBox Manager
+change is needed. See [parameter precedence](VEHICLE_PRESET_GUIDE.md#vehicle-parameters-vehicleparams).
 
 The following study records the evidence that led to these changes;
 proposals are assessed independently of their inclusion in an earlier PR.

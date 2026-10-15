@@ -95,6 +95,16 @@ whole records and counted in `ODB BUFFER`. See
 
 Manages calibration values stored in ESP32's Non-Volatile Storage (NVS).
 
+Explicit `vehicleParams` in the active vehicle JSON take priority on every
+successful `CAN LOAD`, `CAN RELOAD` and reboot, including the same filename.
+`CFG SET`, `CFG SAVE` and `CFG RESET` do not edit the JSON: local changes to
+explicit keys are replaced at the next load. To share lasting calibration,
+update and transfer the JSON. Null/absent keys preserve local values on a
+same-file reload; switching vehicles resets unspecified keys to firmware
+defaults. The JSON loader rejects invalid parameter types/ranges without
+changing the current profile or calibration. `CAN GET` shows the file,
+whereas `CFG LIST` shows the running settings.
+
 #### CFG GET `<param>`
 Read a calibration parameter value.
 
@@ -244,7 +254,9 @@ Deleted: /OldConfig.json
 ```
 
 #### CAN RELOAD
-Reload configuration (searches for /vehicle.json or /NissanJukeF15.json).
+Reload the saved vehicle file, with fallback to `/vehicle.json`,
+`/MockDemo.json`, then `/NissanJukeF15.json`. Reapply its explicit
+`vehicleParams` over local calibration.
 
 ```
 > CAN RELOAD

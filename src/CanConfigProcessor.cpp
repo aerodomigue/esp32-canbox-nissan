@@ -29,6 +29,35 @@
 #include <utility>
 
 namespace {
+bool validateVehicleParams(JsonVariantConst value) {
+    if (value.isNull()) return true;
+    if (!value.is<JsonObjectConst>()) return false;
+    const struct { const char* key; int32_t min; int32_t max; } ranges[] = {
+        {"steerScale", 1, 20000}, {"steerOffset", -500, 500},
+        {"indTimeout", 100, 2000}, {"rpmDiv", 1, 20},
+        {"tankCap", 20, 100}, {"dteDiv", 100, 500}
+    };
+    for (const auto& range : ranges) {
+        JsonVariantConst v = value[range.key];
+        if (v.isNull()) continue;
+        if (!v.is<int32_t>() || v.as<int32_t>() < range.min ||
+            v.as<int32_t>() > range.max) return false;
+    }
+    return value["steerInvert"].isNull() || value["steerInvert"].is<bool>();
+}
+
+template <typename T>
+bool applyVehicleParam(JsonObjectConst params, const char* key,
+                       T (*get)(), void (*set)(T)) {
+    JsonVariantConst value = params[key];
+    if (value.isNull()) return false;
+    const T next = value.as<T>();
+    const bool changed = get() != next;
+    set(next);
+    Console.printf("[CanConfig] vehicleParam: %s = %d\n", key, static_cast<int>(next));
+    return changed;
+}
+
 bool parseFuelConsumption(JsonVariantConst value, VehicleProfile& profile) {
     if (value.isNull()) return true;  // Older profiles keep their existing behaviour.
     if (!value.is<JsonObjectConst>() || !value["enabled"].is<bool>()) return false;
@@ -254,6 +283,12 @@ bool CanConfigProcessor::loadFromJson(const char* path) {
         return false;
     }
 
+    // Validate overrides before changing either the active profile or NVS.
+    if (!validateVehicleParams(doc["vehicleParams"])) {
+        Console.println("[CanConfig] Invalid vehicleParams type or range");
+        return false;
+    }
+
     bool isValid = nextProfile.isMock || !nextProfile.frames.empty();
 
     if (isValid) {
@@ -277,15 +312,12 @@ bool CanConfigProcessor::loadFromJson(const char* path) {
                 Console.printf("[CanConfig] Vehicle switch: '%s' → '%s'\n", currentFile, filename);
             }
             configReset();
-            JsonObjectConst vp = doc["vehicleParams"];
-            if (vp) {
-                applyVehicleParams(vp);
-            }
-            configSave();
-        } else {
-            Console.printf("[CanConfig] Same vehicle — calibration preserved from NVS\n");
         }
 
+        // Explicit JSON values are authoritative, including on reload/reboot.
+        // Null/missing keys retain NVS on reload, or defaults on vehicle switch.
+        const bool changed = applyVehicleParams(doc["vehicleParams"].as<JsonObjectConst>());
+        if (isVehicleSwitch || changed) configSave();
         configSetVehicleFile(filename);
     }
 
@@ -296,54 +328,16 @@ bool CanConfigProcessor::loadFromJson(const char* path) {
 // VEHICLE PARAMS
 // =============================================================================
 
-void CanConfigProcessor::applyVehicleParams(JsonObjectConst params) {
-    int applied = 0;
-    JsonVariantConst v;
-
-    v = params["steerScale"];
-    if (!v.isNull()) {
-        configSetSteerScale(v.as<uint16_t>());
-        Console.printf("[CanConfig] vehicleParam: steerScale = %u\n", v.as<uint16_t>());
-        applied++;
-    }
-    v = params["steerOffset"];
-    if (!v.isNull()) {
-        configSetSteerOffset(v.as<int16_t>());
-        Console.printf("[CanConfig] vehicleParam: steerOffset = %d\n", v.as<int16_t>());
-        applied++;
-    }
-    v = params["steerInvert"];
-    if (!v.isNull()) {
-        configSetSteerInvert(v.as<bool>());
-        Console.printf("[CanConfig] vehicleParam: steerInvert = %d\n", (int)v.as<bool>());
-        applied++;
-    }
-    v = params["indTimeout"];
-    if (!v.isNull()) {
-        configSetIndicatorTimeout(v.as<uint16_t>());
-        Console.printf("[CanConfig] vehicleParam: indTimeout = %u\n", v.as<uint16_t>());
-        applied++;
-    }
-    v = params["rpmDiv"];
-    if (!v.isNull()) {
-        configSetRpmDivisor(v.as<uint8_t>());
-        Console.printf("[CanConfig] vehicleParam: rpmDiv = %u\n", v.as<uint8_t>());
-        applied++;
-    }
-    v = params["tankCap"];
-    if (!v.isNull()) {
-        configSetTankCapacity(v.as<uint8_t>());
-        Console.printf("[CanConfig] vehicleParam: tankCap = %u\n", v.as<uint8_t>());
-        applied++;
-    }
-    v = params["dteDiv"];
-    if (!v.isNull()) {
-        configSetDteDivisor(v.as<uint16_t>());
-        Console.printf("[CanConfig] vehicleParam: dteDiv = %u\n", v.as<uint16_t>());
-        applied++;
-    }
-
-    Console.printf("[CanConfig] %d vehicle param(s) applied\n", applied);
+bool CanConfigProcessor::applyVehicleParams(JsonObjectConst params) {
+    bool changed = false;
+    changed |= applyVehicleParam(params, "steerScale", configGetSteerScale, configSetSteerScale);
+    changed |= applyVehicleParam(params, "steerOffset", configGetSteerOffset, configSetSteerOffset);
+    changed |= applyVehicleParam(params, "steerInvert", configGetSteerInvert, configSetSteerInvert);
+    changed |= applyVehicleParam(params, "indTimeout", configGetIndicatorTimeout, configSetIndicatorTimeout);
+    changed |= applyVehicleParam(params, "rpmDiv", configGetRpmDivisor, configSetRpmDivisor);
+    changed |= applyVehicleParam(params, "tankCap", configGetTankCapacity, configSetTankCapacity);
+    changed |= applyVehicleParam(params, "dteDiv", configGetDteDivisor, configSetDteDivisor);
+    return changed;
 }
 
 // =============================================================================

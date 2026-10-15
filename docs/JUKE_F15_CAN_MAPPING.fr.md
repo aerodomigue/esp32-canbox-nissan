@@ -47,7 +47,7 @@ consommation :
 
 | Cible | Champ CAN / conversion | Portée et limite |
 | --- | --- | --- |
-| `STEERING` | `0x002 B0–B1 I16LE`, brut en 0,1° | Lecture corrigée ; preset `scale=1000`, réglage utilisateur confirmé `500` ; `offset=0`, inversion ; UART `0x29` limité à ±500 |
+| `STEERING` | `0x002 B0–B1 I16LE`, brut en 0,1° | Lecture corrigée ; preset et réglage utilisateur confirmé `scale=500` ; `offset=0`, inversion ; UART `0x29` limité à ±500 |
 | `ENGINE_RPM` | `0x180 B0–B1 BE /8` | Tr/min entiers ; étayé par les rapprochements OBD ci-dessous |
 | `VEHICLE_SPEED` | `0x284 B4–B5 BE /100` | Km/h entiers ; corroboré sur la plage de faible vitesse capturée |
 | `HANDBRAKE` | `0x5C5 B0 bit2` | `SYS DATA` → `Handbrake` ; état observé 1 = serré |
@@ -117,22 +117,28 @@ le fonctionnement avec `steerScale=500`, `steerOffset=0`, `steerInvert=true` :
 `UART = clamp(-trunc(raw/20), -500, 500)`. Le plafond correspond au décodeur
 `0x29` de l'[APK étudié](technical/RADIO_SEND.md#1-steering-wheel-angle-command-0x29).
 Le réglage de départ `1000` faisait trop tourner les lignes de guidage ;
-`500` divise ce gain par deux. Le JSON du dépôt conserve `1000` : la calibration
-utilisée sur le véhicule est enregistrée séparément en NVS.
+`500` divise ce gain par deux. Le JSON du dépôt renseigne désormais `500` et
+prend priorité sur la calibration locale mémorisée à chaque chargement et redémarrage.
 La trame CAN Toyota `0x025` et son éventuel facteur ne définissent pas l'unité UART.
 
-Lors d'une mise à jour du même preset, appliquer explicitement la calibration
-mémorisée, après le transfert du JSON et `CAN LOAD NissanJukeF15.json` :
+Installer le firmware correspondant et transférer le JSON à jour, puis
+l'activer et le vérifier avec :
 
 ```text
-CFG SET steerScale 500
-CFG SET steerOffset 0
-CFG SET steerInvert 1
-CFG SAVE
+CAN LOAD NissanJukeF15.json
+CFG LIST
 ```
 
-Le chargement du même nom conserve les valeurs NVS ; l'OTA seule ne change
-ni le JSON LittleFS ni ces réglages. Aucun changement de CANBox Manager requis.
+Les sept `vehicleParams` sont explicites : `steerScale=500`, `steerOffset=0`,
+`steerInvert=true`, `indTimeout=500`, `rpmDiv=8`, `tankCap=45`, `dteDiv=338`.
+Les trois derniers sont mémorisés mais inutilisés : `8`/`338` reprennent les
+diviseurs de `frames` ; `45` est une valeur historique, pas une capacité de
+réservoir validée. RPM et autonomie utilisent toujours leurs formules dans
+`frames`. Les clés explicites du JSON remplacent les valeurs locales,
+même pour le même fichier. `CFG SET`/`CFG SAVE` n'écrivent pas dans le JSON :
+les changements durables et partagés doivent être reportés dans ce fichier.
+L'OTA seule ne remplace pas le JSON LittleFS. Aucun changement de CANBox Manager
+requis. Voir [la priorité des paramètres](VEHICLE_PRESET_GUIDE.md#vehicle-parameters-vehicleparams).
 
 L'étude qui suit conserve les preuves à l'origine de ces changements ; les
 propositions sont évaluées indépendamment de leur présence dans une ancienne PR.

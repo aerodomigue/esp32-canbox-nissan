@@ -162,11 +162,11 @@ private:
     /**
      * @brief Apply vehicleParams overrides from JSON to in-memory config.
      *
-     * Called only on vehicle switch, after configReset(). Each non-null key
-     * overrides the corresponding CanboxConfig field. Caller must call
-     * configSave() afterwards to persist.
+     * Called after validation on every successful load, including reboot.
+     * Each non-null key overrides the corresponding CanboxConfig field.
+     * Returns true if values changed and need saving to NVS.
      */
-    void applyVehicleParams(JsonObjectConst params);
+    bool applyVehicleParams(JsonObjectConst params);
 };
 
 #endif // CAN_CONFIG_PROCESSOR_H

@@ -92,7 +92,8 @@ Byte 1: Angle MSB
   This was the starting calibration. On 15 October 2026, the owner reported
   that it turned the guidelines too far and confirmed scale **500**, keeping
   offset 0 and inversion: `clamp(-trunc(raw / 20), -500, 500)`. This is the
-  saved vehicle calibration; the repository JSON still defaults to 1000.
+  calibration now specified by the repository JSON and reapplied on every
+  load/reboot, taking priority over local NVS overrides.
 - Used for reverse camera dynamic guidelines
 
 Decoder evidence: `com.syu.ms` 26.0507 / versionCode 2126050716, SHA256

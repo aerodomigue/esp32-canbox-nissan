@@ -20,10 +20,10 @@ A vehicle preset is a JSON file that tells the ESP32 how to decode CAN frames fr
     "steerScale": 300,
     "steerOffset": 100,
     "steerInvert": true,
-    "indTimeout": null,
-    "rpmDiv": null,
-    "tankCap": null,
-    "dteDiv": null
+    "indTimeout": 500,
+    "rpmDiv": 7,
+    "tankCap": 45,
+    "dteDiv": 283
   },
   "frames": [
     {
@@ -81,7 +81,7 @@ A vehicle preset is a JSON file that tells the ESP32 how to decode CAN frames fr
 
 ## Vehicle Parameters (`vehicleParams`)
 
-The optional `vehicleParams` object embeds vehicle-specific calibration directly in the preset file. When a new vehicle is loaded, these values are applied automatically and saved to persistent storage (NVS).
+The optional `vehicleParams` object embeds calibration directly in the preset file. Explicit values take priority over local settings on **every successful load**, including `CAN LOAD`, `CAN RELOAD` and reboot. Changed values are saved to persistent storage (NVS); unchanged calibration is not saved again.
 
 ### Null semantics
 
@@ -95,14 +95,18 @@ Each field is independently nullable:
 ### Priority
 
 ```
-NVS (same vehicle loaded again)  ← highest priority
-  vehicleParams (vehicle switch)
-    firmware defaults             ← lowest priority
+vehicleParams (every load)        ← highest priority
+  NVS (null/absent keys, same file)
+    firmware defaults (new file)  ← lowest priority
 ```
 
-When the **same vehicle file** is loaded again (e.g., on reboot), NVS values are preserved and `vehicleParams` is **not** re-applied. This ensures user calibrations made via `CFG SET` survive reboots.
+When the **same vehicle file** is loaded again, explicit JSON values replace local overrides. Only `null` or absent keys retain local values. This replaces the previous behaviour that preserved all NVS values when reloading the same filename.
 
-When a **different vehicle file** is loaded, NVS is reset to firmware defaults first, then `vehicleParams` is applied and saved. Use `CFG SAVE` after any further tuning to persist your customisations.
+When a **different vehicle file** is loaded, NVS is reset to firmware defaults first, then `vehicleParams` is applied and saved. Null or absent keys therefore use firmware defaults on a switch.
+
+`CFG SET` still changes the running calibration immediately, and `CFG SAVE` still saves it to NVS. Neither command edits the JSON: an explicit JSON value wins again on the next load/reboot. To share a lasting adjustment between head units, edit and transfer the same JSON to each unit, then load it. To deliberately keep a setting local instead, set that key to `null` or omit it. `CFG RESET` also remains temporary for keys specified in the JSON.
+
+All provided values are checked before changing the active profile or NVS. Numeric keys require integers within the ranges below; `steerInvert` requires a JSON boolean (not `0`/`1`). Invalid types or ranges reject the entire load and leave the active profile and calibration untouched. `CAN GET` returns the file contents; `CFG LIST` reports the current runtime values.
 
 ### Supported keys
 
@@ -112,16 +116,21 @@ When a **different vehicle file** is loaded, NVS is reset to firmware defaults f
 | `steerOffset` | integer | -500 to +500 | `steerOffset` | Steering centre offset |
 | `steerInvert` | boolean | `true` / `false` | `steerInvert` | Reverse steering direction |
 | `indTimeout` | integer | 100–2000 ms | `indTimeout` | Indicator blink detection timeout |
-| `rpmDiv` | integer | 1–20 | `rpmDiv` | RPM raw value divisor |
-| `tankCap` | integer | 20–100 L | `tankCap` | Fuel tank capacity in litres |
-| `dteDiv` | integer | 100–500 | `dteDiv` | DTE divisor × 100 |
+| `rpmDiv` | integer | 1–20 | `rpmDiv` | Legacy RPM divisor, stored only |
+| `tankCap` | integer | 20–100 L | `tankCap` | Legacy tank capacity, stored only |
+| `dteDiv` | integer | 100–500 | `dteDiv` | Legacy DTE divisor × 100, stored only |
 
 ### Note on `rpmDiv`, `tankCap`, `dteDiv`
 
 These values are stored in NVS but are not currently used for post-processing
 in the CAN decoder or radio encoder. Set conversions in the formula `params`
-of individual frame fields (e.g., `"params": [1, 8, 0]` for Juke RPM). The Juke preset
-leaves these `vehicleParams` values at `null`.
+of individual frame fields (e.g., `"params": [1, 8, 0]` for Juke RPM and
+`[100, 338, 0]` for its provisional DTE mapping). The Juke preset explicitly
+stores `rpmDiv: 8` and `dteDiv: 338` to mirror those frame divisors, and
+`tankCap: 45` as a legacy compatibility placeholder. This is **not a claim
+about the car's tank capacity**, nor validation of the DTE formula. These
+three stored parameters do not change RPM, fuel level, consumption or range
+calculations; they must not be applied a second time to the decoded values.
 
 The steering parameters (`steerScale`, `steerOffset`, `steerInvert`) have **no frame-level equivalent** — they are applied during radio output in `RadioSend.cpp` and must be set here or via `CFG SET`.
 
@@ -129,15 +138,18 @@ The steering parameters (`steerScale`, `steerOffset`, `steerInvert`) have **no f
 
 ```
 1. Load NissanJukeF15.json for the first time
-   → NVS reset → steerScale=1000, steerOffset=0, steerInvert=true applied and saved
+   → NVS reset → steerScale=500, steerOffset=0, steerInvert=true applied and saved
 
-2. Fine-tune via app: CFG SET steerScale 900, CFG SAVE
-   → NVS now holds steerScale=900
+2. Try a local adjustment: CFG SET steerScale 600, CFG SAVE
+   → Running calibration and NVS now hold steerScale=600; JSON still has 500
 
-3. Reboot — same vehicle file reloaded
-   → vehicleParams NOT applied → NVS value 900 preserved ✓
+3. CAN RELOAD, CAN LOAD NissanJukeF15.json or reboot
+   → JSON wins → steerScale=500 applied and saved again
 
-4. Load a different vehicle (OtherVehicle.json)
+4. To keep the adjustment, change steerScale to 600 in the JSON and upload/load it
+   → Every unit using that file now loads 600
+
+5. Load a different vehicle (OtherVehicle.json)
    → NVS reset → OtherVehicle vehicleParams applied
 ```
 
@@ -170,8 +182,8 @@ this configurable conversion does not alter that source file.
 ```
 
 This is a root-object fragment to insert alongside `frames`, not a complete
-preset. Unlike `vehicleParams`, these settings are read from the JSON on
-every load and are not NVS overrides.
+preset. These settings are also read from the JSON on every load, but are
+not stored in NVS or exposed through `CFG SET`.
 
 | Key | Meaning |
 | --- | --- |

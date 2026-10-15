@@ -236,7 +236,7 @@ Le système est conçu pour être 100% autonome et résistant aux parasites éle
 
 1. **[Capture CAN](docs/technical/CAN_CAPTURE.md)** : Décode les trames selon la configuration JSON et met à jour les variables globales
 2. **[Envoi Radio](docs/technical/RADIO_SEND.md)** : Formate et transmet les données au poste à plusieurs intervalles (200ms pour direction, 333ms pour RPM, 500ms pour vitesse, etc.)
-3. **ConfigManager** : Stockage persistant des paramètres de calibration (NVS). Les fichiers JSON de véhicule peuvent intégrer `vehicleParams` pour fournir des valeurs par défaut spécifiques au modèle, appliquées automatiquement au premier chargement ; les ajustements utilisateur via `CFG SET` sont préservés entre les redémarrages sur le même véhicule
+3. **ConfigManager** : Stockage persistant des paramètres de calibration (NVS). Les valeurs explicites de `vehicleParams` dans le JSON sont prioritaires à chaque chargement et redémarrage ; les ajustements `CFG SET` ne survivent au rechargement que pour les clés nulles/absentes. Pour partager une calibration, mettre à jour le JSON sur chaque poste
 4. **SerialCommand** : Interface de configuration USB
 5. **Watchdog Matériel** : Redémarrage automatique si le programme gèle plus de 5 secondes
 6. **Watchdog CAN** : Force un reboot si aucune donnée CAN reçue pendant 30s alors que batterie > 11V
@@ -317,22 +317,34 @@ interpréter une cible inconnue comme `HANDBRAKE` en `STEERING` ; ne pas lui
 charger le nouveau JSON. Le nouveau parseur rejette les cibles inconnues ou
 absentes en conservant le profil précédemment actif.
 
-Pour la correction de direction, après transfert et activation du JSON,
-appliquer aussi les réglages ci-dessous si ce preset était déjà sélectionné :
-le rechargement du même fichier conserve la calibration NVS existante.
+Le JSON F15 renseigne maintenant les sept réglages de calibration :
 
-```text
-CFG SET steerScale 500
-CFG SET steerOffset 0
-CFG SET steerInvert 1
-CFG SAVE
+```json
+"vehicleParams": {
+  "steerScale": 500,
+  "steerOffset": 0,
+  "steerInvert": true,
+  "indTimeout": 500,
+  "rpmDiv": 8,
+  "tankCap": 45,
+  "dteDiv": 338
+}
 ```
 
 Le propriétaire a confirmé `500` : `1000` faisait trop tourner les lignes.
 Cela applique `UART = clamp(-trunc(brut/20), -500, 500)`, soit une demi-unité
-UART par degré F15 avant arrondi. Le JSON du dépôt conserve son réglage de
-départ `1000` ; les commandes ci-dessus enregistrent la calibration utilisée
-sur ce véhicule sans modifier le fichier.
+UART par degré F15 avant arrondi. Avec le firmware correspondant, `CAN LOAD`,
+`CAN RELOAD` et le redémarrage réappliquent les valeurs explicites du JSON,
+même pour le même fichier. Vérifier avec `CFG LIST`. `CFG SET`/`CFG SAVE`
+n'écrivent pas dans le JSON : les ajustements durables et partagés doivent
+être reportés dans le fichier. Les clés nulles/absentes peuvent toujours
+conserver un réglage local au rechargement.
+
+`rpmDiv`, `tankCap` et `dteDiv` sont des réglages historiques mémorisés mais
+actuellement inutilisés par le décodeur. `8` et `338` reprennent les diviseurs
+des formules RPM/autonomie de `frames` ; `tankCap: 45` conserve une valeur
+historique, pas une capacité de réservoir F15 validée. Les paramètres de
+consommation restent dans `fuelConsumption`. Voir le [guide des presets](docs/VEHICLE_PRESET_GUIDE.md#vehicle-parameters-vehicleparams).
 
 ---
 

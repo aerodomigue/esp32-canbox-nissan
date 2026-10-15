@@ -15,7 +15,7 @@ and [French mapping](docs/JUKE_F15_CAN_MAPPING.fr.md#capteurs-confirmés-sur-le-
 
 | Feature | Notes |
 |---------|-------|
-| Steering / Dynamic Guidelines | Owner uses `steerScale=500`, offset 0 and inversion; JSON default remains 1000 |
+| Steering / Dynamic Guidelines | F15 JSON uses owner-confirmed `steerScale=500`, offset 0 and inversion; reapplied on every load/reboot |
 | Engine RPM | `0x180` bytes 0–1 BE `/8`; owner confirmation and OBD comparison |
 | Vehicle Speed | `0x284` bytes 4–5 BE `/100`; owner confirmation and OBD comparison |
 | Odometer | `0x5C5` bytes 1–3 BE; owner confirmation |

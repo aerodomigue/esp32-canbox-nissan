@@ -141,15 +141,21 @@ Before any CAN frame is processed, `CanConfigProcessor::begin()` runs once durin
 
 ```
 1. LittleFS mounted
-2. Vehicle JSON file located (NVS → /vehicle.json → /NissanJukeF15.json)
-3. JSON parsed: name, isMock, vehicleParams, fuelConsumption, frames
+2. Vehicle JSON located (NVS → /vehicle.json → /MockDemo.json → /NissanJukeF15.json)
+3. JSON parsed and validated before modifying the active profile or calibration
 4. Vehicle switch detection:
-   ├─ Same file as previously loaded → NVS calibration preserved, vehicleParams skipped
-   └─ Different file (or first boot) → configReset() → vehicleParams applied → configSave()
-5. CAN frame processing begins
+   ├─ Same file as previously loaded → keep local values as the starting point
+   └─ Different file (or first boot) → configReset() to firmware defaults
+5. Apply non-null vehicleParams on EVERY load; save calibration if changed or switched
+6. CAN frame processing begins
 ```
 
-The `vehicleParams` section in the JSON file allows a preset to carry its own calibration defaults (steering scale, offsets, tank capacity, etc.). These override NVS on vehicle switch but never overwrite user customisations made via `CFG SET` on the same vehicle. See [Vehicle Parameters](../VEHICLE_PRESET_GUIDE.md#vehicle-parameters-vehicleparams) for the full key reference.
+The `vehicleParams` section carries shared calibration settings. Explicit values
+override local `CFG SET`/`CFG SAVE` adjustments even for the same file at reboot
+or reload. Null or absent keys keep local values on a same-file reload, or
+firmware defaults on a switch. Permanent shared adjustments belong in the JSON;
+application OTA alone does not replace that file. See [Vehicle Parameters](../VEHICLE_PRESET_GUIDE.md#vehicle-parameters-vehicleparams)
+for the full key reference and the legacy settings that are stored but unused.
 
 ### Processing Pipeline
 

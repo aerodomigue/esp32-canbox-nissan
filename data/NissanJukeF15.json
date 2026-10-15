@@ -13,13 +13,13 @@
     "maxTicksPerSecond": 400
   },
   "vehicleParams": {
-    "steerScale": 1000,
+    "steerScale": 500,
     "steerOffset": 0,
     "steerInvert": true,
-    "indTimeout": null,
-    "rpmDiv": null,
-    "tankCap": null,
-    "dteDiv": null
+    "indTimeout": 500,
+    "rpmDiv": 8,
+    "tankCap": 45,
+    "dteDiv": 338
   },
   "frames": [
     {

@@ -235,7 +235,7 @@ The system is designed to be 100% autonomous and resilient to vehicle electrical
 
 1. **[CAN Capture](docs/technical/CAN_CAPTURE.md)**: Decodes frames using JSON configuration and updates global variables
 2. **[Radio Send](docs/technical/RADIO_SEND.md)**: Formats and transmits data to the head unit at multiple intervals (200ms for steering, 333ms for RPM, 500ms for speed, etc.)
-3. **ConfigManager**: Persistent calibration storage (NVS). Vehicle JSON files can embed `vehicleParams` to supply model-specific defaults applied automatically on first load; user overrides via `CFG SET` are preserved across reboots on the same vehicle
+3. **ConfigManager**: Persistent calibration storage (NVS). Explicit JSON `vehicleParams` take priority on every load and reboot; `CFG SET` adjustments survive a reload only for null/absent JSON keys. Share calibration by updating the JSON on each unit
 4. **SerialCommand**: USB configuration interface
 5. **Hardware Watchdog**: Automatic reboot if the program freezes for more than 5 seconds
 6. **CAN Watchdog**: Forces reboot if no CAN data received for 30s while battery > 11V
@@ -316,22 +316,32 @@ unknown targets such as `HANDBRAKE` as `STEERING`; do not load the new JSON
 on it. The new parser rejects unknown or missing targets and keeps the
 previous active profile.
 
-For the steering correction, after transferring and activating the JSON,
-also apply these settings if this preset was already selected: reloading
-the same filename preserves the existing NVS calibration.
+The F15 JSON now specifies all seven calibration settings:
 
-```text
-CFG SET steerScale 500
-CFG SET steerOffset 0
-CFG SET steerInvert 1
-CFG SAVE
+```json
+"vehicleParams": {
+  "steerScale": 500,
+  "steerOffset": 0,
+  "steerInvert": true,
+  "indTimeout": 500,
+  "rpmDiv": 8,
+  "tankCap": 45,
+  "dteDiv": 338
+}
 ```
 
 The owner confirmed `500`: `1000` made the guidelines turn too far.
 This applies `UART = clamp(-trunc(raw/20), -500, 500)`, or half a UART unit
-per F15 degree before rounding. The repository JSON retains its starting
-value of `1000`; the commands above save the calibration used on this
-vehicle without changing the file.
+per F15 degree before rounding. With the matching firmware, `CAN LOAD`,
+`CAN RELOAD` and reboot reapply explicit JSON values, even for the same file.
+Check the result with `CFG LIST`. `CFG SET`/`CFG SAVE` do not edit the JSON;
+put lasting, shared adjustments in the file. Null/absent keys can still keep
+local settings on reload.
+
+`rpmDiv`, `tankCap` and `dteDiv` are stored legacy settings, currently unused
+by the decoder. `8` and `338` mirror the RPM/DTE formulas in `frames`;
+`tankCap: 45` retains a legacy default, not a validated F15 tank capacity.
+Consumption settings remain in `fuelConsumption`. See the [preset guide](docs/VEHICLE_PRESET_GUIDE.md#vehicle-parameters-vehicleparams).
 
 ---
 
