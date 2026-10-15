@@ -216,6 +216,53 @@ présente pas la moyenne globale comme une calibration à vitesse élevée.
 `0x280 B4–B5 /100` est aussi proche, mais cette corrélation ne distingue pas
 à elle seule vitesse indiquée, estimation filtrée et vitesse de roue.
 
+## Capture d'éclairage du 15 octobre 2026
+
+La capture `canlog_20261015_220243_672_5336771892799835140.txt` contient
+8 441 trames `RX` et 14 réponses `ODB RAW_RX` sur 6,540 s entre la première
+et la dernière trame `RX`. Le propriétaire décrit des changements entre
+OFF, AUTO, position et croisement. Les 68 trames `0x60D` donnent :
+
+| B0 | État décodé | Nombre | Réponse `SYS DATA` | Masque UART `0x7D/01` |
+| --- | --- | --- | --- | --- |
+| `0x00` | Feux éteints | 21 | `H=0 P=0 HB=0` | `0x00` |
+| `0x04` | Position seules | 15 | `H=0 P=1 HB=0` | `0x80` |
+| `0x06` | Position et croisement | 32 | `H=1 P=1 HB=0` | `0xC0` |
+
+Cela corrobore le mapping existant : positions `B0 & 0x04`, croisements
+`B0 & 0x02`. Le bit des pleins phares `B1 & 0x08` reste nul ; cette capture
+ne valide pas son activation. Ces états ne distinguent pas AUTO de
+croisement lorsque les mêmes lampes sont allumées. Les sept relevés
+`ODB DRIVER` / `ODB BUFFER` ne signalent aucune perte CAN, RAW ou ODB.
+
+Le [résultat du rejeu](vehicle/nissan-juke-f15/evidence/20261015-220243-lights.json)
+archive l'empreinte de la capture et les sept changements d'état. Les
+8 441 trames ont été rejouées dans le code de production à la révision
+`3ffe915`, avec périphériques simulés : les 68 états d'éclairage concordent
+entre le décodeur, la réponse USB `SYS DATA` et le sérialiseur UART. Le
+mapping des feux n'a pas été modifié.
+
+Pour CANBox Manager, les positions seules doivent donner la ligne complète :
+
+```text
+Lights:   H=0 P=1 HB=0 L=0 R=0
+```
+
+`P` désigne les feux de position, pas le frein à main. Les cinq champs sont
+indépendants : conserver `P=1` quand `H=1`, distinguer les clés `H` et `HB`
+et remettre chaque état à zéro lorsque sa valeur devient 0. Reconstituer
+les lignes USB jusqu'au LF, accepter CRLF et les espaces multiples, puis
+diriger `Lights:` vers la réponse dashboard de `SYS DATA`, séparément des
+lignes de logs `RX` / `ODB`. Le client doit demander `SYS DATA` ; `LOG ON`
+ne publie pas automatiquement ce bloc. Voir le
+[contrat de parsing](protocols/USB_SERIAL_PROTOCOL.md#lights-dashboard-field).
+
+Le fichier fourni ne contient aucune réponse `SYS DATA` ni capture UART du
+boîtier réel. Le rejeu ne certifie donc ni le firmware/preset installé ni
+l'affichage de Manager. Avec les positions allumées, relever la ligne USB
+avant parsing : `P=1` oriente vers le traitement côté client ; `P=0` impose
+de vérifier le firmware et le preset actifs sur l'ESP32.
+
 ## Séquence du frein à main
 
 Le candidat `0x5C5[0] & 0x04` vaut 1 au début, passe à 0 à

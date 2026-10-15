@@ -603,6 +603,51 @@ instantaneous consumption is not transmitted. Mock mode provides synthetic
 fuel and consumption sources; it sends no OBD queries. These additions do
 not change `RX`, `ODB`, acknowledgment or dashboard block delimiters.
 
+##### Lights dashboard field
+
+`SYS DATA` includes one complete line in this format:
+
+```text
+Lights:   H=0 P=1 HB=0 L=0 R=0
+```
+
+| Key | Meaning |
+| --- | --- |
+| `H` | Low-beam headlights |
+| `P` | Parking/position lights (sidelights), not the parking brake |
+| `HB` | High-beam headlights |
+| `L` | Left turn indicator |
+| `R` | Right turn indicator |
+
+Values are independent booleans (`0` or `1`), not an exclusive lighting
+mode. In particular, `P=1` and `H=1` can be active together. Update each
+stored flag on every valid line, including transitions back to `0`.
+Match complete keys so that `HB=1` cannot be mistaken for `H=1`. Accept
+multiple spaces after `Lights:` and between fields. Parse only complete
+LF-terminated records, allowing an optional preceding CR; retain partial
+USB reads and process every complete line when several arrive together.
+
+The client requests this dashboard block with `SYS DATA`; `LOG ON` alone
+does not publish it. Route `Lights:` within the dashboard response, without
+discarding it as an unrecognised `RX` or `ODB` record. Check reception,
+parsed model values and UI state separately when diagnosing missing lights.
+
+Suggested client parser/display cases (all with `L=0 R=0`):
+
+| Fields | Expected flags |
+| --- | --- |
+| `H=0 P=0 HB=0` | All lights off |
+| `H=0 P=1 HB=0` | Parking lights only |
+| `H=1 P=1 HB=0` | Parking lights and low beam |
+| `H=0 P=0 HB=1` | Synthetic case: high beam only, without setting `H` |
+
+Also feed these lines across USB chunk boundaries, including between CR
+and LF, and together in one read. These are client test requirements, not
+claims that CANBox Manager has been inspected or tested. The
+[Juke capture analysis](../JUKE_F15_CAN_MAPPING.md#lighting-capture-from-15-october-2026)
+checks production firmware responses using captured CAN input, but the
+capture contains no actual device `SYS DATA` responses.
+
 #### SYS REBOOT
 Restart the device.
 

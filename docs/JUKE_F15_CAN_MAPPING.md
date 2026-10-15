@@ -209,6 +209,52 @@ not be presented as high-speed calibration. `0x280 B4–B5 /100` is also
 close, but this correlation alone does not distinguish indicated speed,
 a filtered estimate and wheel speed.
 
+## Lighting capture from 15 October 2026
+
+Capture `canlog_20261015_220243_672_5336771892799835140.txt` contains
+8,441 `RX` frames and 14 `ODB RAW_RX` responses over 6.540 s between the
+first and last `RX` frames. The owner describes switching between OFF,
+AUTO, parking lights and low beam. Its 68 `0x60D` frames show:
+
+| B0 | Decoded state | Count | `SYS DATA` response | UART `0x7D/01` mask |
+| --- | --- | --- | --- | --- |
+| `0x00` | Lights off | 21 | `H=0 P=0 HB=0` | `0x00` |
+| `0x04` | Parking lights only | 15 | `H=0 P=1 HB=0` | `0x80` |
+| `0x06` | Parking lights and low beam | 32 | `H=1 P=1 HB=0` | `0xC0` |
+
+This supports the existing mapping: parking lights `B0 & 0x04`, low beam
+`B0 & 0x02`. High beam `B1 & 0x08` remains clear; this capture does not
+validate its activation. These states do not distinguish AUTO from low
+beam when the same lamps are on. All seven `ODB DRIVER` / `ODB BUFFER`
+samples report no CAN, RAW or ODB losses.
+
+The [replay result](vehicle/nissan-juke-f15/evidence/20261015-220243-lights.json)
+records the capture hash and its seven state changes. All 8,441 frames were
+replayed through production code at revision `3ffe915`, using simulated
+peripherals: all 68 lighting states agree across the decoder, USB `SYS DATA`
+response and UART serializer. The lighting mapping was not changed.
+
+For CANBox Manager, parking lights alone should produce this complete line:
+
+```text
+Lights:   H=0 P=1 HB=0 L=0 R=0
+```
+
+`P` means parking/position lights, not the parking brake. All five fields
+are independent: preserve `P=1` when `H=1`, match `H` and `HB` as separate
+keys, and clear each state when its value becomes 0. Assemble USB lines
+up to LF, accept CRLF and multiple spaces, then route `Lights:` to the
+`SYS DATA` dashboard response separately from `RX` / `ODB` log records.
+The client must request `SYS DATA`; `LOG ON` does not publish this block
+automatically. See the
+[parsing contract](protocols/USB_SERIAL_PROTOCOL.md#lights-dashboard-field).
+
+The supplied file contains no actual device `SYS DATA` responses or UART
+capture. Replay therefore does not establish the installed firmware/preset
+or Manager's display behaviour. With parking lights on, inspect the USB
+line before parsing: `P=1` points to client processing; `P=0` calls for
+checking the active firmware and preset on the ESP32.
+
 ## Parking-brake sequence
 
 Candidate `0x5C5[0] & 0x04` starts at 1, becomes 0 at **t=35,194 ms**,
