@@ -277,22 +277,37 @@ void test_voltage_141() {
 }
 
 // =============================================================================
-// STEERING — 0x002 bytes 1-2 BE signed INT16, formula NONE
-// Log: -255 / -256 (slight left turn when parked)
+// STEERING — 0x002 bytes 0-1 LE signed INT16, raw tenths of a degree
+// Byte 2 is rotational speed and must not enter the angle.
 // =============================================================================
 
 void test_steering_centered() {
-    uint8_t d[] = {0xF7, 0x00, 0x00, 0x07, 0xC3};
+    uint8_t d[] = {0x00, 0x00, 0xA9, 0x07, 0xC3};
     CanFrame f = makeFrame(0x002, d, 5);
     proc.processFrame(f);
     TEST_ASSERT_EQUAL_INT16(0, currentSteer);  // 0x0000 = 0
 }
 
 void test_steering_left() {
-    uint8_t d[] = {0xF7, 0xFF, 0x01, 0x07, 0xC3};
+    uint8_t d[] = {0x3F, 0xEC, 0x01, 0x07, 0xC3};
     CanFrame f = makeFrame(0x002, d, 5);
     proc.processFrame(f);
-    TEST_ASSERT_EQUAL_INT16(-255, currentSteer);  // 0xFF01 signed = -255
+    TEST_ASSERT_EQUAL_INT16(-5057, currentSteer);  // -505.7 degrees in the capture
+}
+
+void test_steering_right() {
+    uint8_t d[] = {0x2F, 0x0F, 0xA9, 0x07, 0xC3};
+    TEST_ASSERT_TRUE(proc.processFrame(makeFrame(0x002, d, 5)));
+    TEST_ASSERT_EQUAL_INT16(3887, currentSteer);  // +388.7 degrees in the capture
+}
+
+void test_steering_angle_is_independent_of_rotation_rate() {
+    uint8_t d[] = {0xD4, 0xFF, 0x00, 0x07, 0xC3};
+    for (uint8_t rate : {uint8_t(0), uint8_t(169), uint8_t(255)}) {
+        d[2] = rate;
+        TEST_ASSERT_TRUE(proc.processFrame(makeFrame(0x002, d, 5)));
+        TEST_ASSERT_EQUAL_INT16(-44, currentSteer);  // -4.4 degrees throughout
+    }
 }
 
 // =============================================================================
@@ -787,6 +802,8 @@ int main(int argc, char** argv) {
     // Steering
     RUN_TEST(test_steering_centered);
     RUN_TEST(test_steering_left);
+    RUN_TEST(test_steering_right);
+    RUN_TEST(test_steering_angle_is_independent_of_rotation_rate);
 
     // Fuel consumption
     RUN_TEST(test_fuel_counter_wrap_preserves_raw_units);

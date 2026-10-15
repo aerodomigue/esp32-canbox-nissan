@@ -44,7 +44,7 @@ Le projet a démarré comme une solution dédiée à la **Nissan Juke F15**, mai
 | Vitesse Véhicule | Corrigée dans le preset | `0x284` octets 4–5 BE `/100` ; corroboration OBD limitée aux faibles vitesses |
 | Niveau Essence | Indisponible dans le preset Juke | Fausse jauge `0x5C5[0]` retirée ; `FuelValid: 0` distingue la valeur de compatibilité `0 L` d'une mesure |
 | Tension Batterie | Cohérente avec l'OBD | Écart moyen 0,139 V ; points de mesure potentiellement différents |
-| Direction / Lignes Dynamiques | Fonction implémentée | Unités, zéro et sens d'angle à valider sur cette variante |
+| Direction / Lignes Dynamiques | Lecture F15 corrigée | `0x002` B0–B1 LE signés, 0,1° ; UART `0x29` limité à ±500, amplitude et sens à vérifier à l'écran |
 | État des Portes | Fonction implémentée | Correspondance porte/bit à vérifier par gestes séparés |
 | Clignotants | ✅ Fonctionnement confirmé | Retour utilisateur après correction de l'état dashboard |
 | Feux | Fonction implémentée | Phares, route, veilleuses ; pas de séquence annotée dans le dernier log |
@@ -309,13 +309,27 @@ interpréter une cible inconnue comme `HANDBRAKE` en `STEERING` ; ne pas lui
 charger le nouveau JSON. Le nouveau parseur rejette les cibles inconnues ou
 absentes en conservant le profil précédemment actif.
 
+Pour la correction de direction, après transfert et activation du JSON,
+appliquer aussi les réglages ci-dessous si ce preset était déjà sélectionné :
+le rechargement du même fichier conserve la calibration NVS existante.
+
+```text
+CFG SET steerScale 1000
+CFG SET steerOffset 0
+CFG SET steerInvert 1
+CFG SAVE
+```
+
+Cela envoie une unité UART par degré F15, avec inversion et limitation à ±500.
+Le réglage d'amplitude reste à vérifier sur les lignes de guidage de l'autoradio.
+
 ---
 
 ## Données Supportées
 
 | Donnée | ID CAN | Fréq. envoi | Notes |
 | --- | --- | --- | --- |
-| Angle Volant | 0x002 | 200ms | Octets historiques 1–2 BE signés ; échelle, zéro et sens non validés |
+| Angle Volant | 0x002 | 200ms | B0–B1 LE signés en 0,1° ; `scale=1000`, `offset=0`, inversion ; sortie UART limitée à ±500 |
 | Régime Moteur | 0x180 | 333ms | Octets 0–1, big endian, brut / 8 ; tr/min entiers |
 | Vitesse Véhicule | 0x284 | 500ms | Octets 4–5, big endian, brut / 100 ; km/h entiers |
 | Frein à Main | 0x5C5 | Sur requête `SYS DATA` | Octet 0 bit 2 ; `unknown` avant la première trame configurée |

@@ -138,16 +138,19 @@ void sendDoorCommand(uint8_t doorMask, bool igOn) {
 }
 
 /**
- * @brief Send steering wheel angle
- * @param angle Signed 16-bit angle in 0.1° units, Little Endian
+ * @brief Send the calibrated steering value for the RAV4 0x29 decoder
+ * @param angle UART units, not the raw CAN angle in tenths of a degree
  *
- * Range: -5400 to +5400 (±540.0° at full lock)
- * Per PDF: "Steering wheel angle is -540 to 540"
+ * The inspected FYT j0/c3 decoder reads signed 12-bit LE and saturates at
+ * +/-500. Bound the 32-bit result before narrowing to prevent sign wrapping.
  */
-void sendSteeringAngleMessage(int16_t angle) {
+void sendSteeringAngleMessage(int32_t angle) {
+    if (angle > 500) angle = 500;
+    if (angle < -500) angle = -500;
+    const uint16_t encoded = static_cast<uint16_t>(static_cast<int16_t>(angle));
     uint8_t payload[2] = {
-        (uint8_t)(angle & 0xFF),        // LSB
-        (uint8_t)((angle >> 8) & 0xFF)  // MSB
+        (uint8_t)(encoded & 0xFF),        // LSB
+        (uint8_t)((encoded >> 8) & 0xFF)  // MSB, sign-extended for negative values
     };
     sendCanboxMessage(CMD_STEERING_WHEEL, payload, 2);
 }
@@ -345,8 +348,8 @@ void processRadioUpdates() {
     // =========================================================================
     // 1. STEERING WHEEL ANGLE (CMD 0x29) - 200ms interval
     // =========================================================================
-    // Per PDF: Angle in 0.1° units, range -540 to +540 (so -5400 to +5400 raw)
-    // Calibration values from ConfigManager (stored in NVS)
+    // Convert the CAN value to UART units using calibration stored in NVS.
+    // F15: signed B0-B1 LE in 0.1 degrees; scale=1000 gives one unit/degree.
     if (now - lastSteeringTime >= STEERING_INTERVAL_MS) {
         // Step 1: Apply center offset from config
         int32_t centered = (int32_t)currentSteer + configGetSteerOffset();

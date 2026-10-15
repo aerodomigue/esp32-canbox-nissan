@@ -20,7 +20,7 @@
 
 // Forward declarations — functions defined in RadioSend.cpp but not exported in header
 void sendDoorCommand(uint8_t doorMask, bool igOn);
-void sendSteeringAngleMessage(int16_t angle);
+void sendSteeringAngleMessage(int32_t angle);
 void sendRpmMessage(uint16_t rpm);
 void sendSpeedMessage(uint16_t speed);
 void sendOdometerMessage(uint32_t odo);
@@ -73,7 +73,7 @@ void test_door_multiple_open_ig_on() {
 }
 
 // =============================================================================
-// CMD 0x29 — Steering wheel angle (0.1° units, signed LE)
+// CMD 0x29 — Calibrated UART steering units, signed LE, saturated at +/-500
 // =============================================================================
 
 void test_steering_zero() {
@@ -97,6 +97,21 @@ void test_steering_positive() {
     // sum=0x29+0x02+0xFA+0x00=0x125, cs=(0x25^0xFF)=0xDA
     uint8_t exp[] = {0x2E, 0x29, 0x02, 0xFA, 0x00, 0xDA};
     assertFrame(exp, sizeof(exp));
+}
+
+void test_steering_saturates_before_narrowing() {
+    const uint8_t positive[] = {0x2E, 0x29, 0x02, 0xF4, 0x01, 0xDF};  // +500
+    const uint8_t negative[] = {0x2E, 0x29, 0x02, 0x0C, 0xFE, 0xCA};  // -500
+    for (int32_t value : {500, 501, 2048, 65534, INT32_MAX}) {
+        RadioSerial.clear();
+        sendSteeringAngleMessage(value);
+        assertFrame(positive, sizeof(positive));
+    }
+    for (int32_t value : {-500, -501, -2049, -65536, INT32_MIN}) {
+        RadioSerial.clear();
+        sendSteeringAngleMessage(value);
+        assertFrame(negative, sizeof(negative));
+    }
 }
 
 // =============================================================================
@@ -354,6 +369,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_steering_zero);
     RUN_TEST(test_steering_minus250);
     RUN_TEST(test_steering_positive);
+    RUN_TEST(test_steering_saturates_before_narrowing);
 
     // RPM
     RUN_TEST(test_rpm_zero);

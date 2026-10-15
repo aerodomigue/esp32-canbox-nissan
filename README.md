@@ -44,7 +44,7 @@ The project started as a custom solution for the **Nissan Juke F15**, but has si
 | Vehicle Speed | Corrected in the preset | `0x284` bytes 4–5 BE `/100`; OBD corroboration covers low speed |
 | Fuel Tank Level | Unavailable in the Juke preset | False `0x5C5[0]` gauge removed; `FuelValid: 0` distinguishes the compatibility value `0 L` from a measurement |
 | Battery Voltage | Consistent with OBD | Mean absolute difference 0.139 V; potentially different measurement points |
-| Steering / Dynamic Guidelines | Feature implemented | Angle units, zero and sign need validation on this variant |
+| Steering / Dynamic Guidelines | F15 extraction corrected | `0x002` signed LE B0–B1, 0.1°; UART `0x29` bounded to ±500, display amplitude and direction still to check |
 | Door Status | Feature implemented | Verify each door/bit correspondence with separate actions |
 | Indicators | ✅ Operation confirmed | Owner feedback after the dashboard state fix |
 | Lights | Feature implemented | Headlights, high beam, parking lights; no annotated sequence in the latest capture |
@@ -309,13 +309,27 @@ unknown targets such as `HANDBRAKE` as `STEERING`; do not load the new JSON
 on it. The new parser rejects unknown or missing targets and keeps the
 previous active profile.
 
+For the steering correction, after transferring and activating the JSON,
+also apply these settings if this preset was already selected: reloading
+the same filename preserves the existing NVS calibration.
+
+```text
+CFG SET steerScale 1000
+CFG SET steerOffset 0
+CFG SET steerInvert 1
+CFG SAVE
+```
+
+This sends one UART unit per F15 degree, inverted and bounded to ±500.
+The amplitude setting still needs a visual check on the head unit's guidelines.
+
 ---
 
 ## Supported Data
 
 | Data | CAN ID | Send Rate | Notes |
 | --- | --- | --- | --- |
-| Steering Angle | 0x002 | 200ms | Legacy bytes 1–2 BE signed; angle scale, zero and sign unvalidated |
+| Steering Angle | 0x002 | 200ms | Signed LE B0–B1 in 0.1°; `scale=1000`, `offset=0`, inversion; UART output bounded to ±500 |
 | Engine RPM | 0x180 | 333ms | Bytes 0–1, big endian, raw / 8; integer RPM |
 | Vehicle Speed | 0x284 | 500ms | Bytes 4–5, big endian, raw / 100; integer km/h |
 | Handbrake | 0x5C5 | On `SYS DATA` request | Byte 0 bit 2; `unknown` before the first configured frame |

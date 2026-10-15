@@ -333,6 +333,51 @@ void test_juke_raw_fuel_without_fresh_speed_keeps_logs_and_clears_radio_average(
     assertRawLinesComplete(Serial.captured);
 }
 
+void test_f15_steering_reaches_rav4_with_profile_calibration() {
+    // A fresh selection applies the real JSON's calibration, not mock defaults.
+    configSetVehicleFile("");
+    TEST_ASSERT_TRUE(canProcessor.loadFromJson("/NissanJukeF15.json"));
+    TEST_ASSERT_EQUAL_UINT16(1000, configGetSteerScale());
+    TEST_ASSERT_EQUAL_INT16(0, configGetSteerOffset());
+    TEST_ASSERT_TRUE(configGetSteerInvert());
+    processRadioUpdates();  // Normalize timers after the test clock reset.
+
+    const struct { int16_t raw; int16_t uart; } cases[] = {
+        {0, 0}, {-3000, 300}, {3000, -300}, {-5057, 500}, {3887, -388},
+        {-5000, 500}, {5000, -500}, {-32768, 500}, {32767, -500}
+    };
+    for (const auto& sample : cases) {
+        const uint16_t raw = static_cast<uint16_t>(sample.raw);
+        TEST_ASSERT_TRUE(ESP32Can.enqueue(frame(0x002, {
+            static_cast<uint8_t>(raw), static_cast<uint8_t>(raw >> 8),
+            0xA9, 0x07, 0xC3  // Nonzero rotational speed is independent of angle.
+        })));
+        RadioSerial.clear();
+        StreamingSimulation::advance(200);
+        loop();
+        TEST_ASSERT_EQUAL_INT16(sample.raw, currentSteer);
+        TEST_ASSERT_EQUAL_UINT32(1, radioCommandCount(0x29));
+        const auto payload = lastRadioPayload(0x29);
+        TEST_ASSERT_EQUAL_UINT32(2, payload.size());
+        // Interpret the actual UART bytes as the APK's signed 12-bit input.
+        const uint16_t encoded = (payload[0] | (uint16_t(payload[1]) << 8)) & 0x0FFF;
+        const int16_t decoded = (encoded & 0x0800) ? int(encoded) - 4096 : encoded;
+        TEST_ASSERT_EQUAL_INT16(sample.uart, decoded);
+    }
+
+    // A valid user scale can exceed int16_t before UART saturation.
+    configSetSteerScale(20000);
+    configSetSteerOffset(500);
+    configSetSteerInvert(false);
+    RadioSerial.clear();
+    StreamingSimulation::advance(200);
+    loop();
+    const auto payload = lastRadioPayload(0x29);
+    const uint8_t positiveLimit[] = {0xF4, 0x01};
+    TEST_ASSERT_EQUAL_UINT32(2, payload.size());
+    TEST_ASSERT_EQUAL_HEX8_ARRAY(positiveLimit, payload.data(), 2);
+}
+
 void test_mock_consumption_is_available_and_profile_reload_clears_it() {
     MockDataGenerator generator;
     generator.begin();
@@ -849,6 +894,7 @@ int main() {
     RUN_TEST(test_obd_reference_sys_data_and_partial_command_keep_complete_lines);
     RUN_TEST(test_sys_data_distinguishes_unknown_from_observed_zero);
     RUN_TEST(test_juke_raw_fuel_without_fresh_speed_keeps_logs_and_clears_radio_average);
+    RUN_TEST(test_f15_steering_reaches_rav4_with_profile_calibration);
     RUN_TEST(test_mock_consumption_is_available_and_profile_reload_clears_it);
     RUN_TEST(test_fuel_conversion_reaches_radio_without_changing_raw_or_obd_streams);
     RUN_TEST(test_fuel_configuration_flags_survive_can_commands_and_clear_in_mock);

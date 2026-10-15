@@ -2,7 +2,7 @@
 
 > **Langues :** **Français** | [English](JUKE_F15_CAN_MAPPING.md)
 
-État des connaissances au **14 octobre 2026**. Véhicule du propriétaire :
+État des connaissances au **15 octobre 2026**. Véhicule du propriétaire :
 Juke F15 phase 1, moteur MR16DDT, boîte manuelle. Le marché, la référence
 exacte des calculateurs et le JSON effectivement chargé dans LittleFS ne
 sont pas identifiés par les logs. Le **preset de référence évalué dans les
@@ -18,6 +18,7 @@ consommation :
 
 | Cible | Champ CAN / conversion | Portée et limite |
 | --- | --- | --- |
+| `STEERING` | `0x002 B0–B1 I16LE`, brut en 0,1° | Lecture corrigée ; `scale=1000`, `offset=0`, inversion ; UART `0x29` limité à ±500 |
 | `ENGINE_RPM` | `0x180 B0–B1 BE /8` | Tr/min entiers ; étayé par les rapprochements OBD ci-dessous |
 | `VEHICLE_SPEED` | `0x284 B4–B5 BE /100` | Km/h entiers ; corroboré sur la plage de faible vitesse capturée |
 | `HANDBRAKE` | `0x5C5 B0 bit2` | `SYS DATA` → `Handbrake` ; état observé 1 = serré |
@@ -52,8 +53,8 @@ et le [protocole radio](technical/RADIO_SEND.md).
 trame CAN configurée. La disponibilité est réinitialisée au chargement d'un
 profil ; elle indique une réception, pas une calibration physique ni un
 timeout de fraîcheur pour ces champs bruts. Les lignes `RX` et `ODB`, le
-polling OBD et le traitement des clignotants restent inchangés. Direction,
-autonomie, température extérieure et kilométrage gardent leurs mappings
+polling OBD et le traitement des clignotants restent inchangés. Autonomie,
+température extérieure et kilométrage gardent leurs mappings
 historiques et les limites documentées ci-dessous.
 
 Le [rejeu du preset appliqué](vehicle/nissan-juke-f15/evidence/20261014-210614-applied-preset.json)
@@ -71,6 +72,36 @@ actif. L'OTA applicative seule ne met pas LittleFS à jour : transférer le
 JSON séparément, puis envoyer `CAN LOAD NissanJukeF15.json`. Voir
 l'[installation](../README.fr.md#installation-et-configuration) et le
 [protocole série](protocols/USB_SERIAL_PROTOCOL.md#sys-data).
+
+### Direction F15 vers UART RAV4
+
+La capture contient 7 181 trames `0x002`. L'angle `I16LE(B0,B1)/10` va de
+−505,7° à +388,7°, avec −4,4° au début et −2,4° à la fin. La dérivée absolue
+de cet angle et la vitesse de rotation VBOX `B2×4 °/s` ont une corrélation
+de 0,999162 sur 7 180 intervalles. Cela étaye fortement l'extraction et son
+échelle ; ce ne sont pas des mesures des butées ni du zéro roues droites.
+L'ancienne lecture B1–B2 mélangeait l'angle et la vitesse de rotation.
+
+Le preset conserve le brut en dixièmes de degré, puis la sortie applique
+`steerScale=1000`, `steerOffset=0`, `steerInvert=true` :
+`UART = clamp(-trunc(raw/10), -500, 500)`. Le plafond correspond au décodeur
+`0x29` de l'[APK étudié](technical/RADIO_SEND.md#1-steering-wheel-angle-command-0x29).
+Une unité UART par degré est un réglage de départ accepté pour ce véhicule ;
+le sens et l'amplitude des lignes de guidage restent à vérifier sur l'autoradio.
+La trame CAN Toyota `0x025` et son éventuel facteur ne définissent pas l'unité UART.
+
+Lors d'une mise à jour du même preset, appliquer explicitement la calibration
+mémorisée, après le transfert du JSON et `CAN LOAD NissanJukeF15.json` :
+
+```text
+CFG SET steerScale 1000
+CFG SET steerOffset 0
+CFG SET steerInvert 1
+CFG SAVE
+```
+
+Le chargement du même nom conserve les valeurs NVS ; l'OTA seule ne change
+ni le JSON LittleFS ni ces réglages. Aucun changement de CANBox Manager requis.
 
 L'étude qui suit conserve les preuves à l'origine de ces changements ; les
 propositions sont évaluées indépendamment de leur présence dans une ancienne PR.
@@ -172,7 +203,7 @@ pas l'existence du signal dans le véhicule.
 | Autre donnée carburant | Candidat `0x551 B1`, canal Racelogic en mm³, facteur 1, offset 0 | **À caractériser** : base temps/cycle, compte éventuel et interprétation physique sur MR16DDT à établir | Aucune consommation L/h ou L/100 km validée |
 | Consommation moyenne | `0x580 B4` | **Non validé** : 109→110→111 ; aucune valeur du combiné synchronisée | Ne pas interpréter automatiquement ces nombres comme 10,9–11,1 L/100 km |
 | Autonomie | `0x54C B6–B7 ×100/338` ; alternative `0x2DE B6–B7 /10` | **Non validé** : formule du preset constante à 305 ; alternative comprenant 824 valeurs `0xFFFF`, puis 2 707→2 687→2 684 bruts | `0xFFFF` peut être une sentinelle ; ne pas afficher 6 553,5 km. Le bit d’unité attendu reste nul |
-| Volant | Preset `0x002 B1–B2 I16BE` ; candidat `B0–B1 I16LE` | **Candidat** : séquence de braquage connue, mais pas de zéro, angle mesuré ou sens calibré | La continuité d'un champ n'établit pas des degrés ; vitesse de rotation et angle sont distincts |
+| Volant | Actuel : `0x002 B0–B1 I16LE /10`, ° | **Extraction fortement étayée** par la vitesse de rotation VBOX ; zéro, butées et affichage à vérifier | L'ancien `B1–B2 I16BE` mélange angle et vitesse de rotation |
 | Clignotants | `0x60D B1 bit5` gauche, `bit6` droit | Source Racelogic concordante, fonctionnement confirmé par l'utilisateur | Aucun de ces bits actif dans les 720 trames de cette capture ; le correctif dashboard ne recalibre pas le mapping |
 | Feux | `0x60D B0 bit1/bit2`, `B1 bit3` | Définition externe concordante avec les champs de feux du preset | Pas de changement d'éclairage annoté ; distinguer commande, contact et état réel |
 | Portes | Bits de `0x60D B0` | **À valider porte par porte** ; convention gauche/droite/conducteur non certifiée | Les noms conducteur/passager dépendent du véhicule ; ne pas déduire une porte d'une transition isolée de B2 |

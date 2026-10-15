@@ -13,8 +13,8 @@
     "maxTicksPerSecond": 400
   },
   "vehicleParams": {
-    "steerScale": 300,
-    "steerOffset": 100,
+    "steerScale": 1000,
+    "steerOffset": 0,
     "steerInvert": true,
     "indTimeout": null,
     "rpmDiv": null,
@@ -27,9 +27,9 @@
       "fields": [
         {
           "target": "STEERING",
-          "startByte": 1,
+          "startByte": 0,
           "byteCount": 2,
-          "byteOrder": "BE",
+          "byteOrder": "LE",
           "dataType": "INT16",
           "formula": "NONE"
         }

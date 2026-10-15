@@ -71,8 +71,8 @@ Checksum = ((Command + Length + Sum(Payload bytes)) & 0xFF) XOR 0xFF
 | --- | --- |
 | **Update Rate** | 200ms |
 | **Payload Length** | 2 bytes |
-| **Format** | Little Endian signed 16-bit |
-| **Unit** | 0.1 degrees |
+| **Format** | Two bytes LE, sign-extended; inspected FYT decoder reads signed 12 bits |
+| **Unit** | Calibrated UART units, bounded to −500…+500 |
 
 **Payload Structure:**
 ```
@@ -81,9 +81,22 @@ Byte 1: Angle MSB
 ```
 
 **Notes:**
-- Range: -540 to +540 (full lock to full lock)
-- Scale, offset and sign inversion come from ConfigManager settings
+- The inspected Toyota `j0/c3` decoder calls `kt.k(..., false, 500)` for
+  `0x29`; its guideline displacement saturates at ±500. This is an output
+  scale, not proof of physical steering stops or a universal degree unit.
+- The sender limits the 32-bit calibrated result before encoding so extreme
+  values cannot wrap and reverse direction in the signed 12-bit receiver.
+- Scale, offset and sign inversion come from ConfigManager settings.
+- F15 input: signed LE `0x002 B0–B1`, in tenths of a degree. With scale 1000,
+  offset 0 and inversion enabled, output is `clamp(-trunc(raw / 10), -500, 500)`.
+  This chooses one UART unit per degree as a starting calibration; check the
+  visible direction and amplitude on the owner's head unit.
 - Used for reverse camera dynamic guidelines
+
+Decoder evidence: `com.syu.ms` 26.0507 / versionCode 2126050716, SHA256
+`6892e90067437c2a97cfb8e75396edade5d2a1772fd0ef7681d81c28f64fdbdc`.
+[Pinned APK source](https://github.com/PimpinPumpkin/fyt7862-mods/blob/4c545e945a1ef6e2faadae29d9a95e9c714822ca/artifacts/apps/com.syu.ms.apk).
+This public build is not a dump of the owner's installed head unit.
 
 ---
 

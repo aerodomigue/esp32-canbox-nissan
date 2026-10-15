@@ -129,13 +129,13 @@ The steering parameters (`steerScale`, `steerOffset`, `steerInvert`) have **no f
 
 ```
 1. Load NissanJukeF15.json for the first time
-   → NVS reset → steerScale=300, steerOffset=100, steerInvert=true applied and saved
+   → NVS reset → steerScale=1000, steerOffset=0, steerInvert=true applied and saved
 
-2. Fine-tune via app: CFG SET steerScale 320, CFG SAVE
-   → NVS now holds steerScale=320
+2. Fine-tune via app: CFG SET steerScale 900, CFG SAVE
+   → NVS now holds steerScale=900
 
 3. Reboot — same vehicle file reloaded
-   → vehicleParams NOT applied → NVS value 320 preserved ✓
+   → vehicleParams NOT applied → NVS value 900 preserved ✓
 
 4. Load a different vehicle (OtherVehicle.json)
    → NVS reset → OtherVehicle vehicleParams applied
