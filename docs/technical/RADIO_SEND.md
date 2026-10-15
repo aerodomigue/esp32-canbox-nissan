@@ -2,20 +2,34 @@
 
 The `RadioSend.cpp` module communicates with the Android head unit MCU via the **Toyota RAV4 / Raise protocol** over UART.
 
+This guide describes the current implementation and its remaining protocol
+limitations. Consumption uses the documented three-byte `0x22` and 13-byte
+`0x23` payloads. Door command `0x24` keeps its documented two-byte payload.
+OBD calibration runs on the USB logging path and does not replace the preset's
+values sent over UART.
+
 ## Commands Summary
 
 | Command | Name | Length | Update Rate |
 | --- | --- | --- | --- |
 | 0x21 | Trip Info (Avg Speed, Time, Range) | 7 | 5000ms |
 | 0x22 | Instantaneous Fuel Consumption | 3 | 1000ms |
-| 0x23 | Average Fuel Consumption | 3 | 5000ms |
-| 0x24 | Door Status | 1 | 250ms |
+| 0x23 | Current Trip / Historical Fuel Consumption | 13 | 5000ms |
+| 0x24 | Door Status + IG Proxy | 2 | 250ms |
 | 0x28 | Outside Temperature | 12 | 5000ms |
 | 0x29 | Steering Wheel Angle | 2 | 200ms |
 | 0x7D/01 | Lights & Indicators | 2 | 200ms |
 | 0x7D/03 | Vehicle Speed | 5 | 500ms |
 | 0x7D/04 | Odometer | 12 | 10000ms |
 | 0x7D/0A | Engine RPM | 3 | 333ms |
+
+`0x22` requires an available consumption value in the stated UART units.
+The Juke preset's `fuelConsumption` configuration enables an experimental
+conversion from the `0x551 B1` counter and vehicle speed. Its provisional
+80 mm³ per increment factor is not calibrated for the Juke MR16DDT.
+`0x23` sends a current-trip value when available, or `0xFFFF` while a derived
+trip is unavailable. Mock mode retains synthetic consumption values with
+the same documented packet formats.
 
 ---
 
@@ -44,7 +58,7 @@ All frames follow this structure:
 ### Checksum Calculation
 
 ```
-Checksum = (Command + Length + Sum(Payload bytes)) XOR 0xFF
+Checksum = ((Command + Length + Sum(Payload bytes)) & 0xFF) XOR 0xFF
 ```
 
 ---
@@ -57,8 +71,8 @@ Checksum = (Command + Length + Sum(Payload bytes)) XOR 0xFF
 | --- | --- |
 | **Update Rate** | 200ms |
 | **Payload Length** | 2 bytes |
-| **Format** | Little Endian signed 16-bit |
-| **Unit** | degrees |
+| **Format** | Two bytes LE, sign-extended; inspected FYT decoder reads signed 12 bits |
+| **Unit** | Calibrated UART units, bounded to −500…+500 |
 
 **Payload Structure:**
 ```
@@ -67,9 +81,24 @@ Byte 1: Angle MSB
 ```
 
 **Notes:**
-- Range: -540 to +540 (full lock to full lock)
-- Sign is inverted from Nissan to match Toyota convention
+- The inspected Toyota `j0/c3` decoder calls `kt.k(..., false, 500)` for
+  `0x29`; its guideline displacement saturates at ±500. This is an output
+  scale, not proof of physical steering stops or a universal degree unit.
+- The sender limits the 32-bit calibrated result before encoding so extreme
+  values cannot wrap and reverse direction in the signed 12-bit receiver.
+- Scale, offset and sign inversion come from ConfigManager settings.
+- F15 input: signed LE `0x002 B0–B1`, in tenths of a degree. With scale 1000,
+  offset 0 and inversion enabled, output is `clamp(-trunc(raw / 10), -500, 500)`.
+  This was the starting calibration. On 15 October 2026, the owner reported
+  that it turned the guidelines too far and confirmed scale **500**, keeping
+  offset 0 and inversion: `clamp(-trunc(raw / 20), -500, 500)`. This is the
+  saved vehicle calibration; the repository JSON still defaults to 1000.
 - Used for reverse camera dynamic guidelines
+
+Decoder evidence: `com.syu.ms` 26.0507 / versionCode 2126050716, SHA256
+`6892e90067437c2a97cfb8e75396edade5d2a1772fd0ef7681d81c28f64fdbdc`.
+[Pinned APK source](https://github.com/PimpinPumpkin/fyt7862-mods/blob/4c545e945a1ef6e2faadae29d9a95e9c714822ca/artifacts/apps/com.syu.ms.apk).
+This public build is not a dump of the owner's installed head unit.
 
 ---
 
@@ -78,11 +107,12 @@ Byte 1: Angle MSB
 | Field | Value |
 | --- | --- |
 | **Update Rate** | 250ms or on change |
-| **Payload Length** | 1 byte |
+| **Payload Length** | 2 bytes |
 
 **Payload Structure:**
 ```
 Byte 0: Door status bitmask
+Byte 1: IG status proxy; bit 1 (0x02) is set when engineRPM > 0, otherwise 0x00
 ```
 
 **Status Bitmask:**
@@ -93,6 +123,20 @@ Byte 0: Door status bitmask
 | 5 | Rear Right door | 0=closed, 1=open |
 | 4 | Rear Left door | 0=closed, 1=open |
 | 3 | Trunk/Boot | 0=closed, 1=open |
+
+These labels describe the firmware's current mapping. Raise V2.21 page 5
+names bit 7 as the right front door and bit 6 as the left front door, whereas
+the firmware uses them for driver/front-left and passenger/front-right.
+This left/right interpretation has not been changed by the rollback.
+
+V2.21 documents a two-byte `0x24` payload and IG at **Data1 bit 1**.
+`engineRPM > 0` is a running-engine proxy, not an independent ignition-switch
+measurement: contact ON with a stopped engine is reported as IG OFF. No
+third byte or forced `0x06` is transmitted. The proposed three-byte variant
+is a DUDU7 report without confirmation in the local V2.21 specification.
+
+**Synthetic wire examples:** closed doors/IG OFF is `2E 24 02 00 00 D9`;
+driver door open/IG proxy ON is `2E 24 02 80 02 57`.
 
 ---
 
@@ -160,8 +204,8 @@ Byte 2: RPM × 4 MSB
 Byte 0: Sub-command (0x03)
 Byte 1: Speed × 100 LSB
 Byte 2: Speed × 100 MSB
-Byte 3: 0x00 (reserved)
-Byte 4: 0x00 (reserved)
+Byte 3: Average speed LSB, currently 0x00 (unavailable)
+Byte 4: Average speed MSB, currently 0x00 (unavailable)
 ```
 
 **Example:** 45 km/h → 45 × 100 = 4500 → 0x94, 0x11
@@ -181,7 +225,10 @@ Byte 0: Sub-command (0x04)
 Byte 1: Odometer LSB
 Byte 2: Odometer Middle byte
 Byte 3: Odometer MSB
-Bytes 4-11: 0x00 (reserved)
+Byte 4: 0xF2 (existing constant, meaning unverified)
+Byte 5: 0x08 (existing constant, meaning unverified)
+Bytes 6-8: Trip 1, currently 0x00 (unavailable)
+Bytes 9-11: Trip 2, currently 0x00 (unavailable)
 ```
 
 ---
@@ -190,17 +237,27 @@ Bytes 4-11: 0x00 (reserved)
 
 | Field | Value |
 | --- | --- |
-| **Update Rate** | 5000ms (optional) |
+| **Update Rate** | 5000ms |
 | **Payload Length** | 12 bytes |
 
 **Payload Structure:**
 ```
-Bytes 0-4: 0x00 (reserved)
+Byte 0: Encoded coolant temperature = (coolant + 40) × 2, unverified hypothesis
+Bytes 1-4: 0x00
 Byte 5: Encoded temperature = (temp + 40) × 2
 Bytes 6-11: 0x00 (reserved)
 ```
 
 **Example:** 20°C → (20 + 40) × 2 = 120 → 0x78
+
+Coolant at byte 0 is an existing implementation hypothesis, not a confirmed
+Raise field. Its presence does not establish that the head unit displays
+coolant temperature.
+
+Both encoded temperatures are cast to `uint8_t` without clamping. Values
+outside 0–255 wrap on the wire; for example, coolant at 100°C encodes as
+`280 mod 256 = 24`. This limits the current temperature packet independently
+of the OBD reference, which retains the decoded Celsius value.
 
 ---
 
@@ -222,29 +279,73 @@ Byte 2: Value LSB
 
 **Example:** 7.5 L/100km → 75 → 0x004B → Payload: `02 00 4B`
 
+This is the UART encoding when an available source provides 0.1 L/100km.
+The Juke preset computes an estimate from successive modulo-256 differences
+of `0x551 B1` and distance integrated from vehicle speed. The raw byte is
+never sent directly as L/100km. Its `fuelConsumption` configuration uses
+a provisional 80 mm³ per increment, based on a
+[Clio III calibration](https://x0r.fr/blog/39#comment-396), and must be calibrated
+on the Juke MR16DDT before treating the result as a measured consumption.
+The VBOX label and factor 1 do not independently validate this conversion.
+
+At a confirmed stationary state, the Juke conversion sends zero for the
+L/100km display, matching the Nissan cluster convention documented in
+[MWI, page 16](../vehicle/nissan-juke-f15/MWI.pdf). Fuel consumed while stationary
+still contributes to the trip total. This display convention does not mean
+the engine uses no fuel. When the input data is unavailable or stale, no
+instantaneous packet is sent: Raise does not document an invalid marker
+for `0x22`. No L/h unit is defined for this command.
+
+Mock mode retains synthetic consumption output. Head-unit display of
+instantaneous consumption requires IG ON according to Raise V2.21 page 5.
+
 ---
 
-### 5b. Average Fuel Consumption (Command 0x23)
+### 5b. Current Trip / Historical Fuel Consumption (Command 0x23)
 
 | Field | Value |
 | --- | --- |
 | **Update Rate** | 5000ms |
-| **Payload Length** | 3 bytes |
+| **Payload Length** | 13 bytes |
 
 **Payload Structure:**
 ```
 Byte 0: Unit (0x02 = L/100km)
-Byte 1: Value MSB
-Byte 2: Value LSB
+Bytes 1–2: Current-trip consumption, uint16 BE
+Bytes 3–4: Historical trip 1, uint16 BE
+Bytes 5–6: Historical trip 2, uint16 BE
+Bytes 7–8: Historical trip 3, uint16 BE
+Bytes 9–10: Historical trip 4, uint16 BE
+Bytes 11–12: Historical trip 5, uint16 BE
 ```
 
 **Formula:** `consumption_L100km = (Byte1 << 8 | Byte2) / 10.0`
 
-**Example:** 8.2 L/100km → 82 → 0x0052 → Payload: `02 00 52`
+**Invalid value:** `0xFFFF` independently marks each unavailable trip.
+
+**Example:** 8.2 L/100km → 82 → `0x0052`, with five unknown historical trips:
+`02 00 52 FF FF FF FF FF FF FF FF FF FF`.
 
 **Notes:**
-- Same format as 0x22 but for trip average consumption
-- Data from Nissan CAN 0x580 byte[4]
+
+- The payload follows Raise V2.21 page 5. The former three-byte implementation
+  omitted required historical fields and has been replaced.
+- The Juke conversion calculates current-trip consumption from total fuel
+  divided by total distance. This is a session estimate using the same
+  provisional factor as instantaneous consumption, not the Nissan cluster's
+  stored average. It does not restore the unvalidated `0x580 B4` mapping.
+- `RadioSend.cpp` only encodes the supplied average. It does not calculate or
+  persist trips; all five historical values are `0xFFFF`.
+- When derived consumption is enabled but its average is unavailable,
+  the current-trip value is also `0xFFFF`. Profiles without derived
+  consumption and without an available direct source emit no `0x23` packet.
+- The specification gates current-trip consumption display on IG ON. The
+  firmware supplies the RPM-derived IG proxy described under `0x24`.
+
+**Synthetic wire example with an available source:** 9.8 L/100km (`98`) produces the full
+17-byte frame `2E 23 0D 02 00 62 FF FF FF FF FF FF FF FF FF FF 75`.
+This example verifies encoding,
+not the accuracy of the source CAN value or acceptance by DUDU7.
 
 ---
 
@@ -305,7 +406,7 @@ Doors      ■───────────────────■──
 │  Variables  │ ───► │  Module      │ ───► │  Head Unit  │
 └─────────────┘      └──────────────┘      └─────────────┘
   currentSteer         Formats data         Displays:
-  engineRPM            Calculates CRC       - Camera lines
+  engineRPM            Calculates checksum  - Camera lines
   vehicleSpeed         Sends frames         - RPM gauge
   currentOdo                                - Speedometer
   currentDoors                              - Door status
@@ -327,11 +428,20 @@ Doors      ■───────────────────■──
 
 The protocol does not require a handshake - data is sent proactively. Any incoming data from the head unit is discarded.
 
+`LOG ON` separately enables timestamped raw CAN logging and read-only OBD
+service 01 references on USB; OBD diagnostic lines start with the exact
+`ODB` prefix. `LOG OFF` stops new requests. Mock mode and OTA suspend OBD
+polling. These references do not update GlobalData or the UART packets.
+See the [USB LOG command](../protocols/USB_SERIAL_PROTOCOL.md#log---raw-can-capture-and-obd-reference-polling)
+and [calibration guide](../OBD_CALIBRATION.md) for capture instructions.
+
 ---
 
 ## References
 
 ### Radio Protocol Documentation
-- [Mikescotland / Toyota RAV4 Protocol Analysis](../../docs/protocols/raise-toyota-rav4/RAV4_BODY_ENGINE_2018_2020.pdf) - Compiled and analyzed by Mikescotland ([Source](https://forum.dudu-auto.com/u/Mikescotland))
+
+- [Raise Toyota CAMRY/RAV4 V2.21](<../protocols/raise-toyota-rav4/睿志诚软件_丰田CAMRY & RAV4 串口通讯协议  V2.21.000 (1).pdf>) - Page 5 documents `0x23` and `0x24`; Git LFS download is needed to read the PDF.
+- [Mikescotland / Toyota RAV4 Protocol Analysis](../protocols/raise-toyota-rav4/RAV4_BODY_ENGINE_2018_2020.pdf) - Compiled and analyzed by Mikescotland ([Source](https://forum.dudu-auto.com/u/Mikescotland)); page 4 shows an older one-byte door packet.
 - [smartgauges / canbox](https://github.com/smartgauges/canbox)
 - [cxsichen / Raise Protocol](https://github.com/cxsichen/helllo-world/tree/master/%E5%8D%8F%E8%AE%AE/%E7%9D%BF%E5%BF%97%E8%AF%9A)

@@ -42,6 +42,7 @@
 
 #include <Arduino.h>
 #include <vector>
+#include "FuelConsumptionEstimator.h"
 
 // =============================================================================
 // DATA TYPE DEFINITIONS
@@ -78,7 +79,7 @@ enum class ByteOrder : uint8_t {
  * @brief Formula types for data conversion
  *
  * After extracting the raw value, these formulas convert it to standard units.
- * Example: RPM raw value 17500 with SCALE(1, 7, 0) → 2500 RPM
+ * Example: RPM raw value 20000 with SCALE(1, 8, 0) → 2500 RPM
  */
 enum class FormulaType : uint8_t {
     NONE,           // No conversion - use raw value as-is
@@ -120,6 +121,14 @@ enum class OutputField : uint8_t {
     HIGH_BEAM,          // High beam on
     PARKING_LIGHTS,     // Parking/position lights on
 
+    // Additional temperature
+    COOLANT_TEMP,       // Engine coolant temperature (°C)
+
+    // CAN observations exposed through SYS DATA, without new radio commands.
+    HANDBRAKE,         // Parking brake switch state
+    BRAKE_PEDAL,       // Service brake switch state
+    FUEL_COUNTER_RAW,  // Raw 8-bit counter; not L/h or L/100km
+
     // End marker for array sizing
     FIELD_COUNT
 };
@@ -132,7 +141,7 @@ enum class OutputField : uint8_t {
  * @brief Defines how to extract and convert a single data field from a CAN frame
  *
  * Each field represents one piece of data within a CAN frame. A single frame
- * can contain multiple fields (e.g., 0x5C5 contains both fuel level and odometer).
+ * can contain multiple fields (e.g., 0x5C5 contains handbrake and odometer).
  */
 struct FieldConfig {
     OutputField target;       // Which GlobalData field to update
@@ -168,6 +177,8 @@ struct VehicleProfile {
     bool isMock;                       // true = mock mode (generate simulated data)
                                        // false = real CAN mode (read from bus)
     std::vector<FrameConfig> frames;   // All CAN frames to process
+    FuelConsumptionConfig fuelConsumption;
+    bool fuelConsumptionCalibrated = false;
 };
 
 // =============================================================================
@@ -219,9 +230,10 @@ inline FormulaType parseFormulaType(const char* str) {
 /**
  * @brief Convert string to OutputField enum
  * @param str String from JSON (e.g., "ENGINE_RPM", "VEHICLE_SPEED")
- * @return Corresponding OutputField enum value
+ * @return Corresponding OutputField, or FIELD_COUNT for an unknown/missing target
  */
 inline OutputField parseOutputField(const char* str) {
+    if (str == nullptr) return OutputField::FIELD_COUNT;
     // Numeric values
     if (strcmp(str, "STEERING") == 0) return OutputField::STEERING;
     if (strcmp(str, "ENGINE_RPM") == 0) return OutputField::ENGINE_RPM;
@@ -247,8 +259,12 @@ inline OutputField parseOutputField(const char* str) {
     if (strcmp(str, "HEADLIGHTS") == 0) return OutputField::HEADLIGHTS;
     if (strcmp(str, "HIGH_BEAM") == 0) return OutputField::HIGH_BEAM;
     if (strcmp(str, "PARKING_LIGHTS") == 0) return OutputField::PARKING_LIGHTS;
+    if (strcmp(str, "COOLANT_TEMP") == 0) return OutputField::COOLANT_TEMP;
+    if (strcmp(str, "HANDBRAKE") == 0) return OutputField::HANDBRAKE;
+    if (strcmp(str, "BRAKE_PEDAL") == 0) return OutputField::BRAKE_PEDAL;
+    if (strcmp(str, "FUEL_COUNTER_RAW") == 0) return OutputField::FUEL_COUNTER_RAW;
 
-    return OutputField::STEERING; // Default fallback
+    return OutputField::FIELD_COUNT;
 }
 
 #endif // VEHICLE_CONFIG_H

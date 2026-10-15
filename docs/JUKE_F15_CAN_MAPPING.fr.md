@@ -1,0 +1,484 @@
+# Mapping CAN — Nissan Juke F15 2011 phase 1, 1.6 DIG-T manuel
+
+> **Langues :** **Français** | [English](JUKE_F15_CAN_MAPPING.md)
+
+État des connaissances au **15 octobre 2026**. Véhicule du propriétaire :
+Juke F15 phase 1, moteur MR16DDT, boîte manuelle. Le marché, la référence
+exacte des calculateurs et le JSON effectivement chargé dans LittleFS ne
+sont pas identifiés par les logs. Le **preset de référence évalué dans les
+preuves** est `data/NissanJukeF15.json` à la révision `cd02abf`, dont
+l'empreinte figure dans les résultats. Les statistiques JSON/CSV publiées
+restent des comparaisons avec cet état historique.
+
+## Capteurs confirmés sur le véhicule
+
+Mise à jour du **15 octobre 2026**, sur confirmation du propriétaire de ce
+Juke F15 2011 1.6 DIG-T manuel. Il s'agit du fonctionnement observé sur son
+véhicule ; les preuves de capture et leurs limites sont conservées plus bas.
+
+| Donnée | Statut actuel | Référence |
+| --- | --- | --- |
+| Vitesse | Confirmée | `0x284 B4–B5 BE /100` ; rapprochements OBD disponibles |
+| Kilométrage total (km) | Confirmé | `0x5C5 B1–B3 BE` ; confirmation utilisateur |
+| Régime moteur (tr/min) | Confirmé | `0x180 B0–B1 BE /8` ; rapprochements OBD disponibles |
+| Volant / lignes de guidage | Confirmés | `0x002 B0–B1 I16LE` ; réglage utilisateur `steerScale=500`, `steerOffset=0`, `steerInvert=1` |
+| Clignotants | Confirmés | Gauche/droit, `0x60D B1 bit5/bit6` |
+| Portes et coffre | Confirmés | Mapping `0x60D` existant ; confirmation utilisateur |
+| Frein à main | Confirmé | `0x5C5 B0 bit2` ; état exposé par `SYS DATA` |
+| Feux | Confirmés côté boîtier | Position, croisement et pleins phares ; contrôle du parsing Manager documenté dans la section éclairage |
+| Tension batterie | Confirmée | `0x6F6 B0 /10` ; comparaison avec l'OBD cohérente |
+| Température moteur | Confirmée | `0x551 B0−40` ; confirmation utilisateur et comparaison OBD |
+
+La **température extérieure n'est pas validée** : `0x540 B0−40` donne 28 °C
+dans les captures, contre environ 20 °C indiqués par le propriétaire. Ne pas
+confondre ce signal avec la température moteur confirmée.
+
+Le reste demeure **approximatif, non validé ou indisponible** : consommations
+instantanée/moyenne à calibrer, autonomie et pédale de frein à vérifier,
+niveau de carburant et marche arrière/rapport à identifier. Les données
+brutes ou corrélations disponibles ne suffisent pas à valider ces fonctions ;
+des captures supplémentaires ou du travail de décodage restent nécessaires.
+
+## Application dans le firmware et le preset actuels
+
+Le [preset Juke du dépôt](../data/NissanJukeF15.json) applique les corrections
+corroborées et conserve l'octet brut à côté d'une estimation provisoire de
+consommation :
+
+| Cible | Champ CAN / conversion | Portée et limite |
+| --- | --- | --- |
+| `STEERING` | `0x002 B0–B1 I16LE`, brut en 0,1° | Lecture corrigée ; preset `scale=1000`, réglage utilisateur confirmé `500` ; `offset=0`, inversion ; UART `0x29` limité à ±500 |
+| `ENGINE_RPM` | `0x180 B0–B1 BE /8` | Tr/min entiers ; étayé par les rapprochements OBD ci-dessous |
+| `VEHICLE_SPEED` | `0x284 B4–B5 BE /100` | Km/h entiers ; corroboré sur la plage de faible vitesse capturée |
+| `HANDBRAKE` | `0x5C5 B0 bit2` | `SYS DATA` → `Handbrake` ; état observé 1 = serré |
+| `BRAKE_PEDAL` | `0x180 B7 bit0` | `SYS DATA` → `Brake` ; bit de contact défini par la source, geste/polarité à vérifier |
+| `FUEL_COUNTER_RAW` | `0x551 B1`, inchangé 0–255 | `SYS DATA` → `FuelRaw` ; conversion séparée du compteur avec un coefficient provisoire |
+
+La fausse jauge issue de l'octet entier `0x5C5 B0` et les deux champs de
+consommation `0x580` ont été retirés. `Fuel: 0 L` reste par compatibilité,
+avec `FuelValid: 0` : la mesure est **indisponible**, pas un réservoir vide.
+L'objet `fuelConsumption` active désormais une estimation à partir des
+incréments modulo 256 de `0x551 B1`, avec **80 mm³/incrément, non encore
+calibré sur ce Juke**, et de la distance intégrée depuis la vitesse précise
+`0x284 B4–B5 /100`. Elle alimente les commandes UART `0x22` / `0x23` en
+0,1 L/100 km. `FuelConsValid` indique la disponibilité ;
+`FuelConsEstimated: 1` signale le coefficient provisoire. Le mode mock
+conserve ses consommations synthétiques.
+
+La consommation instantanée utilise une fenêtre de 1 s et affiche zéro
+en dessous de 2 km/h si les sources sont fraîches ; cela ne signifie pas
+un débit carburant nul. La moyenne inclut le carburant consommé à l'arrêt
+et devient disponible après 100 m dans la session. Un rechargement, un
+redémarrage, une coupure de source supérieure à 500 ms ou un incrément
+invraisemblable réinitialise la session. Certaines remises à zéro du compteur
+sont impossibles à distinguer d'un débordement. Une valeur instantanée
+indisponible n'est pas émise ; la radio peut conserver le dernier affichage.
+La moyenne indisponible et les cinq historiques inutilisés valent `0xFFFF`
+dans la charge utile corrigée de 13 octets de `0x23`. Voir le
+[guide de configuration](VEHICLE_PRESET_GUIDE.md#counter-based-fuel-consumption-fuelconsumption)
+et le [protocole radio](technical/RADIO_SEND.md).
+
+`Handbrake`, `Brake` et `FuelRaw` valent `unknown` avant réception de leur
+trame CAN configurée. La disponibilité est réinitialisée au chargement d'un
+profil ; elle indique une réception, pas une calibration physique ni un
+timeout de fraîcheur pour ces champs bruts. Les lignes `RX` et `ODB`, le
+polling OBD et le traitement des clignotants restent inchangés. Autonomie,
+température extérieure et kilométrage gardent leurs mappings historiques.
+Le kilométrage est désormais confirmé par le propriétaire ; autonomie et
+température extérieure restent non validées.
+
+Le [rejeu du preset appliqué](vehicle/nissan-juke-f15/evidence/20261014-210614-applied-preset.json)
+utilise les divisions entières de production sur la même capture : erreur
+absolue moyenne **7,389 tr/min** sur 36 paires, **0,143 km/h** sur 35 paires
+et **0,029 °C** sur 35 paires de température moteur. Ces valeurs diffèrent
+des statistiques des candidats en virgule flottante ci-dessous. Le rejeu
+d'une capture à faible vitesse n'établit ni une calibration à vitesse/régime
+élevés ni une nouvelle mesure matérielle.
+
+Installer le **nouveau firmware correspondant avant le JSON**. Les anciens
+parseurs peuvent convertir une cible inconnue en `STEERING` ; le nouveau
+parseur rejette les cibles inconnues ou absentes en conservant le profil
+actif. L'OTA applicative seule ne met pas LittleFS à jour : transférer le
+JSON séparément, puis envoyer `CAN LOAD NissanJukeF15.json`. Voir
+l'[installation](../README.fr.md#installation-et-configuration) et le
+[protocole série](protocols/USB_SERIAL_PROTOCOL.md#sys-data).
+
+### Direction F15 vers UART RAV4
+
+La capture contient 7 181 trames `0x002`. L'angle `I16LE(B0,B1)/10` va de
+−505,7° à +388,7°, avec −4,4° au début et −2,4° à la fin. La dérivée absolue
+de cet angle et la vitesse de rotation VBOX `B2×4 °/s` ont une corrélation
+de 0,999162 sur 7 180 intervalles. Cela étaye fortement l'extraction et son
+échelle ; ce ne sont pas des mesures des butées ni du zéro roues droites.
+L'ancienne lecture B1–B2 mélangeait l'angle et la vitesse de rotation.
+
+Le preset conserve le brut en dixièmes de degré. Le propriétaire a confirmé
+le fonctionnement avec `steerScale=500`, `steerOffset=0`, `steerInvert=true` :
+`UART = clamp(-trunc(raw/20), -500, 500)`. Le plafond correspond au décodeur
+`0x29` de l'[APK étudié](technical/RADIO_SEND.md#1-steering-wheel-angle-command-0x29).
+Le réglage de départ `1000` faisait trop tourner les lignes de guidage ;
+`500` divise ce gain par deux. Le JSON du dépôt conserve `1000` : la calibration
+utilisée sur le véhicule est enregistrée séparément en NVS.
+La trame CAN Toyota `0x025` et son éventuel facteur ne définissent pas l'unité UART.
+
+Lors d'une mise à jour du même preset, appliquer explicitement la calibration
+mémorisée, après le transfert du JSON et `CAN LOAD NissanJukeF15.json` :
+
+```text
+CFG SET steerScale 500
+CFG SET steerOffset 0
+CFG SET steerInvert 1
+CFG SAVE
+```
+
+Le chargement du même nom conserve les valeurs NVS ; l'OTA seule ne change
+ni le JSON LittleFS ni ces réglages. Aucun changement de CANBox Manager requis.
+
+L'étude qui suit conserve les preuves à l'origine de ces changements ; les
+propositions sont évaluées indépendamment de leur présence dans une ancienne PR.
+
+## Résultat face au preset historique
+
+- Le régime `0x180`, octets 0–1 BE divisés par **8**, est fortement étayé par
+  36 références OBD ; le diviseur **7** de l'ancien preset est contredit.
+- La vitesse `0x284`, octets **4–5** BE divisés par 100, concorde bien avec
+  l'OBD sur la plage capturée, **0–16 km/h**. Les octets 0–1 de l'ancien preset
+  ne représentent pas directement cette vitesse avec son ancien facteur.
+- La température moteur `0x551[0]−40` concorde avec l'OBD sur **61–67 °C**.
+- Le frein à main est fortement corroboré dans **`0x5C5[0] & 0x04`** :
+  source Juke spécifique, deux transitions et récit du propriétaire.
+- `0x580[3]`, auparavant utilisé comme consommation instantanée, suit exactement un
+  compteur cyclique ; il ne fournit pas une consommation exploitable.
+- Une définition Racelogic spécifique au Juke est maintenant disponible,
+  avec des champs précis. Sa couverture 2011–2018 ne garantit pas chaque
+  motorisation, boîte ou marché ; elle se confronte aux captures.
+
+## Captures et contexte
+
+| Capture | Contenu et utilité | Limite |
+| --- | --- | --- |
+| Historique ajouté en janvier 2026 | 1 013 trames acceptées, 3 rejets, 22 IDs | Enregistreur ancien suspect, aucune heure ni référence OBD ; voir [analyse historique](JUKE_2011_CAN_ANALYSIS.fr.md) |
+| `canlog_20261014_193212_312.txt` | 165 échanges OBD, 162 mesures, 82,369 s | Aucun `RX` ordinaire : vérifie les références, pas leur équivalent CAN |
+| `canlog_20261014_210614_663_762622981087673198.txt` | 92 610 `RX`, 36 IDs ordinaires, 144 échanges OBD, 141 mesures, 71,819 s | Une seule séquence de manœuvres à faible vitesse ; pas une calibration sur toute la plage |
+
+Le propriétaire décrit la dernière séquence : frein à main desserré,
+sortie de place et virage à gauche, déplacement estimé à environ 30 m,
+marche arrière sur une distance également estimée, stationnement en marche
+arrière puis frein à main serré. Les distances ne sont pas mesurées ; aucun
+horodatage précis des gestes n'a été fourni. Elles ne servent pas à calibrer
+une vitesse, une distance ou un angle. Il confirme séparément le retour du
+fonctionnement des clignotants sur le dashboard.
+
+Empreintes SHA-256, dans l'ordre du tableau :
+
+```text
+35de3a33b22716b88b28a2adfa1e6d6ed916b230cbbe2bba569b2206700df5c6
+b6a28c234ec2b6425d1391b8db79fe5f34835f1a412ba8aa5fd79a5bdcf13ac2
+e5c2a7539b3ad13da7c04cc15883a4b271a67c76fb3280a61878523d13311ce3
+```
+
+Le dernier fichier contient **93 188 lignes CRLF complètes**, sans rejet de
+format. Les 144 séquences de requêtes sont continues et toutes possèdent une
+réponse brute et un décodage cohérents. Les latences logicielles sont de
+0–4 ms. Entre deux requêtes espacées de 500 ms, on observe 639–647 `RX`.
+302 `RX` se placent entre une requête et sa réponse, sur 69 échanges : la
+réception continue pendant l'attente OBD. Aucun compteur de perte ou d'erreur
+ne progresse. Cela valide cette capture ; ce n'est pas une preuve qu'aucune
+trame physique du véhicule n'a jamais été perdue.
+
+Résultats consultables : [synthèse JSON](vehicle/nissan-juke-f15/evidence/20261014-210614-summary.json),
+[283 rapprochements CAN/OBD](vehicle/nissan-juke-f15/evidence/20261014-210614-matches.csv),
+[inventaire des IDs et intervalles](vehicle/nissan-juke-f15/evidence/20261014-210614-can-ids.csv),
+[étude des signaux et compteurs](vehicle/nissan-juke-f15/evidence/20261014-210614-signals.json).
+Les fichiers source complets sont conservés séparément ; les CSV donnent
+leurs numéros de ligne, sans fabriquer de nouvelles mesures.
+
+## Conventions et couches du protocole
+
+`B0` désigne le premier octet, `bit0` son bit de poids faible.
+`U16BE(Ba,Bb) = 256×Ba+Bb`. `I16LE` signifie signé 16 bits little endian.
+Les périodes sont observées dans le log, pas des délais garantis.
+
+La capture comporte du CAN classique standard 11 bits (`ext=0`, `rtr=0`),
+avec des messages périodiques Nissan. Racelogic annonce **500 kbit/s** et
+le raccordement OBD aux broches 6/14 pour cette famille de Juke. Un ID CAN
+de message n'est pas automatiquement une adresse de calculateur.
+
+Les échanges de diagnostic sont distincts : requêtes service `01` sur
+`0x7DF` puis `0x7E0`, réponses `0x7E8`, transport ISO-TP simple trame dans
+ces fichiers. Exemple réel de structure : `02 01 0C ...` demande le régime ;
+`04 41 0C A B ...` contient sa référence `(256×A+B)/4`.
+Les services constructeur CONSULT ne sont pas décodés par ce client.
+
+Les PDF Raise/Toyota du dépôt décrivent la **liaison UART vers l'autoradio**.
+Leurs commandes et unités ne déterminent pas les IDs ou facteurs des trames
+Nissan reçues. Le préfixe USB exact reste `ODB`, bien que le protocole
+s'appelle OBD ; voir le [guide de capture](OBD_CALIBRATION.fr.md).
+
+## Tableau de mapping et niveau de preuve
+
+« Corroboré » signifie accord avec les références ou les gestes observés
+dans cette capture, et non validation universelle. « Candidat » exige encore
+une mesure indépendante. « Contredit » concerne l'interprétation du preset,
+pas l'existence du signal dans le véhicule.
+
+Ce tableau conserve les limites de l'analyse des captures du 14 octobre.
+Les confirmations utilisateur du 15 octobre, résumées en tête de page,
+complètent ces preuves sans transformer les anciennes captures en nouveaux
+essais physiques.
+
+| Signal | Champ / formule étudiée | Preuve et état | Écart avec le preset historique (`cd02abf`) |
+| --- | --- | --- | --- |
+| Régime | `0x180 B0–B1 BE /8` ; copie `0x1F9 B2–B3 /8` | **Corroboré** : 36 références à ≤5 ms, erreur absolue moyenne 7,55 tr/min, maximum 28,125 ; OBD 612,5–1 762,5 | `/7` donne une erreur moyenne de 131,22 tr/min |
+| Vitesse | `0x284 B4–B5 BE /100` | **Corroboré sur plage limitée** : 35 références à ≤10 ms ; erreur absolue moyenne 0,211 km/h, maximum 1,53 | Le preset lit B0–B1 ; exemple 32 contre 16 km/h OBD |
+| Température moteur | `0x551 B0−40`, °C | **Corroboré** : 34/35 égales, un écart de 1 °C, à ≤51 ms | Formule actuelle concordante |
+| Tension | `0x6F6 B0 /10`, V | **Cohérent** : écart absolu moyen 0,139 V, maximum 0,44 V face à la tension ECU | Garder la distinction entre points de mesure ; pas une calibration de batterie |
+| Frein à main | `0x5C5 B0 bit2` | **Fortement corroboré** : 1→0→1, scénario utilisateur et définition Racelogic Juke | Aucun champ frein à main dans l’ancien preset ; cet octet y sert au niveau de carburant |
+| Niveau de carburant | `0x5C5 B0` pris en entier | **Contredit comme jauge directe** : 0x44→0x40→0x44 avec le frein à main | Ne pas traiter les états combinés comme des litres ; vraie jauge non identifiée |
+| Consommation instantanée | `0x580 B3` | **Contredit** : 701 valeurs, 700 transitions exactes 0→2→4→6→0 | Le champ de l’ancien preset est de type compteur |
+| Autre donnée carburant | Candidat `0x551 B1`, canal Racelogic en mm³, facteur 1, offset 0 | **À caractériser** : base temps/cycle, compte éventuel et interprétation physique sur MR16DDT à établir | Aucune consommation L/h ou L/100 km validée |
+| Consommation moyenne | `0x580 B4` | **Non validé** : 109→110→111 ; aucune valeur du combiné synchronisée | Ne pas interpréter automatiquement ces nombres comme 10,9–11,1 L/100 km |
+| Autonomie | `0x54C B6–B7 ×100/338` ; alternative `0x2DE B6–B7 /10` | **Non validé** : formule du preset constante à 305 ; alternative comprenant 824 valeurs `0xFFFF`, puis 2 707→2 687→2 684 bruts | `0xFFFF` peut être une sentinelle ; ne pas afficher 6 553,5 km. Le bit d’unité attendu reste nul |
+| Volant | Actuel : `0x002 B0–B1 I16LE /10`, ° | **Extraction fortement étayée** par la vitesse de rotation VBOX ; zéro, butées et affichage à vérifier | L'ancien `B1–B2 I16BE` mélange angle et vitesse de rotation |
+| Clignotants | `0x60D B1 bit5` gauche, `bit6` droit | Source Racelogic concordante, fonctionnement confirmé par l'utilisateur | Aucun de ces bits actif dans les 720 trames de cette capture ; le correctif dashboard ne recalibre pas le mapping |
+| Feux | `0x60D B0 bit1/bit2`, `B1 bit3` | Définition externe concordante avec les champs de feux du preset | Pas de changement d'éclairage annoté ; distinguer commande, contact et état réel |
+| Portes | Bits de `0x60D B0` | **Fonctionnement confirmé par le propriétaire** ; la capture historique n'isole pas chaque porte | Mapping conservé ; ne pas déduire une porte d'une transition isolée de B2 |
+| Température extérieure | `0x540 B0−40` | **Non validé physiquement** : 718 valeurs constantes à 28 °C, sans référence ambiante | `01 46` n'est pas annoncé ; il faut un relevé indépendant |
+| Kilométrage total | `0x5C5 B1–B3 BE` | **Fonctionnement confirmé par le propriétaire** ; capture historique : 719 valeurs constantes à 246 945 | La confirmation utilisateur complète la capture, qui seule n'établissait pas l'unité ni l'offset |
+
+Les 35 références de vitesse contiennent **23 zéros**. Sur les 12 références
+non nulles, l'erreur absolue moyenne du candidat B4–B5 est **0,617 km/h** ; on ne
+présente pas la moyenne globale comme une calibration à vitesse élevée.
+`0x280 B4–B5 /100` est aussi proche, mais cette corrélation ne distingue pas
+à elle seule vitesse indiquée, estimation filtrée et vitesse de roue.
+
+## Capture d'éclairage du 15 octobre 2026
+
+La capture `canlog_20261015_220243_672_5336771892799835140.txt` contient
+8 441 trames `RX` et 14 réponses `ODB RAW_RX` sur 6,540 s entre la première
+et la dernière trame `RX`. Le propriétaire décrit des changements entre
+OFF, AUTO, position et croisement. Les 68 trames `0x60D` donnent :
+
+| B0 | État décodé | Nombre | Réponse `SYS DATA` | Masque UART `0x7D/01` |
+| --- | --- | --- | --- | --- |
+| `0x00` | Feux éteints | 21 | `H=0 P=0 HB=0` | `0x00` |
+| `0x04` | Position seules | 15 | `H=0 P=1 HB=0` | `0x80` |
+| `0x06` | Position et croisement | 32 | `H=1 P=1 HB=0` | `0xC0` |
+
+Cela corrobore le mapping existant : positions `B0 & 0x04`, croisements
+`B0 & 0x02`. Le bit des pleins phares `B1 & 0x08` reste nul ; cette capture
+ne valide pas son activation. Ces états ne distinguent pas AUTO de
+croisement lorsque les mêmes lampes sont allumées. Les sept relevés
+`ODB DRIVER` / `ODB BUFFER` ne signalent aucune perte CAN, RAW ou ODB.
+
+Le [résultat du rejeu](vehicle/nissan-juke-f15/evidence/20261015-220243-lights.json)
+archive l'empreinte de la capture et les sept changements d'état. Les
+8 441 trames ont été rejouées dans le code de production à la révision
+`3ffe915`, avec périphériques simulés : les 68 états d'éclairage concordent
+entre le décodeur, la réponse USB `SYS DATA` et le sérialiseur UART. Le
+mapping des feux n'a pas été modifié.
+
+Pour CANBox Manager, les positions seules doivent donner la ligne complète :
+
+```text
+Lights:   H=0 P=1 HB=0 L=0 R=0
+```
+
+`P` désigne les feux de position, pas le frein à main. Les cinq champs sont
+indépendants : conserver `P=1` quand `H=1`, distinguer les clés `H` et `HB`
+et remettre chaque état à zéro lorsque sa valeur devient 0. Reconstituer
+les lignes USB jusqu'au LF, accepter CRLF et les espaces multiples, puis
+diriger `Lights:` vers la réponse dashboard de `SYS DATA`, séparément des
+lignes de logs `RX` / `ODB`. Le client doit demander `SYS DATA` ; `LOG ON`
+ne publie pas automatiquement ce bloc. Voir le
+[contrat de parsing](protocols/USB_SERIAL_PROTOCOL.md#lights-dashboard-field).
+
+Le fichier fourni ne contient aucune réponse `SYS DATA` ni capture UART du
+boîtier réel. Le rejeu ne certifie donc ni le firmware/preset installé ni
+l'affichage de Manager. Avec les positions allumées, relever la ligne USB
+avant parsing : `P=1` oriente vers le traitement côté client ; `P=0` impose
+de vérifier le firmware et le preset actifs sur l'ESP32.
+
+## Séquence du frein à main
+
+Le candidat `0x5C5[0] & 0x04` vaut 1 au début, passe à 0 à
+**t=35 194 ms**, soit **+4,211 s** après `LOG ON`, puis revient à 1 à
+**t=100 294 ms**, soit **+69,311 s**. Le reste de cet octet reste à `0x40`.
+Cette séquence correspond au frein à main desserré pour partir puis serré
+après le stationnement décrit par le propriétaire. Une répétition à l'arrêt
+avec gestes horodatés reste utile pour exclure un état toujours corrélé.
+
+Les changements d'autres bits qui coïncident entre plusieurs IDs ne sont pas
+automatiquement des freins à main : pédale de frein, embrayage et marche
+arrière sont des états différents. La capture de manœuvres ne donne pas à
+elle seule leurs instants précis.
+Les vitesses comparées sont non signées : elles n'identifient pas à elles
+seules les phases de marche arrière décrites par le propriétaire.
+
+## Sources publiques et manuels
+
+### Racelogic / VBOX : fichier spécifique Juke
+
+La [liste publique VBOX](https://vboxautomotive.co.uk/en/can-database-documents)
+fournit, en plus de la
+[fiche PDF Juke F15 2011–2018](https://www.racelogic.co.uk/_downloads/vbox/Vehicles/Other/Docs/Nissan-Juke%20%28F15%29%202011-2018.pdf),
+un [fichier de définitions REF](https://www.racelogic.co.uk/_downloads/vbox/Vehicle_CAN_Files/New/Nissan-Juke%20%28F15%29%202011-2018.REF).
+Consulté le 14 octobre 2026 : 2 650 octets, SHA-256
+`960a5d9b2e8323ad8a69c5226ac7179a5a8addafc112c47276f70a4f1023d7f4`.
+
+L’[extraction texte fournie pour le projet](vehicle/nissan-juke-f15/Juke_F15_CAN_REF_decode.txt)
+est archivée sans modification dans la documentation : 37 signaux sur
+14 identifiants CAN. Les définitions proviennent du REF du site VBOX / Racelogic ;
+la [notice de source](vehicle/nissan-juke-f15/README.fr.md) en conserve les liens.
+
+Le REF apporte des champs précis que la fiche PDF seule ne fournissait pas.
+Il corrobore notamment la vitesse, la température et le bit de frein à main.
+Son régime se limite à `0x180 B0×32` : c'est la partie haute de
+`U16BE(B0,B1)/8`, quantifiée par pas de 32 tr/min. Cette approximation ne
+remplace pas les deux octets confrontés à l'OBD. Son canal `Fuel_Consumption`
+définit `0x551`, Intel start bit 8, longueur 8, non signé (`UINT8`),
+**facteur 1, offset 0**, unité **mm³** : numériquement l'octet `B1` inchangé.
+Le coefficient est fourni. Restent inconnus son sens temporel/cycle, le
+compte éventuel et sa correspondance à une quantité de carburant sur ce
+MR16DDT ; le comportement observé ne valide pas une consommation instantanée.
+
+Le [manuel RLVBCAN01](https://www.racelogic.co.uk/_downloads/vbox/Manuals/Input_Modules/RLVBCAN01_Manual.pdf),
+pages 10–11, explique la numérotation : en Motorola VBOX, les bits 63–56
+appartiennent à B0, 55–48 à B1 ; en Intel, 7–0 à B0 et 15–8 à B1.
+Ainsi `start=58,length=1,Motorola` désigne B0 bit2, et
+`start=8,length=8,Intel` désigne B1. Ce n'est pas la convention de start-bit
+Motorola d'un DBC Vector ; copier les positions telles quelles déplacerait
+les signaux.
+
+### Manuels Nissan du dépôt
+
+Les PDF examinés sont **MY2012, révision octobre 2011, Amérique du Nord**,
+et non une spécification exacte du véhicule 2011 du propriétaire.
+[LAN](vehicle/nissan-juke-f15/LAN.pdf), pages LAN-27 à LAN-31, distingue les
+configurations M/T/CVT et 2WD/AWD puis les émetteurs/récepteurs des signaux.
+Ces matrices ne donnent pas les IDs et offsets CAN.
+
+Le combiné est essentiel pour la jauge et l'autonomie :
+[MWI](vehicle/nissan-juke-f15/MWI.pdf), MWI-15/16, décrit l'entrée du capteur
+et les calculs du combiné. [EC](vehicle/nissan-juke-f15/EC.pdf), EC-29,
+décrit ensuite le signal de niveau transmis par CAN du combiné à l'ECM,
+sans fournir son ID ni ses octets. La jauge reste donc une piste à rechercher
+dans les trames, malgré l'absence de référence `01 2F` dans les logs.
+[FL](vehicle/nissan-juke-f15/FL.pdf), FL-31,
+donne **50 L en 2WD et 45 L en AWD** pour cette édition. Le réglage 45 L du
+projet n'est donc pas validé sur le Juke manuel du propriétaire par ce manuel.
+Le [catalogue corrigé](vehicle/nissan-juke-f15/README.fr.md) précise la
+provenance, les vrais titres et les sections utiles.
+
+### Travaux sur d'autres Nissan
+
+Les études [Qashqai J10 diesel manuel 2013](https://github.com/balrog-kun/nissan-qashqai-can-info/blob/b1ffbe27a60e8808539521cfd3a00959cbf791e9/README.md)
+et [Sentra 2010](https://github.com/jackm/carhack/blob/0442dc7ac08b59080da8363d6e023c884d5995fd/nissan.md)
+servent de pistes pour les copies de régime, les vitesses et les états du
+combiné. Le Qashqai décrit `0x002 B0–B1` en signé little endian, à
+0,1 degré par unité, et `0x551 B1` comme compteur moteur/carburant encore
+non résolu. Ses unités et sa motorisation ne certifient pas celles du Juke.
+
+Le [code auteur pour une 370Z 2010](https://github.com/Knio/carhack/blob/64d873755ee8ce894fb871372890a52662cb5621/carhack/processors/nissan_370z/__init__.py#L41)
+lit aussi le volant en little endian signé. Pour le frein à main,
+[son code](https://github.com/Knio/carhack/blob/64d873755ee8ce894fb871372890a52662cb5621/carhack/processors/nissan_370z/__init__.py#L124)
+utilise `B0 & 0x04`, cohérent avec ses exemples 68/64 ; son tableau Markdown
+mentionne contradictoirement `0x02`. La confrontation au code et aux octets
+évite de recopier cette erreur.
+
+La [révision OpenDBC examinée](https://github.com/commaai/opendbc/tree/156c2c08ee6e07b6c2d0f3700c81c3ba85f4f14e/opendbc/dbc)
+contient des définitions Nissan Xterra 2011, Leaf 2018 et X-Trail 2017,
+mais pas de Juke. Le sens de l'angle diffère même entre le Xterra (`+0,1`)
+et les définitions Nissan modernes (`−0,1`) : la convention de signe du
+volant et celle de la caméra doivent être distinguées. Les fichiers sous
+licence MIT sont des pistes, pas une calibration de notre variante.
+La [liste AiM](https://www.aim-sportline.com/en/documentation-stock-ecu-connections.htm)
+propose des fiches 350Z, 370Z, GT-R et Versa, sans entrée Juke dans la liste
+consultée ; ces fiches décrivent des canaux, pas une table publique complète
+d'IDs et d'offsets.
+
+Les définitions d'autres moteurs, boîtes ou générations ne sont pas
+importées sans confrontation. Les recherches de commandes CONSULT restent
+dans le [bilan diagnostic](NISSAN_DIAGNOSTIC_RESEARCH.fr.md) : une définition
+CAN périodique ne fournit pas une commande de diagnostic constructeur.
+
+## Consommation : conversion provisoire et calibration restante
+
+Le candidat `0x551 B1` compte 701 valeurs. Ses 700 différences modulo 256
+se répartissent en 343 zéros, 330 incréments de 1, 25 de 2 et deux de 3,
+soit **386 unités cumulées**, avec un débordement `255→0` entre les lignes
+43 094 et 43 231. Ce comportement justifie une étude de compteur cumulé,
+pas l'affichage direct de l'octet comme consommation instantanée. Le REF
+définit un facteur 1 et un offset 0 en mm³ ; la base temps/cycle du compteur,
+les éventuelles remises à zéro et sa relation à l'injection sur ce MR16DDT
+restent à vérifier. Le libellé d'unité ne les résout pas à lui seul.
+
+Une [analyse de Clio III](https://x0r.fr/blog/39#comment-396) identifie le
+même compteur et obtient 80 mm³/incrément par comparaison avec l'ordinateur
+de bord. C'est le réglage **provisoire** actuel de `mm3PerTick`, pas le
+résultat d'une calibration du Juke ni un remplacement du facteur 1 du REF
+archivé. Appliqué aux 386 incréments sur 71,7 s, il donnerait **30,88 mL**
+et **1,55 L/h** en moyenne. Leur plausibilité ne valide pas cette échelle.
+La distance capturée est inférieure au seuil configuré de 100 m :
+l'estimateur de production ne publie donc pas de moyenne de trajet pour
+ce rejeu. Ajuster le coefficient avec une référence indépendante sur le
+véhicule avant de passer `calibration` à `calibrated`. Installer le firmware
+correspondant puis transférer séparément le JSON avant
+`CAN LOAD NissanJukeF15.json`.
+
+
+L'ECU `0x7E8` annonce `01 10` (MAF), `01 44` (rapport d'équivalence commandé),
+`01 03`, `01 04`, `01 06`, `01 07` et `01 11`. Ces PIDs ne sont pas demandés
+par les huit lectures actuelles. `01 5E` (débit carburant direct), `01 2F`
+(niveau), `01 46` et `01 0B` ne sont pas annoncés dans les pages capturées.
+Les deux captures récentes annoncent les mêmes bitmaps.
+
+Car Scanner peut enregistrer des consommations calculées et leurs paramètres
+de calcul via l'option « Always calculate and save fuel consumption » ;
+[documentation de l'éditeur](https://www.carscanner.info/records/).
+La méthode réellement utilisée sur ce véhicule reste à identifier.
+Un export CSV avec ces dépendances permettrait de comparer une estimation
+fondée sur le MAF au canal CAN candidat. Ni des mm³ sans base temporelle,
+ni le régime seul, ne donnent directement des L/h ou des L/100 km.
+
+## Validation de l'analyse
+
+Les **34 tests Python** des outils d'analyse passent. L'export CSV puis sa
+réimportation conservent les IDs, DLC et octets des trois captures :
+**1 013**, **165** et **92 754** trames respectivement, sans altération des
+charges utiles. Les 283 rapprochements publiés et les transitions binaires
+du JSON ont été confrontés aux lignes brutes d'origine. Ces vérifications
+portent sur les outils et les preuves documentaires. Cette étape historique
+d'analyse n'a réalisé ni nouvel essai matériel ni modification de firmware ;
+l'implémentation ultérieure est décrite dans la section d'application en tête
+de page, avec son rejeu du preset conservé séparément.
+
+## Reproduction et prochaines captures
+
+Avec le fichier source d'empreinte identique et le preset actuel du dépôt,
+ces commandes produisent une **nouvelle comparaison**, distincte des
+résultats historiques publiés :
+
+```bash
+python3 -B tools/analyze_can_log.py /chemin/vers/canlog_20261014_210614_663_762622981087673198.txt \
+  --output-dir .local-validation/juke-current-raw
+python3 -B tools/compare_obd_can.py /chemin/vers/canlog_20261014_210614_663_762622981087673198.txt \
+  --preset data/NissanJukeF15.json --max-delay-ms 60 \
+  --output-dir .local-validation/juke-current-comparison
+python3 -B -m unittest discover -s tools -p 'test_*can*.py'
+```
+
+Le rapprochement choisit la trame CAN la plus proche dans la même session,
+au maximum 60 ms. Les timestamps sont ceux du logiciel ESP32 ; la latence
+des capteurs et le filtrage ECU ne sont pas connus. Les références OBD sont
+espacées d'environ deux secondes par paramètre, et non simultanées.
+
+Pour compléter les champs restant ouverts : relevés synchronisés du combiné
+et de la température extérieure, niveau de carburant et autonomie ; collecte
+des paramètres de consommation avec une référence indépendante ; geste séparé
+sur la pédale de frein pour vérifier `0x180 B7 bit0`, puis séquence neutre /
+marche arrière horodatée. Les fonctions confirmées restent utilisables ;
+de nouvelles captures annotées peuvent étendre leurs preuves à d'autres plages.
+La distance estimée des manœuvres ne remplace pas une mesure. Les nouvelles
+lectures OBD et les prochains changements de preset doivent faire l’objet
+de leur propre implémentation et validation.

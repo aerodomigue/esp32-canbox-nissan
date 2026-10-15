@@ -2,6 +2,9 @@
 .pio/
 .pioenvs/
 .piolibdeps/
+.venv/
+.pio-core/
+.local-validation/
 
 # Build folders (only at root level)
 /build/

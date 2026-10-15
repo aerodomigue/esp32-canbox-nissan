@@ -20,11 +20,67 @@
  *    c. Write result to appropriate GlobalData variable
  */
 
+#include "UsbConsole.h"
 #include "CanConfigProcessor.h"
 #include "GlobalData.h"
 #include "ConfigManager.h"
 #include <LittleFS.h>
 #include <ArduinoJson.h>
+#include <utility>
+
+namespace {
+bool parseFuelConsumption(JsonVariantConst value, VehicleProfile& profile) {
+    if (value.isNull()) return true;  // Older profiles keep their existing behaviour.
+    if (!value.is<JsonObjectConst>() || !value["enabled"].is<bool>()) return false;
+    auto& config = profile.fuelConsumption;
+    config.enabled = value["enabled"].as<bool>();
+    if (!config.enabled) return true;
+    if (profile.isMock || !value["mm3PerTick"].is<double>()) return false;
+
+    const auto number = [&](const char* key, double& result) {
+        if (value[key].isNull()) return true;
+        if (!value[key].is<double>()) return false;
+        result = value[key].as<double>();
+        return true;
+    };
+    const auto duration = [&](const char* key, uint32_t& result) {
+        if (value[key].isNull()) return true;
+        if (!value[key].is<uint32_t>()) return false;
+        result = value[key].as<uint32_t>();
+        return true;
+    };
+    if (!number("mm3PerTick", config.mm3PerTick) ||
+        !number("minSpeedKmh", config.minSpeedKmh) ||
+        !number("minAverageDistanceM", config.minAverageDistanceM) ||
+        !number("maxTicksPerSecond", config.maxTicksPerSecond) ||
+        !duration("windowMs", config.windowMs) ||
+        !duration("maxGapMs", config.maxGapMs) || !config.isValid()) return false;
+
+    if (!value["calibration"].isNull() && !value["calibration"].is<const char*>()) return false;
+    const char* calibration = value["calibration"] | "provisional";
+    if (strcmp(calibration, "calibrated") == 0) profile.fuelConsumptionCalibrated = true;
+    else if (strcmp(calibration, "provisional") != 0) return false;
+
+    unsigned counters = 0, speeds = 0;
+    for (const auto& frame : profile.frames) {
+        for (const auto& field : frame.fields) {
+            // Derived and direct consumption must never compete for the output.
+            if (field.target == OutputField::FUEL_CONS_INST ||
+                field.target == OutputField::FUEL_CONS_AVG) return false;
+            if (field.target == OutputField::FUEL_COUNTER_RAW) {
+                if (field.dataType != DataType::UINT8 || field.byteCount != 1 ||
+                    field.formula != FormulaType::NONE) return false;
+                ++counters;
+            }
+            if (field.target == OutputField::VEHICLE_SPEED) {
+                if (field.formula == FormulaType::SCALE && field.params[1] <= 0) return false;
+                ++speeds;
+            }
+        }
+    }
+    return counters == 1 && speeds == 1;
+}
+}  // namespace
 
 // =============================================================================
 // CONSTRUCTOR
@@ -50,7 +106,7 @@ CanConfigProcessor::CanConfigProcessor()
 bool CanConfigProcessor::begin() {
     // Initialize LittleFS filesystem
     if (!LittleFS.begin(true)) {
-        Serial.println("[CanConfig] LittleFS mount failed");
+        Console.println("[CanConfig] LittleFS mount failed");
         _mockMode = true;
         return false;
     }
@@ -61,11 +117,11 @@ bool CanConfigProcessor::begin() {
         char savedPath[48];
         snprintf(savedPath, sizeof(savedPath), "/%s", savedFile);
         if (LittleFS.exists(savedPath)) {
-            Serial.printf("[CanConfig] Restoring saved config: %s\n", savedPath);
+            Console.printf("[CanConfig] Restoring saved config: %s\n", savedPath);
             if (loadFromJson(savedPath)) {
-                Serial.printf("[CanConfig] Loaded: %s (%d frames) - %s mode\n",
+                Console.printf("[CanConfig] Loaded: %s (%d frames) - %s mode\n",
                               _profile.name.c_str(),
-                              _profile.frames.size(),
+                              static_cast<int>(_profile.frames.size()),
                               _mockMode ? "MOCK" : "REAL CAN");
                 return true;
             }
@@ -82,11 +138,11 @@ bool CanConfigProcessor::begin() {
     // Try each config path until one succeeds
     for (const char* path : configPaths) {
         if (LittleFS.exists(path)) {
-            Serial.printf("[CanConfig] Found config: %s\n", path);
+            Console.printf("[CanConfig] Found config: %s\n", path);
             if (loadFromJson(path)) {
-                Serial.printf("[CanConfig] Loaded: %s (%d frames) - %s mode\n",
+                Console.printf("[CanConfig] Loaded: %s (%d frames) - %s mode\n",
                               _profile.name.c_str(),
-                              _profile.frames.size(),
+                              static_cast<int>(_profile.frames.size()),
                               _mockMode ? "MOCK" : "REAL CAN");
                 return true;
             }
@@ -94,7 +150,7 @@ bool CanConfigProcessor::begin() {
     }
 
     // No config found - use mock mode with simulated data
-    Serial.println("[CanConfig] No config found - MOCK mode active (default)");
+    Console.println("[CanConfig] No config found - MOCK mode active (default)");
     _mockMode = true;
     return false;
 }
@@ -119,7 +175,7 @@ bool CanConfigProcessor::loadFromJson(const char* path) {
     // Open configuration file
     File file = LittleFS.open(path, "r");
     if (!file) {
-        Serial.printf("[CanConfig] Failed to open: %s\n", path);
+        Console.printf("[CanConfig] Failed to open: %s\n", path);
         return false;
     }
 
@@ -129,14 +185,15 @@ bool CanConfigProcessor::loadFromJson(const char* path) {
     file.close();
 
     if (error) {
-        Serial.printf("[CanConfig] JSON parse error: %s\n", error.c_str());
+        Console.printf("[CanConfig] JSON parse error: %s\n", error.c_str());
         return false;
     }
 
-    // Clear any existing profile data
-    _profile.frames.clear();
-    _profile.name = doc["name"] | "Unknown";
-    _profile.isMock = doc["isMock"] | false;  // Default to real CAN if not specified
+    // Build a candidate first. An unsupported target must not replace the
+    // active profile or silently write an unrelated field such as steering.
+    VehicleProfile nextProfile;
+    nextProfile.name = doc["name"] | "Unknown";
+    nextProfile.isMock = doc["isMock"] | false;
 
     // Parse frames array
     JsonArray framesArray = doc["frames"];
@@ -157,7 +214,11 @@ bool CanConfigProcessor::loadFromJson(const char* path) {
             FieldConfig field;
 
             // Target GlobalData field
-            field.target = parseOutputField(fieldObj["target"] | "STEERING");
+            field.target = parseOutputField(fieldObj["target"].as<const char*>());
+            if (field.target == OutputField::FIELD_COUNT) {
+                Console.println("[CanConfig] Unknown or missing output target");
+                return false;
+            }
 
             // Byte extraction parameters
             field.startByte = fieldObj["startByte"] | 0;
@@ -185,22 +246,35 @@ bool CanConfigProcessor::loadFromJson(const char* path) {
             frame.fields.push_back(field);
         }
 
-        _profile.frames.push_back(frame);
+        nextProfile.frames.push_back(frame);
     }
 
-    // Update mock mode flag from config
-    _mockMode = _profile.isMock;
+    if (!parseFuelConsumption(doc["fuelConsumption"], nextProfile)) {
+        Console.println("[CanConfig] Invalid fuelConsumption settings or sources");
+        return false;
+    }
 
-    bool isValid = _profile.isMock || _profile.frames.size() > 0;
+    bool isValid = nextProfile.isMock || !nextProfile.frames.empty();
 
     if (isValid) {
+        _profile = std::move(nextProfile);
+        _mockMode = _profile.isMock;
+        // Never retain a previous profile's fuel values or observed flags.
+        canAuxData = {};
+        _fuelEstimator.configure(_profile.fuelConsumption);
+        canAuxData.fuelConsumptionDerived = _profile.fuelConsumption.enabled;
+        canAuxData.fuelConsumptionEstimated = _profile.fuelConsumption.enabled &&
+                                             !_profile.fuelConsumptionCalibrated;
+        fuelLevel = 0;
+        fuelConsumptionInst = 0;
+        fuelConsumptionAvg = 0;
         const char* filename = (path[0] == '/') ? path + 1 : path;
         const char* currentFile = configGetVehicleFile();
         bool isVehicleSwitch = (currentFile[0] == '\0') || (strcmp(currentFile, filename) != 0);
 
         if (isVehicleSwitch) {
             if (currentFile[0] != '\0') {
-                Serial.printf("[CanConfig] Vehicle switch: '%s' → '%s'\n", currentFile, filename);
+                Console.printf("[CanConfig] Vehicle switch: '%s' → '%s'\n", currentFile, filename);
             }
             configReset();
             JsonObjectConst vp = doc["vehicleParams"];
@@ -209,7 +283,7 @@ bool CanConfigProcessor::loadFromJson(const char* path) {
             }
             configSave();
         } else {
-            Serial.printf("[CanConfig] Same vehicle — calibration preserved from NVS\n");
+            Console.printf("[CanConfig] Same vehicle — calibration preserved from NVS\n");
         }
 
         configSetVehicleFile(filename);
@@ -229,47 +303,47 @@ void CanConfigProcessor::applyVehicleParams(JsonObjectConst params) {
     v = params["steerScale"];
     if (!v.isNull()) {
         configSetSteerScale(v.as<uint16_t>());
-        Serial.printf("[CanConfig] vehicleParam: steerScale = %u\n", v.as<uint16_t>());
+        Console.printf("[CanConfig] vehicleParam: steerScale = %u\n", v.as<uint16_t>());
         applied++;
     }
     v = params["steerOffset"];
     if (!v.isNull()) {
         configSetSteerOffset(v.as<int16_t>());
-        Serial.printf("[CanConfig] vehicleParam: steerOffset = %d\n", v.as<int16_t>());
+        Console.printf("[CanConfig] vehicleParam: steerOffset = %d\n", v.as<int16_t>());
         applied++;
     }
     v = params["steerInvert"];
     if (!v.isNull()) {
         configSetSteerInvert(v.as<bool>());
-        Serial.printf("[CanConfig] vehicleParam: steerInvert = %d\n", (int)v.as<bool>());
+        Console.printf("[CanConfig] vehicleParam: steerInvert = %d\n", (int)v.as<bool>());
         applied++;
     }
     v = params["indTimeout"];
     if (!v.isNull()) {
         configSetIndicatorTimeout(v.as<uint16_t>());
-        Serial.printf("[CanConfig] vehicleParam: indTimeout = %u\n", v.as<uint16_t>());
+        Console.printf("[CanConfig] vehicleParam: indTimeout = %u\n", v.as<uint16_t>());
         applied++;
     }
     v = params["rpmDiv"];
     if (!v.isNull()) {
         configSetRpmDivisor(v.as<uint8_t>());
-        Serial.printf("[CanConfig] vehicleParam: rpmDiv = %u\n", v.as<uint8_t>());
+        Console.printf("[CanConfig] vehicleParam: rpmDiv = %u\n", v.as<uint8_t>());
         applied++;
     }
     v = params["tankCap"];
     if (!v.isNull()) {
         configSetTankCapacity(v.as<uint8_t>());
-        Serial.printf("[CanConfig] vehicleParam: tankCap = %u\n", v.as<uint8_t>());
+        Console.printf("[CanConfig] vehicleParam: tankCap = %u\n", v.as<uint8_t>());
         applied++;
     }
     v = params["dteDiv"];
     if (!v.isNull()) {
         configSetDteDivisor(v.as<uint16_t>());
-        Serial.printf("[CanConfig] vehicleParam: dteDiv = %u\n", v.as<uint16_t>());
+        Console.printf("[CanConfig] vehicleParam: dteDiv = %u\n", v.as<uint16_t>());
         applied++;
     }
 
-    Serial.printf("[CanConfig] %d vehicle param(s) applied\n", applied);
+    Console.printf("[CanConfig] %d vehicle param(s) applied\n", applied);
 }
 
 // =============================================================================
@@ -304,12 +378,30 @@ const FrameConfig* CanConfigProcessor::findFrameConfig(uint16_t canId) const {
  * 3. Write to GlobalData
  */
 bool CanConfigProcessor::processFrame(const CanFrame& frame) {
+    return processFrame(frame, static_cast<uint32_t>(millis()));
+}
+
+bool CanConfigProcessor::processFrame(const CanFrame& frame, uint32_t receivedAt) {
+    if (frame.extd || frame.rtr || frame.identifier > 0x7FF ||
+        frame.data_length_code > sizeof(frame.data)) {
+        return false;
+    }
+
     // Look up configuration for this CAN ID
     const FrameConfig* config = findFrameConfig(frame.identifier);
 
     if (!config) {
         _unknownFrames++;
         return false;
+    }
+
+    // Validate every field before any write so incomplete frames are atomic.
+    for (const auto& field : config->fields) {
+        const uint16_t endByte = static_cast<uint16_t>(field.startByte)
+                               + static_cast<uint16_t>(field.byteCount);
+        if (field.byteCount == 0 || endByte > frame.data_length_code) {
+            return false;
+        }
     }
 
     _framesProcessed++;
@@ -324,9 +416,49 @@ bool CanConfigProcessor::processFrame(const CanFrame& frame) {
 
         // Step 3: Write to appropriate GlobalData variable
         writeToGlobalData(field.target, convertedValue);
+
+        if (_profile.fuelConsumption.enabled) {
+            if (field.target == OutputField::VEHICLE_SPEED) {
+                // Keep fractional km/h for distance, while preserving the legacy
+                // integer dashboard/radio speed field. No raw frame is modified.
+                double speedKmh = convertedValue;
+                if (field.formula == FormulaType::SCALE) {
+                    const double multiplier = field.params[0] == 0 ? 1 : field.params[0];
+                    speedKmh = static_cast<double>(rawValue) * multiplier /
+                               field.params[1] + field.params[2];
+                } else if (field.formula == FormulaType::MAP_RANGE &&
+                           field.params[1] != field.params[0]) {
+                    speedKmh = (static_cast<double>(rawValue) - field.params[0]) *
+                               (static_cast<double>(field.params[3]) - field.params[2]) /
+                               (static_cast<double>(field.params[1]) - field.params[0]) +
+                               field.params[2];
+                }
+                _fuelEstimator.onSpeed(speedKmh, receivedAt);
+            } else if (field.target == OutputField::FUEL_COUNTER_RAW) {
+                _fuelEstimator.onCounter(static_cast<uint8_t>(rawValue), receivedAt);
+            }
+        }
     }
 
+    updateFuelConsumption(receivedAt);
     return true;
+}
+
+void CanConfigProcessor::updateFuelConsumption(uint32_t now) {
+    if (_mockMode || !_profile.fuelConsumption.enabled) {
+        canAuxData.fuelConsumptionDerived = false;
+        canAuxData.fuelConsumptionEstimated = false;
+        return;
+    }
+    // CAN LOAD/RELOAD reset GlobalData after loading the profile. Restore
+    // configuration flags independently of observed-value availability.
+    canAuxData.fuelConsumptionDerived = true;
+    canAuxData.fuelConsumptionEstimated = !_profile.fuelConsumptionCalibrated;
+    _fuelEstimator.tick(now);
+    canAuxData.fuelConsumptionInstValid = _fuelEstimator.instantaneousValid();
+    canAuxData.fuelConsumptionAvgValid = _fuelEstimator.averageValid();
+    fuelConsumptionInst = canAuxData.fuelConsumptionInstValid ? _fuelEstimator.instantaneous() : 0;
+    fuelConsumptionAvg = canAuxData.fuelConsumptionAvgValid ? _fuelEstimator.average() : 0;
 }
 
 // =============================================================================
@@ -380,9 +512,9 @@ int32_t CanConfigProcessor::extractRawValue(const uint8_t* data, const FieldConf
  * Formula Types:
  * - NONE: Return raw value unchanged
  * - SCALE: (value * multiplier / divisor) + offset
- *          Example: RPM raw 17500 with params[1,7,0] → 2500
+ *          Example: RPM raw 20000 with params[1,8,0] → 2500
  * - MAP_RANGE: Arduino map() function
- *          Example: Fuel 255→0 mapped to 0→45 liters
+ *          Example: params[255,0,0,45], raw 255→0 gives 0→45
  * - BITMASK_EXTRACT: (value & mask) >> shift
  *          Example: Extract bit 20 from 24-bit status word
  */
@@ -441,6 +573,7 @@ void CanConfigProcessor::writeToGlobalData(OutputField target, int32_t value) {
             break;
         case OutputField::FUEL_LEVEL:
             fuelLevel = (uint8_t)value;
+            canAuxData.fuelLevelValid = true;
             break;
         case OutputField::ODOMETER:
             currentOdo = (uint32_t)value;
@@ -457,9 +590,23 @@ void CanConfigProcessor::writeToGlobalData(OutputField target, int32_t value) {
             break;
         case OutputField::FUEL_CONS_INST:
             fuelConsumptionInst = (uint16_t)value;
+            canAuxData.fuelConsumptionInstValid = true;
             break;
         case OutputField::FUEL_CONS_AVG:
             fuelConsumptionAvg = (uint16_t)value;
+            canAuxData.fuelConsumptionAvgValid = true;
+            break;
+        case OutputField::HANDBRAKE:
+            canAuxData.handbrake = (value != 0);
+            canAuxData.handbrakeValid = true;
+            break;
+        case OutputField::BRAKE_PEDAL:
+            canAuxData.brakePedal = (value != 0);
+            canAuxData.brakePedalValid = true;
+            break;
+        case OutputField::FUEL_COUNTER_RAW:
+            canAuxData.fuelCounterRaw = (uint8_t)value;
+            canAuxData.fuelCounterValid = true;
             break;
 
         // === Door Status Flags ===
@@ -498,6 +645,9 @@ void CanConfigProcessor::writeToGlobalData(OutputField target, int32_t value) {
             break;
         case OutputField::PARKING_LIGHTS:
             parkingLightsOn = (value != 0);
+            break;
+        case OutputField::COOLANT_TEMP:
+            coolantTemp = (int8_t)value;
             break;
 
         default:

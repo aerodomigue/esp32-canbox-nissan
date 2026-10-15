@@ -13,6 +13,7 @@
  * Update Rate: Default 20 Hz (50ms interval), configurable via setUpdateInterval()
  */
 
+#include "UsbConsole.h"
 #include "MockDataGenerator.h"
 #include "GlobalData.h"
 
@@ -65,7 +66,7 @@ MockDataGenerator::MockDataGenerator()
  * the oscillation state. Also initializes door/light states.
  */
 void MockDataGenerator::begin() {
-    Serial.println("[MockGen] Initializing mock data generator");
+    Console.println("[MockGen] Initializing mock data generator");
 
     // Initialize numeric values to their typical (starting) values
     for (uint8_t i = 0; i < _boundsCount; i++) {
@@ -91,7 +92,7 @@ void MockDataGenerator::begin() {
     // Write initial values to GlobalData
     writeToGlobalData();
 
-    Serial.println("[MockGen] Mock data ready");
+    Console.println("[MockGen] Mock data ready");
 }
 
 // =============================================================================
@@ -175,6 +176,9 @@ void MockDataGenerator::writeToGlobalData() {
     dteValue = (int16_t)_currentValues[static_cast<int>(OutputField::DTE)];
     fuelConsumptionInst = (uint16_t)_currentValues[static_cast<int>(OutputField::FUEL_CONS_INST)];
     fuelConsumptionAvg = (uint16_t)_currentValues[static_cast<int>(OutputField::FUEL_CONS_AVG)];
+    canAuxData.fuelLevelValid = true;
+    canAuxData.fuelConsumptionInstValid = true;
+    canAuxData.fuelConsumptionAvgValid = true;
 
     // === Door Bitmask ===
     // Build Toyota RAV4 format door bitmask from individual flags

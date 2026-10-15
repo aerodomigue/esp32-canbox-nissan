@@ -65,13 +65,23 @@ public:
     /**
      * @brief Process a received CAN frame
      *
-     * Looks up the frame's CAN ID in the configuration, extracts all defined
-     * fields, applies conversion formulas, and writes to GlobalData.
+     * Accepts standard 11-bit data frames only. Looks up the CAN ID, extracts
+     * all defined fields, applies formulas, and writes to GlobalData. Extended
+     * or RTR frames, out-of-range IDs, invalid DLC, and incomplete fields are
+     * rejected before any writes or statistics updates.
      *
      * @param frame Reference to received CAN frame from TWAI
-     * @return true if frame was handled (CAN ID found in config)
+     * @return true if a standard data frame is configured and all fields were
+     *         processed; false for unsupported frames, unknown IDs, invalid
+     *         DLC, or incomplete/zero-length fields.
      */
     bool processFrame(const CanFrame& frame);
+
+    // Explicit dequeue time keeps derived consumption aligned with raw logs.
+    bool processFrame(const CanFrame& frame, uint32_t receivedAt);
+
+    // Call even without CAN traffic so expired sources stop reaching the radio.
+    void updateFuelConsumption(uint32_t now);
 
     /**
      * @brief Check if running in mock mode
@@ -107,6 +117,7 @@ private:
     bool _mockMode;                 // true = simulating data, false = real CAN
     uint32_t _framesProcessed;      // Statistics: processed frame count
     uint32_t _unknownFrames;        // Statistics: unknown CAN ID count
+    FuelConsumptionEstimator _fuelEstimator;
 
     /**
      * @brief Find frame configuration for a CAN ID

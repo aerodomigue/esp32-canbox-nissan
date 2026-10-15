@@ -32,31 +32,43 @@ Le projet a démarré comme une solution dédiée à la **Nissan Juke F15**, mai
 
 - **Traduction en temps réel** des données CAN Nissan vers le protocole Toyota RAV4
 - **Angle de braquage** pour les lignes de guidage de la caméra de recul
-- **Données tableau de bord** : RPM, vitesse, tension batterie, température, niveau essence
+- **Données tableau de bord** : RPM, vitesse, tension batterie, température et états du véhicule ; niveau essence selon un mapping validé
 - **État des portes** avec mise à jour automatique sur changement
 - **Systèmes de sécurité** : Watchdog matériel, surveillance erreurs CAN, protection timeout
 
 ### État des Fonctionnalités
 
+État au **15 octobre 2026**, d'après les essais et confirmations du propriétaire
+sur son **Juke F15 2011 1.6 DIG-T manuel**. Les dix fonctions confirmées
+ci-dessous sont opérationnelles sur ce véhicule. Les autres données restent
+approximatives, non validées ou indisponibles : elles demandent davantage de
+captures, une calibration ou du travail de décodage.
+
 | Fonctionnalité | Statut | Notes |
 | --- | --- | --- |
-| Régime Moteur (RPM) | ✅ Fonctionnel | |
-| Vitesse Véhicule | ✅ Fonctionnel | |
-| Niveau Essence | ✅ Fonctionnel | Calibré pour Juke F15 (réservoir 45L) |
-| Tension Batterie | ✅ Fonctionnel | |
-| Direction / Lignes Dynamiques | ✅ Fonctionnel | Calibré pour Juke F15 |
-| État des Portes | ✅ Fonctionnel | 4 portes + coffre |
-| Clignotants | ✅ Fonctionnel | Gauche/droite |
-| Feux | ✅ Fonctionnel | Phares, feux de route, veilleuses |
-| Frein à Main | 📋 Prévu | Données CAN pas encore extraites |
-| Température Extérieure | 📋 Prévu | Données CAN pas encore extraites |
-| Conso. Instantanée | ✅ Fonctionnel | Depuis CAN 0x580 |
-| Conso. Moyenne | ✅ Fonctionnel | Depuis CAN 0x580 |
-| Autonomie Restante | ✅ Fonctionnel | Depuis CAN 0x54C |
+| Vitesse Véhicule | ✅ Fonctionnement confirmé | `0x284` octets 4–5 BE `/100` ; également corroboré par OBD à faible vitesse |
+| Kilométrage Total (km) | ✅ Fonctionnement confirmé | `0x5C5` octets 1–3 BE ; retour utilisateur sur le compteur kilométrique |
+| Régime Moteur (tr/min) | ✅ Fonctionnement confirmé | `0x180` octets 0–1 BE `/8` ; également corroboré par OBD |
+| Direction / Lignes Dynamiques | ✅ Fonctionnement confirmé | `0x002` B0–B1 LE signés, 0,1° ; réglage utilisateur `steerScale=500`, `steerOffset=0`, inversion activée |
+| Clignotants | ✅ Fonctionnement confirmé | Gauche/droit ; retour utilisateur après correction de l'état dashboard |
+| Portes et Coffre | ✅ Fonctionnement confirmé | Retour utilisateur ; mapping conservé |
+| Frein à Main | ✅ Fonctionnement confirmé | `0x5C5[0] & 0x04` ; disponible dans `SYS DATA` |
+| Feux | ✅ Fonctionnement confirmé côté boîtier | Position, croisement et pleins phares ; le contrôle de l'affichage des positions dans Manager est [documenté](docs/protocols/USB_SERIAL_PROTOCOL.md#lights-dashboard-field) |
+| Tension Batterie | ✅ Fonctionnement confirmé | Également cohérente avec l'OBD : écart moyen 0,139 V, points de mesure potentiellement différents |
+| Température Eau Moteur | ✅ Fonctionnement confirmé | Confirmation utilisateur et décodage `0x551[0]−40` corroboré par OBD ; distincte de la température extérieure |
+| Niveau Essence | Indisponible dans le preset Juke | Fausse jauge `0x5C5[0]` retirée ; `FuelValid: 0` distingue la valeur de compatibilité `0 L` d'une mesure |
+| Pédale de frein | Non validée | `0x180[7] & 0x01` ; geste et polarité à vérifier séparément sur le véhicule |
+| Température Extérieure | Non validée, valeur incorrecte signalée | Le mapping `0x540[0]−40` donne 28 °C dans les captures ; le propriétaire indique environ 20 °C |
+| Conso. Instantanée | Approximative, à calibrer | Compteur `0x551[1]` et vitesse `0x284` ; 80 mm³/incrément provisoires ; fenêtre de 1 s |
+| Conso. Moyenne | Approximative, à calibrer | Estimation de session disponible après 100 m ; même coefficient provisoire ; réinitialisée au rechargement, redémarrage ou interruption des sources |
+| Autonomie Restante | Non validée | Mapping CAN `0x54C` ; unité et référence du combiné à vérifier |
 
 > **Note :** La documentation du protocole Raise/Toyota RAV4 utilisé par les autoradios Android est rare. Certaines fonctionnalités sont encore en cours de reverse-engineering par manque de spécifications officielles du protocole.
 
 Voir la **[Roadmap](ROADMAP.md)** pour les fonctionnalités à venir.
+Le [mapping CAN documenté FR/EN](docs/JUKE_F15_CAN_MAPPING.fr.md) contient les
+preuves CAN/OBD, les sources et les limites. Le preset corrigé du dépôt doit
+être transféré séparément pour remplacer le JSON installé sur l'ESP32.
 
 ---
 
@@ -126,7 +138,7 @@ Pin 16 = +12V Batterie
 Pin 4/5 = Masse
 ```
 
-> **Note :** Les ports OBD-II possèdent des résistances de terminaison intégrées, donc aucune résistance supplémentaire n'est nécessaire sur le module SN65HVD230. Si votre module a une résistance 120Ω (R120), vous pouvez la laisser ou la retirer - le bus fonctionnera dans les deux cas.
+> **Terminaison CAN :** Un bus CAN haute vitesse comporte normalement une terminaison de 120Ω à chaque extrémité, comme décrit dans la [fiche technique Texas Instruments du SN65HVD230](https://www.ti.com/lit/ds/symlink/sn65hvd230.pdf). En se branchant sur un bus véhicule déjà terminé via l’OBD-II, le module constitue un nœud supplémentaire et ne doit pas ajouter une troisième terminaison de 120Ω. Si le module comporte une terminaison de 120Ω entre CAN-H et CAN-L, désactiver cette terminaison pour ce raccordement ; le connecteur OBD-II lui-même ne fournit pas de terminaison.
 
 ### Pinout Connecteur Électrochauffant (Clim) — M25
 
@@ -180,11 +192,34 @@ Le boîtier peut être configuré via USB série sans recompilation. Connectez-v
 | `CAN LIST` | Lister les fichiers de config véhicule |
 | `CAN LOAD <fichier>` | Charger une config véhicule |
 | `CAN UPLOAD START/DATA/END` | Upload config via Base64 |
+| `LOG ON` | Capture CAN brute horodatée et lectures OBD service 01 supportées |
+| `LOG OFF` | Arrêter la capture et les nouvelles requêtes OBD |
 | `SYS INFO` | Informations système |
 | `SYS DATA` | Données véhicule en temps réel |
 | `HELP` | Liste complète des commandes |
 
 Voir la **[Documentation du Protocole USB Série](docs/protocols/USB_SERIAL_PROTOCOL.md)** pour les détails complets.
+
+### Capturer le CAN et les références OBD
+
+Envoyer `LOG ON` en mode véhicule réel pour enregistrer les trames CAN brutes
+et interroger les PIDs OBD annoncés par les calculateurs. Les lignes de
+diagnostic commencent par le préfixe exact `ODB` : `ODB TX` pour les requêtes,
+`ODB RAW_RX` pour les réponses brutes et `ODB RX` pour les références décodées.
+`t_ms` indique le retrait de la file pour les trames reçues et l’instant de
+tentative pour les requêtes. Les octets restent inchangés.
+
+`LOG OFF` arrête la capture et les nouvelles requêtes. Le mode mock n’envoie
+aucune requête OBD et l’OTA suspend les lectures. Les références ne changent
+ni le preset actif, ni les valeurs envoyées à l’autoradio. Le
+[guide de capture et comparaison](docs/OBD_CALIBRATION.fr.md) décrit les unités,
+timeouts, compteurs de pertes et commandes d’enregistrement.
+
+La lecture CAN continue pendant une requête OBD en cours. Un tampon USB de
+64 Kio conserve l'ordre des lignes et reprend les écritures partielles sans
+attendre l'hôte. `ODB BUFFER` expose l'occupation et les pertes éventuelles
+si l'hôte reste trop lent. Voir la [validation du streaming firmware](docs/LOG_STREAMING_VALIDATION.fr.md)
+et le [format de routage pour les clients](docs/protocols/USB_SERIAL_PROTOCOL.md#routing-the-shared-stream).
 
 ### Support Multi-Véhicules
 
@@ -237,6 +272,18 @@ La LED (GPIO 8) permet un diagnostic rapide sans connexion PC :
 
 ## Installation et Configuration
 
+Pour compiler et tester localement, voir [Développement](docs/DEVELOPMENT.md).
+Le [rapport de validation de la PR #10](docs/PR10_VALIDATION.fr.md) décrit les
+correctifs de décodage, le retrait des propositions et les vérifications réalisées.
+Le [mapping du Juke F15 2011](docs/JUKE_F15_CAN_MAPPING.fr.md) confronte les
+captures récentes, les références OBD et les définitions publiques Racelogic.
+L'[analyse historique](docs/JUKE_2011_CAN_ANALYSIS.fr.md) conserve le diagnostic
+de l'ancien enregistreur et ses limites.
+Les propositions de la PR et leur profil expérimental ont été retirés. `LOG ON`
+enregistre maintenant les trames CAN brutes horodatées et lance les lectures
+OBD service 01 supportées ; chaque ligne de diagnostic commence par `ODB`.
+Voir [la capture pour calibration OBD](docs/OBD_CALIBRATION.fr.md).
+
 L'installation de votre pont CAN ESP32 se déroule en deux étapes simples :
 
 ### 1. Flash Initial du Firmware
@@ -261,7 +308,31 @@ Une fois flashé, branchez l'ESP32 sur un port USB de votre autoradio Android. T
 **[ESP32 CANBox Manager](https://github.com/aerodomigue/esp32-canbox-manager)** (App Android)
 - **Sélection du Véhicule** : Chargez la config `.json` correspondant à votre voiture.
 - **Calibration** : Réglez les offsets du volant ou la capacité du réservoir.
-- **Mises à jour OTA** : Mettez à jour les futures versions du firmware sans fil depuis l'app avec **`firmware.ota`**.
+- **Mises à jour OTA** : Mettez à jour les futures versions du firmware par USB série depuis l'app avec **`firmware.ota`**. Le preset véhicule se charge séparément.
+
+Pour le preset Juke corrigé, installer **d'abord le firmware correspondant**,
+puis transférer `data/NissanJukeF15.json` et l'activer avec `CAN LOAD NissanJukeF15.json`.
+L'OTA applicative ne met **pas** LittleFS à jour. Un ancien firmware peut
+interpréter une cible inconnue comme `HANDBRAKE` en `STEERING` ; ne pas lui
+charger le nouveau JSON. Le nouveau parseur rejette les cibles inconnues ou
+absentes en conservant le profil précédemment actif.
+
+Pour la correction de direction, après transfert et activation du JSON,
+appliquer aussi les réglages ci-dessous si ce preset était déjà sélectionné :
+le rechargement du même fichier conserve la calibration NVS existante.
+
+```text
+CFG SET steerScale 500
+CFG SET steerOffset 0
+CFG SET steerInvert 1
+CFG SAVE
+```
+
+Le propriétaire a confirmé `500` : `1000` faisait trop tourner les lignes.
+Cela applique `UART = clamp(-trunc(brut/20), -500, 500)`, soit une demi-unité
+UART par degré F15 avant arrondi. Le JSON du dépôt conserve son réglage de
+départ `1000` ; les commandes ci-dessus enregistrent la calibration utilisée
+sur ce véhicule sans modifier le fichier.
 
 ---
 
@@ -269,17 +340,21 @@ Une fois flashé, branchez l'ESP32 sur un port USB de votre autoradio Android. T
 
 | Donnée | ID CAN | Fréq. envoi | Notes |
 | --- | --- | --- | --- |
-| Angle Volant | 0x002 | 200ms | Pour lignes caméra |
-| Régime Moteur | 0x180 | 333ms | |
-| Vitesse Véhicule | 0x284 | 500ms | Capteur roue |
-| Niveau Essence | 0x5C5 | — | Mappé sur 45L (capacité réservoir Juke F15) |
+| Angle Volant | 0x002 | 200ms | Confirmé avec `scale=500`, `offset=0`, inversion ; B0–B1 LE signés en 0,1° ; sortie UART limitée à ±500 |
+| Régime Moteur | 0x180 | 333ms | Octets 0–1, big endian, brut / 8 ; tr/min entiers |
+| Vitesse Véhicule | 0x284 | 500ms | Octets 4–5, big endian, brut / 100 ; km/h entiers |
+| Frein à Main | 0x5C5 | Sur requête `SYS DATA` | Octet 0 bit 2 ; `unknown` avant la première trame configurée |
+| Pédale de frein | 0x180 | Sur requête `SYS DATA` | Octet 7 bit 0 ; état brut de contact, polarité physique à vérifier |
+| Compteur carburant brut | 0x551 | Sur requête `SYS DATA` | Octet 1 conservé brut 0–255 ; `FuelConsEstimated: 1` identifie la conversion provisoire séparée |
+| Niveau Essence | — | — | Aucune source Juke ; compatibilité `Fuel: 0 L` avec `FuelValid: 0` |
 | Tension Batterie | 0x6F6 | — | Sortie alternateur |
-| Température | 0x551 | 5000ms | LDR (utilisé comme ext.) |
+| Température Extérieure | 0x540 | 5000ms | Octet historique 0 − 40 ; référence physique à vérifier |
+| Température Eau Moteur | 0x551 | 5000ms | Mesure `0x551[0]−40` confirmée ; placement UART actuel dans CMD 0x28 B0 non établi par une spécification |
 | État Portes | 0x60D | 250ms | Toutes portes + coffre (ou sur changement) |
-| Autonomie | 0x54C | 5000ms | Distance estimée |
-| Conso. Instantanée | 0x580 | 1000ms | Unités 0.1 L/100km |
-| Conso. Moyenne | 0x580 | 5000ms | Unités 0.1 L/100km |
-| Compteur km | 0x5C5 | 10000ms | Total km (24-bit) |
+| Clignotants / Feux | 0x60D | 200ms ou sur changement | Fonctionnement confirmé ; UART `0x7D/01` et ligne `Lights:` de `SYS DATA` |
+| Autonomie | 0x54C | 5000ms | Octets initiaux 6–7, big endian, brut × 100 / 338 ; calibration à vérifier |
+| Conso. Instantanée / Moyenne | 0x551 + 0x284 | 1000ms / 5000ms | Estimation en 0,1 L/100 km ; instantanée indisponible non émise, moyenne indisponible `0xFFFF` ; [réglages et limites](docs/VEHICLE_PRESET_GUIDE.md#counter-based-fuel-consumption-fuelconsumption) |
+| Compteur km | 0x5C5 | 10000ms | Octets 1–3 BE (24 bits) ; fonctionnement confirmé par l’utilisateur |
 
 ---
 
@@ -299,6 +374,10 @@ Fonctionnalités :
 ## Références & Crédits
 
 ### Documentation CAN Nissan
+
+- [Mapping Juke F15 et preuves de capture](docs/JUKE_F15_CAN_MAPPING.fr.md)
+- [Catalogue des PDF Nissan et limites de millésime](docs/vehicle/nissan-juke-f15/README.fr.md)
+- [Racelogic / VBOX : documents et définitions CAN](https://vboxautomotive.co.uk/en/can-database-documents)
 - [NICOclub / Manuels Nissan](https://www.nicoclub.com/nissan-service-manuals)
 - [Comma.ai / OpenDBC](https://github.com/commaai/opendbc/tree/master)
 - [jackm / Carhack Nissan](https://github.com/jackm/carhack/blob/master/nissan.md)

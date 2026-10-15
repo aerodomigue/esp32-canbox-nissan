@@ -22,10 +22,11 @@ Commands follow an AT-style format:
 COMMAND [SUBCOMMAND] [PARAMETERS]\n
 ```
 
-- Commands are **case-insensitive** (converted to uppercase internally)
+- Command and subcommand names are **case-insensitive**; filenames and encoded payloads retain their case
 - Parameters are separated by spaces
-- Responses always start with `OK` or `ERROR:`
-- Multi-line responses are delimited by `===` markers
+- Acknowledgments use `OK` or `ERROR:`; value reads such as `CFG GET` can return a value without either marker
+- Status/list responses have command-specific `===` headers and footers
+- When logging is enabled, asynchronous `RX` and `ODB` records share the connection with command responses
 
 ## Response Format
 
@@ -39,6 +40,52 @@ OK
 ```
 ERROR: <error description>
 ```
+
+### Routing the shared stream
+
+The exact diagnostic prefix is **`ODB `**, including the trailing space.
+The firmware does not emit an `OBD ` family, a `DASH ` family or standalone
+`TX ` records. Route complete lines using this order:
+
+| Line starts with / equals | Meaning | Destination |
+| --- | --- | --- |
+| `RX 0x` | Received raw CAN frame, including unknown IDs | CAN capture |
+| `ODB RAW_RX 0x` | Received raw standard frame on `0x7DF`–`0x7EF` | Diagnostic capture |
+| `ODB TX ` | OBD request bytes and driver queue status | Diagnostic capture |
+| `ODB RX ` | Decoded OBD reference, never a dashboard update | Diagnostic capture |
+| `ODB ` (other subtypes) | Capabilities, timeouts, negative responses, state, driver/buffer counters | Diagnostic capture |
+| `=== Live Vehicle Data ===` (exact) | Start of the response to `SYS DATA` | Dashboard response |
+| `=========================` (exact) | End of that dashboard response | Finish dashboard response |
+| `OK`, `OK `, `ERROR: ` | Command acknowledgment or failure | Pending command |
+| Other lines | Dashboard fields while its block is open; otherwise command/boot information | Matching response / console |
+
+Match raw CAN with `RX 0x`, not just `RX`: controller error messages such as
+`RX Err: ...` are console information. Check the raw and diagnostic families
+before accumulating dashboard fields. `SYS DATA` is requested by the client;
+the firmware does not periodically publish that block itself. Its fields
+start with `Config:`, `Mode:`, `RPM:`, `Speed:`, `Steering:`, `Fuel:`,
+`Battery:`, `DTE:`, `Temp:`, `Doors:`, `Lights:`, `FuelValid:`, `FuelConsValid:`, `FuelConsEstimated:`,
+`Handbrake:`, `Brake:` and `FuelRaw:`. Other commands have their
+own headers and footers; a line of `=` is not a universal response terminator.
+
+`ODB TX` covers OBD request attempts only. It is not a capture of every CAN
+transmission or of the separate radio UART. With logging enabled, the firmware
+attempts to export each dequeued frame once, either as `RX` or as `ODB RAW_RX`.
+A valid reply may additionally produce
+an `ODB RX`, `ODB SUPPORTED` or `ODB NEGATIVE` interpretation.
+
+USB reads are arbitrary byte chunks: a chunk can end inside `ODB`, a payload
+or a CRLF, and one chunk can contain several lines. Keep a persistent receive
+buffer, extract only records ending in LF, remove an optional preceding CR
+for parsing, and retain the unfinished suffix for the next read. Preserve
+the original line and its line ending when exporting. Command completion
+and OBD replies must not control when complete raw lines are processed.
+
+The firmware queues complete log lines in a 64 KiB FIFO and resumes partial
+USB writes without interleaving later records or responses. Sustained
+backpressure can fill this finite queue: new log lines are then dropped as
+whole records and counted in `ODB BUFFER`. See
+[the firmware streaming validation](../LOG_STREAMING_VALIDATION.fr.md).
 
 ---
 
@@ -111,11 +158,31 @@ Configuration reset to defaults
 | `tankCap` | uint8 | 20-100 | 45 | Tank capacity (liters) |
 | `dteDiv` | uint16 | 100-500 | 283 | DTE divisor (x100) |
 
+`rpmDiv`, `tankCap` and `dteDiv` are stored settings, but the current JSON
+decoder does not use them for conversion. The active preset supplies its own
+formulas; changing these three NVS values does not change decoded RPM, fuel
+level or DTE. In particular, the active Juke preset uses DTE divisor 338,
+while the stored factory default above remains 283.
+
 ---
 
 ### CAN - CAN Configuration Files (LittleFS Storage)
 
 Manages vehicle CAN configuration files stored on LittleFS filesystem.
+
+The corrected Juke JSON adds `HANDBRAKE`, `BRAKE_PEDAL` and
+`FUEL_COUNTER_RAW` targets. Install the matching new firmware **before**
+uploading this JSON: an older parser can treat an unknown target as
+`STEERING`. The new parser rejects missing or unknown targets and leaves
+the previously active profile in place. Application OTA does not update
+LittleFS; transfer `data/NissanJukeF15.json` separately, then activate it
+with `CAN LOAD NissanJukeF15.json`.
+
+The Juke profile also enables a provisional counter-to-consumption
+conversion through its root-level `fuelConsumption` object. It requires
+the matching firmware and the updated JSON; see the
+[configuration guide](../VEHICLE_PRESET_GUIDE.md#counter-based-fuel-consumption-fuelconsumption).
+The default coefficient is not yet calibrated on the Juke.
 
 #### CAN STATUS
 Display current CAN configuration status.
@@ -123,6 +190,7 @@ Display current CAN configuration status.
 ```
 > CAN STATUS
 === CAN Configuration Status ===
+Config: NissanJukeF15.json
 Mode: REAL (CAN bus)
 Profile: Nissan Juke F15
 Frames processed: 12345
@@ -360,9 +428,11 @@ Unchanged from v1. See [`docs/protocols/OTA_PROTOCOL.md`](OTA_PROTOCOL.md) for f
 
 ---
 
-### LOG - CAN Frame Logging
+### LOG - Raw CAN Capture and OBD Reference Polling
 
-Enable/disable real-time CAN frame logging for debugging.
+In real vehicle mode, `LOG ON` enables raw CAN capture and read-only OBD-II
+service 01 polling for calibration. Reference measurements remain separate
+from the active preset and the values sent to the head unit.
 
 #### LOG ON
 ```
@@ -371,11 +441,53 @@ OK
 CAN logging enabled
 ```
 
-After enabling, each received CAN frame is printed:
+The following firmware output is **synthetic**, showing a vehicle that
+advertises RPM only. It illustrates discovery, a physical request and its
+response; it is not a captured or calibrated Juke measurement.
+
+```text
+ODB STATE t_ms=1000 enabled=1 status=discovery
+ODB TX t_ms=1000 seq=1 can_id=0x7DF service=0x01 pid=0x00 status=queued data=02 01 00 00 00 00 00 00
+ODB RAW_RX 0x7E8 [8]: 06 41 00 00 10 00 00 00 | t_ms=1008 ext=0 rtr=0
+ODB SUPPORTED t_ms=1008 seq=1 request_id=0x7DF ecu=0x7E8 pid=0x00 bitmap=0x00100000
+ODB TX t_ms=1500 seq=2 can_id=0x7E0 service=0x01 pid=0x0C status=queued data=02 01 0C 00 00 00 00 00
+RX 0x180 [8]: 11 95 00 00 00 00 00 00 | t_ms=1507 ext=0 rtr=0
+ODB RAW_RX 0x7E8 [8]: 04 41 0C 0A 0C 00 00 00 | t_ms=1508 ext=0 rtr=0
+ODB RX t_ms=1508 seq=2 request_id=0x7E0 ecu=0x7E8 pid=0x0C name=rpm value=643.000 unit=rpm latency_ms=8
 ```
-RX 0x002 [8]: 00 0B 60 00 00 00 00 00
-RX 0x180 [8]: 45 E0 00 00 00 00 00 00
-```
+
+All OBD diagnostic records start with the exact prefix **`ODB`**, including
+`ODB TX`, `ODB RAW_RX`, `ODB SUPPORTED`, `ODB RX`, `ODB NEGATIVE`,
+`ODB TIMEOUT`, `ODB STATE`, `ODB DRIVER` and `ODB BUFFER`. Standard raw frames outside
+IDs `0x7DF`–`0x7EF` start with `RX`;
+extended frames also keep that prefix. Command acknowledgments retain their
+existing formats. Client applications must route these record families
+separately rather than treat an OBD value as an `OK` response.
+
+For received frames and their decoded references, `t_ms` is the uint32
+`millis()` value when the frame leaves the software receive queue, before
+printing. `ODB TX` carries the attempt time; reference latency includes
+software and queue delays. These are not hardware bus timestamps. Timestamps
+reset after reboot and wrap after about 49.7 days. Raw logs preserve ID, DLC,
+bytes and `ext`/`rtr` flags. RTR records have no data payload; an invalid DLC is
+printed as declared, but the logger reads at most eight bytes.
+
+The client discovers supported PIDs with `00`, then `20` and `40` only when
+the preceding page announces them. It queries supported RPM (`0C`), speed
+(`0D`), coolant (`05`), fuel level (`2F`), module voltage (`42`), ambient
+temperature (`46`), manifold absolute pressure (`0B`) and fuel rate (`5E`).
+Availability depends on the ECU. Fuel level is in percent and fuel rate in
+L/h; the firmware does not convert either into tank liters or L/100 km.
+
+Discovery collects replies from `0x7E8`–`0x7EF` separately. Measurement
+requests target the lowest-address ECU that advertises the PID, using
+`0x7E0`–`0x7E7`. There is one request at a time, at least 500 ms between
+attempts, and a 250 ms response window. Responses must be standard, non-RTR,
+DLC 8 ISO-TP single frames with the expected service, PID and length.
+Unsupported parameters are skipped; missing replies produce a timeout,
+not a zero measurement. After three unsuccessful discovery requests, the
+client waits five seconds before trying again. `queued` means the driver
+accepted a request for transmission, not that the ECU acknowledged it.
 
 #### LOG OFF
 ```
@@ -383,6 +495,42 @@ RX 0x180 [8]: 45 E0 00 00 00 00 00 00
 OK
 CAN logging disabled
 ```
+
+`LOG OFF` stops capture and new OBD requests, clears the pending request and
+emits `ODB STATE ... enabled=0 status=stopped` when calibration was active.
+A request already queued in the CAN controller cannot be cancelled by this
+command. Repeated `LOG ON` commands do not restart an active discovery.
+
+Mock mode does not poll OBD. OTA suspends capture processing and polling;
+after an OTA abort or timeout, polling restarts with discovery if logging is
+still enabled and the device is in real mode. A successful OTA reboots the
+device, so a new `LOG ON` is required. Partial command echo is suppressed
+while logging to keep raw and diagnostic lines intact.
+
+RX is nonblocking, with a 128-frame queue and at most 32 frames drained per
+loop. `ODB DRIVER` reports counters and queue occupancy once per second;
+`ODB BUFFER` reports software output queue bytes and cumulative counters:
+
+```text
+ODB BUFFER t_ms=2000 queued_bytes=174 dropped_raw=0 dropped_odb=0 short_writes=0 rejected_responses=0
+```
+
+`dropped_raw` and `dropped_odb` count complete log records refused at admission;
+`short_writes` counts partial/zero USB writes whose suffix stays queued;
+`rejected_responses` counts rejected command responses. Short writes are
+retried and do not themselves indicate lost bytes. Counters reset on reboot.
+USB writes have zero timeout; each drain is limited to 4 KiB and eight writes.
+12 KiB are reserved for command responses, with 512 additional bytes reserved
+for diagnostics relative to RAW logs. A completed command waits for response
+space while CAN processing continues, and at most one command runs per loop.
+A response that exceeds available space is replaced before transmission by
+`ERROR: Response exceeds USB buffer or allocation failed`; the command's side
+effects may already have occurred. `LOG OFF` and OTA preserve the FIFO order
+of previously admitted lines rather than discard a partially transmitted one.
+Sustained USB saturation can still cause whole-record losses. Save captures without terminal color
+or timestamp prefixes, for example with
+`.venv/bin/pio device monitor --filter direct`. See the
+[calibration guide](../OBD_CALIBRATION.md) for analysis and limitations.
 
 ---
 
@@ -408,17 +556,97 @@ Display current vehicle data values.
 ```
 > SYS DATA
 === Live Vehicle Data ===
+Config:   NissanJukeF15.json
+Mode:     REAL (Nissan Juke F15)
 RPM:      2500
 Speed:    60 km/h
 Steering: -150
-Fuel:     30 L
+Fuel:     0 L
 Battery:  14.1 V
 DTE:      350 km
-Temp:     85 C
+Temp:     28 C
 Doors:    0x00
 Lights:   H=1 P=0 HB=0 L=0 R=0
+FuelValid: 0
+FuelConsValid: INST=0 AVG=0
+FuelConsEstimated: 1
+Handbrake: 1
+Brake: 0
+FuelRaw: 147
 =========================
 ```
+
+This is a synthetic response after the configured Juke frames have been
+received, before consumption has become available. Existing fields retain
+their format; the six final lines are
+additional fields. A receiver can ignore fields it does not recognize.
+
+| Field | Meaning |
+| --- | --- |
+| `FuelValid: 0\|1` | Whether a configured fuel-level source has supplied a value; `0` makes `Fuel: 0 L` unavailable, not a measured empty tank |
+| `FuelConsValid: INST=0\|1 AVG=0\|1` | Availability of consumption in 0.1 L/100 km for UART `0x22` / `0x23`; does not imply physical calibration |
+| `FuelConsEstimated: 0\|1` | `1` when the enabled counter conversion uses a provisional coefficient; independent of availability, and `0` is not evidence that a direct or mock source is calibrated |
+| `Handbrake: 0\|1\|unknown` | `0x5C5 B0 bit2`; observed 1 = applied |
+| `Brake: 0\|1\|unknown` | Raw switch bit `0x180 B7 bit0`; physical action and polarity still to verify |
+| `FuelRaw: 0..255\|unknown` | Unconverted `0x551 B1`; separate from the estimate calculated from its increments |
+
+Direct-field availability resets when a profile is loaded and becomes true
+when its configured frame is processed; it does not provide a freshness
+timeout. `Handbrake`, `Brake` and `FuelRaw` report `unknown` before their
+first configured frame. Derived consumption has separate freshness checks:
+the Juke requires current counter and speed data, calculates instantaneous
+consumption over 1 s and waits for 100 m before publishing a session average.
+A source gap over 500 ms resets that session. Below 2 km/h with fresh
+sources, instantaneous zero is a display convention, not zero fuel flow.
+An unavailable average is sent as `0xFFFF` in the radio packet; unavailable
+instantaneous consumption is not transmitted. Mock mode provides synthetic
+fuel and consumption sources; it sends no OBD queries. These additions do
+not change `RX`, `ODB`, acknowledgment or dashboard block delimiters.
+
+##### Lights dashboard field
+
+`SYS DATA` includes one complete line in this format:
+
+```text
+Lights:   H=0 P=1 HB=0 L=0 R=0
+```
+
+| Key | Meaning |
+| --- | --- |
+| `H` | Low-beam headlights |
+| `P` | Parking/position lights (sidelights), not the parking brake |
+| `HB` | High-beam headlights |
+| `L` | Left turn indicator |
+| `R` | Right turn indicator |
+
+Values are independent booleans (`0` or `1`), not an exclusive lighting
+mode. In particular, `P=1` and `H=1` can be active together. Update each
+stored flag on every valid line, including transitions back to `0`.
+Match complete keys so that `HB=1` cannot be mistaken for `H=1`. Accept
+multiple spaces after `Lights:` and between fields. Parse only complete
+LF-terminated records, allowing an optional preceding CR; retain partial
+USB reads and process every complete line when several arrive together.
+
+The client requests this dashboard block with `SYS DATA`; `LOG ON` alone
+does not publish it. Route `Lights:` within the dashboard response, without
+discarding it as an unrecognised `RX` or `ODB` record. Check reception,
+parsed model values and UI state separately when diagnosing missing lights.
+
+Suggested client parser/display cases (all with `L=0 R=0`):
+
+| Fields | Expected flags |
+| --- | --- |
+| `H=0 P=0 HB=0` | All lights off |
+| `H=0 P=1 HB=0` | Parking lights only |
+| `H=1 P=1 HB=0` | Parking lights and low beam |
+| `H=0 P=0 HB=1` | Synthetic case: high beam only, without setting `H` |
+
+Also feed these lines across USB chunk boundaries, including between CR
+and LF, and together in one read. These are client test requirements, not
+claims that CANBox Manager has been inspected or tested. The
+[Juke capture analysis](../JUKE_F15_CAN_MAPPING.md#lighting-capture-from-15-october-2026)
+checks production firmware responses using captured CAN input, but the
+capture contains no actual device `SYS DATA` responses.
 
 #### SYS REBOOT
 Restart the device.
@@ -464,13 +692,13 @@ CAN DELETE <file>     Delete config file
 CAN UPLOAD START/DATA/END  Upload config
 CAN RELOAD            Reload configuration
 
-OTA START <size> [md5]  Start firmware update
-OTA DATA <base64>       Send firmware chunk
-OTA END                 Finalize update
+OTA START <size> [md5]       Start firmware update
+OTA DATA <base64> [crc32]    Send firmware chunk
+OTA END                      Finalize and reboot
 OTA ABORT               Cancel update
 OTA STATUS              Show OTA status
 
-LOG ON|OFF            CAN frame logging
+LOG ON|OFF            Raw CAN logging + ODB service 01 reference polling
 
 SYS INFO              System information
 SYS DATA              Live vehicle data
@@ -484,6 +712,12 @@ HELP                  This message
 ---
 
 ## Android Integration Example (Kotlin)
+
+This simplified example covers transactions terminated by `OK` or `ERROR:`.
+An application also needs a persistent serial reader that separates command
+echo, raw `RX` records and `ODB` diagnostics from responses. Status/list
+commands such as `CAN STATUS` finish at their documented footer rather than
+an `OK` line. Stop logging before configuration or firmware uploads.
 
 ```kotlin
 class CanBoxSerial(private val usbConnection: UsbDeviceConnection) {
@@ -538,11 +772,6 @@ class CanBoxSerial(private val usbConnection: UsbDeviceConnection) {
         return response.startsWith("OK")
     }
 
-    fun getStatus(): CanStatus {
-        val response = sendCommand("CAN STATUS")
-        // Parse response...
-        return CanStatus(...)
-    }
 }
 ```
 

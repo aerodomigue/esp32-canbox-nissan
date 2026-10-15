@@ -59,6 +59,7 @@ const uint8_t MASK_LIGHT_HIGH_BEAM   = 0x20;  // High beam
 const uint8_t MASK_LIGHT_HEADLIGHTS  = 0x40;  // Headlights (low beam)
 const uint8_t MASK_LIGHT_PARKING     = 0x80;  // Parking lights
 
+
 // Indicator timeout loaded from ConfigManager
 
 // =============================================================================
@@ -120,24 +121,36 @@ void sendCanboxMessage(uint8_t cmd, const uint8_t* data, uint8_t len) {
 }
 
 /**
- * @brief Send door status
+ * @brief Send door status and ignition state
  * @param doorMask Bitmask of open doors
+ * @param igOn     true if ignition is ON (engineRPM > 0)
+ *
+ * Per Chinese spec (V2.21): CMD 0x24 length = 0x02
+ * Data0: door bitmask
+ * Data1: key status — Bit1 = IG ON/OFF
  */
-void sendDoorCommand(uint8_t doorMask) {
-    sendCanboxMessage(CMD_DOOR_STATUS, &doorMask, 1);
+void sendDoorCommand(uint8_t doorMask, bool igOn) {
+    uint8_t payload[2] = {
+        doorMask,
+        (uint8_t)(igOn ? 0x02 : 0x00)
+    };
+    sendCanboxMessage(CMD_DOOR_STATUS, payload, 2);
 }
 
 /**
- * @brief Send steering wheel angle
- * @param angle Signed 16-bit angle in 0.1° units, Little Endian
+ * @brief Send the calibrated steering value for the RAV4 0x29 decoder
+ * @param angle UART units, not the raw CAN angle in tenths of a degree
  *
- * Range: -5400 to +5400 (±540.0° at full lock)
- * Per PDF: "Steering wheel angle is -540 to 540"
+ * The inspected FYT j0/c3 decoder reads signed 12-bit LE and saturates at
+ * +/-500. Bound the 32-bit result before narrowing to prevent sign wrapping.
  */
-void sendSteeringAngleMessage(int16_t angle) {
+void sendSteeringAngleMessage(int32_t angle) {
+    if (angle > 500) angle = 500;
+    if (angle < -500) angle = -500;
+    const uint16_t encoded = static_cast<uint16_t>(static_cast<int16_t>(angle));
     uint8_t payload[2] = {
-        (uint8_t)(angle & 0xFF),        // LSB
-        (uint8_t)((angle >> 8) & 0xFF)  // MSB
+        (uint8_t)(encoded & 0xFF),        // LSB
+        (uint8_t)((encoded >> 8) & 0xFF)  // MSB, sign-extended for negative values
     };
     sendCanboxMessage(CMD_STEERING_WHEEL, payload, 2);
 }
@@ -197,16 +210,22 @@ void sendOdometerMessage(uint32_t odo) {
 }
 
 /**
- * @brief Send outside temperature
- * @param temp Temperature in °C
+ * @brief Send outside and coolant temperatures
+ * @param tempExternal Ambient air temperature in °C
+ * @param tempCoolant  Engine coolant temperature in °C
  *
- * Encoding: (temp + 40) × 2 at byte [5]
- * Per PDF: 12-byte payload, all zeros except byte 5
+ * Encoding: (temp + 40) × 2
+ * Per RAV4 spec (PDF chinois + anglais): seul byte[5] = temp extérieure est défini.
+ * Les autres bytes doivent être 0x00 selon le spec.
+ * INCONNU: aucune source ne confirme quel byte utiliser pour la temp moteur
+ * dans ce protocole — payload[0] est une hypothèse non vérifiée.
  */
-void sendOutsideTempMessage(int8_t temp) {
-    uint8_t encoded = (uint8_t)((temp + 40) * 2);
+void sendOutsideTempMessage(int8_t tempExternal, int8_t tempCoolant) {
     uint8_t payload[12] = {0};
-    payload[5] = encoded;
+    // TODO: byte position pour coolant temp non documentée dans le protocole RAV4
+    // payload[0] = hypothèse — à confirmer par capture UART d'une vraie RAV4
+    payload[0] = (uint8_t)((tempCoolant + 40) * 2);
+    payload[5] = (uint8_t)((tempExternal + 40) * 2);  // seul byte documenté
     sendCanboxMessage(CMD_OUTSIDE_TEMP, payload, 12);
 }
 
@@ -256,20 +275,27 @@ void sendFuelConsumptionMessage(uint16_t consumption_01) {
 
 /**
  * @brief Send average/history fuel consumption
- * @param consumption_01 Average consumption in 0.1 L/100km units
+ * @param consumption_01 Current-trip consumption in 0.1 L/100km units,
+ *                       or 0xFFFF when unavailable
  *
- * Per Chinese protocol document (Toyota RAV4):
- * - Cmd = 0x23, Len = 0x03
+ * Per Raise V2.21, page 5 (Toyota RAV4):
+ * - Cmd = 0x23, Len = 0x0D
  * - Data0: Unit (0x02 = L/100km)
- * - Data1-2: Value (Big Endian), divide by 10 to get L/100km
+ * - Data1-2: Current trip (Big Endian), divide by 10 to get L/100km
+ * - Data3-12: Five historical trips, 0xFFFF each when unavailable
  */
 void sendFuelConsumptionAvgMessage(uint16_t consumption_01) {
-    uint8_t payload[3] = {
+    uint8_t payload[13] = {
         FUEL_UNIT_L100KM,                        // Unit: L/100km
         (uint8_t)((consumption_01 >> 8) & 0xFF), // Value MSB
-        (uint8_t)(consumption_01 & 0xFF)         // Value LSB
+        (uint8_t)(consumption_01 & 0xFF),        // Value LSB
+        0xFF, 0xFF,                            // Historical trip 1: unavailable
+        0xFF, 0xFF,                            // Historical trip 2: unavailable
+        0xFF, 0xFF,                            // Historical trip 3: unavailable
+        0xFF, 0xFF,                            // Historical trip 4: unavailable
+        0xFF, 0xFF                             // Historical trip 5: unavailable
     };
-    sendCanboxMessage(CMD_FUEL_CONS_AVG, payload, 3);
+    sendCanboxMessage(CMD_FUEL_CONS_AVG, payload, sizeof(payload));
 }
 
 /**
@@ -322,8 +348,8 @@ void processRadioUpdates() {
     // =========================================================================
     // 1. STEERING WHEEL ANGLE (CMD 0x29) - 200ms interval
     // =========================================================================
-    // Per PDF: Angle in 0.1° units, range -540 to +540 (so -5400 to +5400 raw)
-    // Calibration values from ConfigManager (stored in NVS)
+    // Convert the CAN value to UART units using calibration stored in NVS.
+    // F15: signed B0-B1 LE in 0.1 degrees; scale=1000 gives one unit/degree.
     if (now - lastSteeringTime >= STEERING_INTERVAL_MS) {
         // Step 1: Apply center offset from config
         int32_t centered = (int32_t)currentSteer + configGetSteerOffset();
@@ -352,7 +378,7 @@ void processRadioUpdates() {
     if (currentDoors & 0x08) doorStatus |= MASK_DOOR_BOOT;       // Trunk
 
     if (doorStatus != lastSentDoors || (now - lastDoorTime >= DOOR_INTERVAL_MS)) {
-        sendDoorCommand(doorStatus);
+        sendDoorCommand(doorStatus, engineRPM > 0);
         lastSentDoors = doorStatus;
         lastDoorTime = now;
     }
@@ -368,6 +394,11 @@ void processRadioUpdates() {
     uint16_t indTimeout = configGetIndicatorTimeout();
     bool leftActive = (now - lastLeftIndicatorTime) < indTimeout;
     bool rightActive = (now - lastRightIndicatorTime) < indTimeout;
+
+    // SYS DATA must expose the same timed state as the radio, including expiry
+    // when no new CAN frame arrives. The decoder only updates the timestamps.
+    indicatorLeft = leftActive;
+    indicatorRight = rightActive;
 
     if (rightActive)      lightStatus |= MASK_LIGHT_RIGHT_IND;
     if (leftActive)       lightStatus |= MASK_LIGHT_LEFT_IND;
@@ -400,27 +431,34 @@ void processRadioUpdates() {
     // =========================================================================
     // 6. INSTANTANEOUS FUEL CONSUMPTION (CMD 0x22) - 1s interval
     // =========================================================================
-    // Instantaneous consumption from Nissan CAN 0x580 byte[1]
+    // Only publish a configured L/100km reading, never a raw CAN counter.
     if (now - lastFuelConsTime >= FUEL_CONS_INTERVAL_MS) {
-        sendFuelConsumptionMessage(fuelConsumptionInst);
+        if (canAuxData.fuelConsumptionInstValid) {
+            sendFuelConsumptionMessage(fuelConsumptionInst);
+        }
         lastFuelConsTime = now;
     }
 
     // =========================================================================
     // 6b. AVERAGE FUEL CONSUMPTION (CMD 0x23) - 5s interval
     // =========================================================================
-    // Average consumption from Nissan CAN 0x580 byte[4]
+    // Derived profiles explicitly clear unavailable trip data using the
+    // protocol's invalid marker; other profiles retain source availability.
     if (now - lastFuelConsAvgTime >= FUEL_CONS_AVG_INTERVAL_MS) {
-        sendFuelConsumptionAvgMessage(fuelConsumptionAvg);
+        if (canAuxData.fuelConsumptionAvgValid || canAuxData.fuelConsumptionDerived) {
+            sendFuelConsumptionAvgMessage(canAuxData.fuelConsumptionAvgValid
+                                              ? fuelConsumptionAvg
+                                              : 0xFFFF);
+        }
         lastFuelConsAvgTime = now;
     }
 
     // =========================================================================
     // 7. OUTSIDE TEMPERATURE (CMD 0x28) - 5s interval
     // =========================================================================
-    // Note: Using coolant temp as substitute (no exterior sensor on Juke CAN)
+    // byte[5] = ambient air temp (0x540), byte[0] = coolant temp (0x551, hypothesis)
     if (now - lastTempTime >= TEMP_INTERVAL_MS) {
-        sendOutsideTempMessage(tempExt);
+        sendOutsideTempMessage(tempExt, coolantTemp);
         lastTempTime = now;
     }
 
@@ -429,7 +467,7 @@ void processRadioUpdates() {
     // =========================================================================
     // Contains: Average Speed, Elapsed Time, Distance to Empty
     // Average speed/elapsed time from trip computer (if available on CAN)
-    // Distance to Empty from Nissan CAN 0x54C
+    // Distance to Empty from active Nissan preset CAN 0x54C (not yet calibrated).
     if (now - lastRangeTime >= RANGE_INTERVAL_MS) {
         sendTripInfoMessage(dteValue, averageSpeed, elapsedTime);
         lastRangeTime = now;

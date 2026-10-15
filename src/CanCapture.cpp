@@ -7,11 +7,13 @@
  * Falls back to mock data generation when no config is present.
  */
 
+#include "UsbConsole.h"
 #include <ESP32-TWAI-CAN.hpp>
 #include "CanConfigProcessor.h"
 #include "GlobalData.h"
 #include "ConfigManager.h"
 #include "SerialCommand.h"
+#include "CanLogFormatter.h"
 
 #define LED_HEARTBEAT 8
 
@@ -21,10 +23,11 @@ extern CanConfigProcessor canProcessor;
 /**
  * @brief Process a received CAN frame using the configured processor
  * @param rxFrame Reference to the received CAN frame
+ * @param receivedAt Software dequeue timestamp in milliseconds
  */
-void handleCanCapture(CanFrame &rxFrame) {
+void handleCanCapture(const CanFrame& rxFrame, uint32_t receivedAt) {
     // Process frame through configurable processor
-    bool processed = canProcessor.processFrame(rxFrame);
+    bool processed = canProcessor.processFrame(rxFrame, receivedAt);
 
     // LED heartbeat on steering frame (0x002) for activity indication
     // This is kept regardless of configuration for visual feedback
@@ -34,17 +37,20 @@ void handleCanCapture(CanFrame &rxFrame) {
 
     // Log CAN frame if enabled via serial command
     if (isCanLogEnabled()) {
-        Serial.printf("RX 0x%03X [%d]: ", rxFrame.identifier, rxFrame.data_length_code);
-        for (int i = 0; i < rxFrame.data_length_code; i++) {
-            Serial.printf("%02X ", rxFrame.data[i]);
+        // Format a complete line before output; neither decoder nor logger mutates the frame.
+        char line[160];
+        if (formatCanFrameLog(rxFrame, receivedAt, line, sizeof(line))) {
+            Console.logLine(line, line[0] == 'O');
         }
-        Serial.println();
     }
 
     // Optional: Debug logging for unknown frames
     #ifdef DEBUG_CAN_UNKNOWN
     if (!processed) {
-        Serial.printf("[CAN] Unknown frame: 0x%03X\n", rxFrame.identifier);
+        char debugLine[48];
+        snprintf(debugLine, sizeof(debugLine), "[CAN] Unknown frame: 0x%03lX",
+                 static_cast<unsigned long>(rxFrame.identifier));
+        Console.logLine(debugLine);
     }
     #endif
 }

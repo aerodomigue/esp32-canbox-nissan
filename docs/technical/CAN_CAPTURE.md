@@ -1,6 +1,6 @@
 # CAN Capture - Technical Documentation
 
-This module handles passive listening on the vehicle **High Speed CAN bus** (Cabin network). It delegates frame processing to the `CanConfigProcessor`, which uses JSON configuration files to decode binary vehicle frames into normalized variables.
+This module reads the vehicle **High Speed CAN bus**. It delegates frame processing to the `CanConfigProcessor`, which uses JSON configuration files to decode binary vehicle frames into normalized variables. With `LOG ON`, the main loop also sends supported OBD service 01 queries for reference measurements; `LOG OFF` stops new queries.
 
 ---
 
@@ -30,29 +30,38 @@ The actual decoding logic (byte extraction, formulas, target mapping) is defined
 
 ## Decoded CAN Frames (Nissan Juke F15)
 
-The following table describes the CAN frames decoded by the default `NissanJukeF15.json` configuration:
+The following tables describe the corrected default `NissanJukeF15.json`.
+RPM and speed changes follow the [captured CAN/OBD evidence](../JUKE_F15_CAN_MAPPING.md),
+whose speed range remains limited. Steering, DTE, ambient temperature and
+odometer retain their unvalidated legacy interpretations.
 
 ### 1. Steering & Dynamics
 
 | CAN ID | Signal | Bytes | Formula | Unit | Notes |
 | --- | --- | --- | --- | --- | --- |
-| **0x002** | Steering Angle | [1-2] | NONE (raw INT16) | 0.1° | Signed, Big Endian. Center offset applied by ConfigManager |
-| **0x180** | Engine RPM | [0-1] | SCALE [1, 7, 0] | RPM | `raw / 7` |
-| **0x284** | Vehicle Speed | [0-1] | SCALE [1, 100, 0] | km/h | `raw / 100` (wheel speed sensor) |
+| **0x002** | Steering Angle | [1-2] | NONE (raw INT16) | Legacy angle assumption | Signed, Big Endian; scale, center and sign still to validate |
+| **0x180** | Engine RPM | [0-1] | SCALE [1, 8, 0] | RPM | Integer division; corroborated by OBD |
+| **0x180** | Brake pedal switch | [7] bit0 | BITMASK_EXTRACT [1, 0] | Raw boolean | Separate from parking brake; physical polarity needs checking |
+| **0x284** | Vehicle Speed | [4-5] | SCALE [1, 100, 0] | km/h | Integer dashboard value; fractional value retained for consumption distance; corroborated at low speed |
 
 ### 2. Instrument Cluster (CAN ID 0x5C5)
 
 | Byte | Signal | Formula | Notes |
 | --- | --- | --- | --- |
-| **[0]** | Fuel Level | MAP_RANGE [255, 0, 0, 45] | Inverted scale (255=empty, 0=full) mapped to 0-45L |
-| **[1-3]** | Odometer | NONE (UINT24) | Total km (24-bit Big Endian) |
+| **[0] bit2** | Handbrake | BITMASK_EXTRACT [4, 2] | Observed 1 = applied; exposed in `SYS DATA` |
+| **[1-3]** | Odometer | NONE (UINT24) | Legacy 24-bit Big Endian interpretation; unit unvalidated |
+
+Whole-byte fuel decoding has been removed. `fuelLevel` remains zero for
+compatibility while `canAuxData.fuelLevelValid` is false; this is an unavailable
+measurement, not an empty tank.
 
 ### 3. Power Management
 
 | CAN ID | Signal | Bytes | Formula | Unit | Notes |
 | --- | --- | --- | --- | --- | --- |
 | **0x6F6** | Battery Voltage | [0] | NONE (UINT8) | 0.1V | Raw value in decivolts (e.g., 141 = 14.1V). Converted to float by `writeToGlobalData()` |
-| **0x551** | Coolant Temp | [0] | SCALE [1, 1, -40] | °C | Used as exterior temp substitute |
+| **0x540** | External Temp | [0] | SCALE [1, 1, -40] | °C | Legacy ambient candidate; independent reference pending |
+| **0x551** | Coolant Temp | [0] | SCALE [1, 1, -40] | °C | Corroborated by OBD over 61–67 °C |
 
 ### 4. Body Control Module (CAN ID 0x60D)
 
@@ -93,14 +102,32 @@ Bytes [0-2] form a **24-bit status word** (Big Endian BITMASK). Individual bits 
 
 | Byte | Signal | Formula | Notes |
 | --- | --- | --- | --- |
-| **[6-7]** | Distance to Empty | SCALE [100, 283, 0] | `raw * 100 / 283` → estimated range in km |
+| **[6-7]** | Distance to Empty | SCALE [100, 338, 0] | Initial `raw * 100 / 338` hypothesis; 0x2DE replacement rejected |
 
-### 6. Fuel Consumption (CAN ID 0x580)
+### 6. Fuel counter and derived consumption (CAN ID 0x551)
 
 | Byte | Signal | Formula | Notes |
 | --- | --- | --- | --- |
-| **[2]** | Instant. Consumption | BITMASK_EXTRACT [127, 0] | Mask 0x7F, 0.1 L/100km units |
-| **[4]** | Average Consumption | NONE (UINT8) | 0.1 L/100km units |
+| **[1]** | `FUEL_COUNTER_RAW` | NONE (UINT8) | Raw 0–255, exposed unchanged as `FuelRaw`; increments feed the provisional consumption estimator |
+
+The former `0x580` instantaneous and average-consumption fields are absent
+from the Juke preset. Its root-level `fuelConsumption` settings instead
+convert modulo-256 increments of `0x551 B1` using **80 mm³/increment,
+provisional and not calibrated on this Juke**, and distance integrated from
+the fractional `0x284 B4–B5 /100` speed. The resulting radio value is
+`volume_mm3 / distance_m`, in 0.1 L/100 km.
+
+The instantaneous window is 1 s, with a zero display below 2 km/h when both
+sources are fresh. Average consumption includes stationary fuel use and
+starts after 100 m in the current session. Reload, reboot, a source gap
+over 500 ms or an implausible counter increment reinitialises the session.
+`FuelConsEstimated: 1` distinguishes the provisional coefficient from
+`FuelConsValid`, which only describes availability. UART `0x22` is omitted
+when instantaneous consumption is unavailable; `0x23` sends `0xFFFF` for
+an unavailable average and its five unavailable historical values. Mock
+output retains its synthetic sources. See the
+[configuration and limitations](../VEHICLE_PRESET_GUIDE.md#counter-based-fuel-consumption-fuelconsumption)
+and [radio packet format](RADIO_SEND.md).
 
 ---
 
@@ -115,7 +142,7 @@ Before any CAN frame is processed, `CanConfigProcessor::begin()` runs once durin
 ```
 1. LittleFS mounted
 2. Vehicle JSON file located (NVS → /vehicle.json → /NissanJukeF15.json)
-3. JSON parsed: name, isMock, vehicleParams, frames
+3. JSON parsed: name, isMock, vehicleParams, fuelConsumption, frames
 4. Vehicle switch detection:
    ├─ Same file as previously loaded → NVS calibration preserved, vehicleParams skipped
    └─ Different file (or first boot) → configReset() → vehicleParams applied → configSave()
@@ -127,21 +154,21 @@ The `vehicleParams` section in the JSON file allows a preset to carry its own ca
 ### Processing Pipeline
 
 ```
-CAN Frame received
-       │
-       ▼
-CanCapture.handleCanCapture()
-       │
-       ├─► CanConfigProcessor.processFrame()
-       │       │
-       │       ├─► findFrameConfig(canId)     → lookup JSON config
-       │       ├─► extractRawValue()           → read bytes (BE/LE)
-       │       ├─► applyFormula()              → SCALE / MAP_RANGE / BITMASK
-       │       └─► writeToGlobalData()         → update global variables
-       │
-       ├─► LED toggle on 0x002 (heartbeat)
-       │
-       └─► Serial log if LOG ON
+main: readFrame(frame, 0), receivedAt = millis()
+  │
+  ├─► CanCapture.handleCanCapture(frame, receivedAt)
+  │     ├─► CanConfigProcessor.processFrame()
+  │     │     ├─► reject unsupported flags/IDs/DLC
+  │     │     ├─► findFrameConfig(), validate ALL configured field lengths
+  │     │     └─► extractRawValue(), applyFormula(), writeToGlobalData()
+  │     ├─► LED toggle on 0x002
+  │     └─► format unchanged frame: RX or ODB RAW_RX, if LOG ON
+  │
+  ├─► ObdCalibration.receive(frame, receivedAt)
+  │     └─► ODB SUPPORTED / RX / NEGATIVE for matching pending queries
+  │
+  └─► ObdCalibration.tick(millis()), after draining the receive queue
+        └─► discovery, supported service 01 queries and timeouts
 ```
 
 ### Activity Monitoring
@@ -150,7 +177,8 @@ CanCapture.handleCanCapture()
 
 ### Non-blocking Design
 
-- The `handleCanCapture()` function processes one frame at a time to avoid blocking the main loop.
+- The main loop uses `readFrame(frame, 0)`, drains at most 32 frames per iteration and uses a 128-frame receive queue. USB output can still block; driver missed-frame counters are logged.
+- Standard 11-bit data frames are decoded only after all configured fields pass DLC validation. Extended and RTR frames remain visible in the raw log without updating decoded vehicle data.
 - All decoded values are stored in global variables (defined in `GlobalData.cpp`) for access by the radio transmission module.
 
 ### Debug Logging
@@ -158,10 +186,20 @@ CanCapture.handleCanCapture()
 When CAN logging is enabled (`LOG ON` via serial), the system outputs each received CAN frame:
 
 ```
-RX 0x180 [8]: 00 00 45 6A 7A 00 32 10
-RX 0x284 [8]: 00 00 00 2D 00 00 D6 5C
-RX 0x60D [8]: 08 06 00 00 00 00 00 00
+ODB TX t_ms=1000 seq=2 can_id=0x7E0 service=0x01 pid=0x0C status=queued data=02 01 0C 00 00 00 00 00
+RX 0x180 [8]: 14 18 00 00 00 00 00 00 | t_ms=1008 ext=0 rtr=0
+ODB RAW_RX 0x7E8 [8]: 04 41 0C 0A 0C 00 00 00 | t_ms=1008 ext=0 rtr=0
+ODB RX t_ms=1008 seq=2 request_id=0x7E0 ecu=0x7E8 pid=0x0C name=rpm value=643.000 unit=rpm latency_ms=8
 ```
+
+The example is synthetic. Payload bytes are unchanged; `t_ms` is software
+dequeue time, not a hardware bus timestamp. All diagnostic records begin with
+the requested `ODB` prefix. See [calibration capture and comparison](../OBD_CALIBRATION.md)
+for capabilities discovery, units, timeouts and host analysis commands.
+
+Logging is disabled at boot. `LOG OFF` stops capture and new OBD requests;
+mock mode does not query ECUs, and OTA pauses polling. OBD references are
+logged separately and never overwrite decoded vehicle data or the preset.
 
 ---
 
@@ -176,13 +214,14 @@ RX 0x60D [8]: 08 06 00 00 00 00 00 00
      0x180            Delegates to               defines how           variables
      0x284            processor                  to decode             Sends to radio
      0x5C5                                       each frame
+     0x540
      0x551
      0x60D            Output variables:
      0x6F6            currentSteer, engineRPM, vehicleSpeed,
-     0x54C            fuelLevel, currentOdo, voltBat, tempExt,
-     0x580            currentDoors, headlightsOn, highBeamOn,
+     0x54C            currentOdo, voltBat, tempExt,
+                      currentDoors, headlightsOn, highBeamOn,
                       parkingLightsOn, dteValue,
-                      fuelConsumptionInst, fuelConsumptionAvg,
+                      coolantTemp, canAuxData (states/raw counter/availability),
                       lastLeftIndicatorTime, lastRightIndicatorTime
 ```
 

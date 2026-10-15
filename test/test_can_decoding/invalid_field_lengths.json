@@ -1,0 +1,32 @@
+{
+  "name": "Invalid field lengths",
+  "isMock": false,
+  "frames": [
+    {
+      "canId": "0x180",
+      "fields": [
+        {
+          "target": "ENGINE_RPM",
+          "startByte": 0,
+          "byteCount": 0,
+          "byteOrder": "BE",
+          "dataType": "UINT16",
+          "formula": "NONE"
+        }
+      ]
+    },
+    {
+      "canId": "0x284",
+      "fields": [
+        {
+          "target": "VEHICLE_SPEED",
+          "startByte": 255,
+          "byteCount": 2,
+          "byteOrder": "BE",
+          "dataType": "UINT16",
+          "formula": "NONE"
+        }
+      ]
+    }
+  ]
+}

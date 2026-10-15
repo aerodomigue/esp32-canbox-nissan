@@ -1,0 +1,106 @@
+{
+  "capture": "canlog_20261015_220243_672_5336771892799835140.txt",
+  "capture_sha256": "5e38844268c97cccfb99e7680809ce2ec862f41e06e30b80fb3d703fa562e405",
+  "RX": 8441,
+  "ODB_RAW_RX": 14,
+  "first_rx_ms": 283215,
+  "last_rx_ms": 289755,
+  "can_60D_frames": 68,
+  "first_byte_counts": {
+    "0x00": 21,
+    "0x06": 32,
+    "0x04": 15
+  },
+  "result": "PASS",
+  "firmware_commit": "3ffe915",
+  "profile_sha256": "59af82eb7da853f46741fd2bbc937c871bd9286d8c5761c458e7d90b054a2440",
+  "checked_light_frames": 68,
+  "transitions": [
+    {
+      "source_line": 56,
+      "t_ms": 283254,
+      "b0_hex": "0x00",
+      "headlights": 0,
+      "parking": 0,
+      "high_beam": 0,
+      "sys_data": "Lights:   H=0 P=0 HB=0 L=0 R=0",
+      "uart_mask_hex": "0x00"
+    },
+    {
+      "source_line": 1469,
+      "t_ms": 284341,
+      "b0_hex": "0x06",
+      "headlights": 1,
+      "parking": 1,
+      "high_beam": 0,
+      "sys_data": "Lights:   H=1 P=1 HB=0 L=0 R=0",
+      "uart_mask_hex": "0xC0"
+    },
+    {
+      "source_line": 2802,
+      "t_ms": 285370,
+      "b0_hex": "0x04",
+      "headlights": 0,
+      "parking": 1,
+      "high_beam": 0,
+      "sys_data": "Lights:   H=0 P=1 HB=0 L=0 R=0",
+      "uart_mask_hex": "0x80"
+    },
+    {
+      "source_line": 3993,
+      "t_ms": 286288,
+      "b0_hex": "0x06",
+      "headlights": 1,
+      "parking": 1,
+      "high_beam": 0,
+      "sys_data": "Lights:   H=1 P=1 HB=0 L=0 R=0",
+      "uart_mask_hex": "0xC0"
+    },
+    {
+      "source_line": 6068,
+      "t_ms": 287885,
+      "b0_hex": "0x04",
+      "headlights": 0,
+      "parking": 1,
+      "high_beam": 0,
+      "sys_data": "Lights:   H=0 P=1 HB=0 L=0 R=0",
+      "uart_mask_hex": "0x80"
+    },
+    {
+      "source_line": 6657,
+      "t_ms": 288334,
+      "b0_hex": "0x06",
+      "headlights": 1,
+      "parking": 1,
+      "high_beam": 0,
+      "sys_data": "Lights:   H=1 P=1 HB=0 L=0 R=0",
+      "uart_mask_hex": "0xC0"
+    },
+    {
+      "source_line": 7226,
+      "t_ms": 288775,
+      "b0_hex": "0x00",
+      "headlights": 0,
+      "parking": 0,
+      "high_beam": 0,
+      "sys_data": "Lights:   H=0 P=0 HB=0 L=0 R=0",
+      "uart_mask_hex": "0x00"
+    }
+  ],
+  "scope": "Native replay of production setup/loop, decoder, SYS DATA USB response and UART serializer. Simulated USB/CAN peripherals; no direct observation of device SYS DATA or UART. Actual installed firmware and LittleFS profile are unknown.",
+  "firmware_modified": false,
+  "validation": {
+    "method": "All RX frames replayed into production setup()/loop() using the native_stream mocks and the repository Juke preset. SYS DATA requested after each 0x60D frame.",
+    "checks": [
+      "68 decoded lighting states match CAN bit masks",
+      "68 complete SYS DATA Lights lines match expected states",
+      "68 latest UART 0x7D/01 masks match expected states",
+      "UART packet headers, lengths and checksums valid",
+      "No rejected USB command responses or simulated blocking writes"
+    ],
+    "high_beam_activation_observed": false,
+    "actual_device_sys_data_captured": false,
+    "actual_device_uart_captured": false,
+    "manager_inspected": false
+  }
+}

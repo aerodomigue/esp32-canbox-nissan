@@ -1,5 +1,7 @@
 #include "GlobalData.h"
 
+CanAuxData canAuxData;
+
 // =============================================================================
 // VEHICLE DATA STORAGE (memory allocation with safe defaults)
 // =============================================================================
@@ -16,7 +18,7 @@ uint8_t vehicleSpeed = 0;
 /** Door status bitmask - 0 = all doors closed */
 uint8_t currentDoors = 0;
 
-/** Fuel level in liters (default 0-45L for Juke F15) - 0 = empty */
+/** Fuel level in liters; consult canAuxData.fuelLevelValid before interpreting. */
 uint8_t fuelLevel = 0;
 
 /** Battery voltage - 0.0V until first CAN reading */
@@ -28,8 +30,11 @@ int16_t dteValue = 0;
 /** Average fuel consumption (reserved) - 0.0 = not calculated */
 float fuelConsoMoy = 0.0;
 
-/** Temperature in °C (from coolant sensor) - 0 = unknown */
+/** External/ambient temperature in °C - 0 = unknown */
 int8_t tempExt = 0;
+
+/** Engine coolant temperature in °C - 0 = unknown */
+int8_t coolantTemp = 0;
 
 /** Odometer (Total Mileage) in km - 0 = unknown */
 uint32_t currentOdo = 0;
@@ -63,10 +68,10 @@ unsigned long lastRightIndicatorTime = 0;
 // FUEL CONSUMPTION
 // =============================================================================
 
-/** Instantaneous fuel consumption (0.1 L/100km units) - 0 = unknown */
+/** Instantaneous 0.1 L/100km; availability is in canAuxData, not the value. */
 uint16_t fuelConsumptionInst = 0;
 
-/** Average fuel consumption (0.1 L/100km units) - 0 = unknown */
+/** Average 0.1 L/100km; availability is in canAuxData, not the value. */
 uint16_t fuelConsumptionAvg = 0;
 
 // =============================================================================
@@ -87,6 +92,7 @@ uint16_t elapsedTime = 0;
  * @brief Reset all vehicle data to default values
  */
 void resetVehicleData() {
+    canAuxData = {};
     // Vehicle data
     currentSteer = 0;
     engineRPM = 0;
@@ -96,7 +102,6 @@ void resetVehicleData() {
     voltBat = 0.0;
     dteValue = 0;
     fuelConsoMoy = 0.0;
-    tempExt = 0;
     currentOdo = 0;
 
     // Lights & indicators
@@ -107,6 +112,10 @@ void resetVehicleData() {
     parkingLightsOn = false;
     lastLeftIndicatorTime = 0;
     lastRightIndicatorTime = 0;
+
+    // Temperatures
+    tempExt = 0;
+    coolantTemp = 0;
 
     // Fuel consumption
     fuelConsumptionInst = 0;
