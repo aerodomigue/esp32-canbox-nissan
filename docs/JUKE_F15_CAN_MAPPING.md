@@ -9,6 +9,35 @@ preset assessed in the evidence** is `data/NissanJukeF15.json` at revision
 `cd02abf`; its hash is included in the results. The published JSON/CSV
 statistics remain comparisons against that historical snapshot.
 
+## Sensors confirmed on the vehicle
+
+Updated **15 October 2026**, following confirmation from the owner of this
+2011 Juke F15 1.6 DIG-T manual. This records observed operation on their
+vehicle; capture evidence and its limits remain documented below.
+
+| Data | Current status | Reference |
+| --- | --- | --- |
+| Vehicle speed | Confirmed | `0x284 B4–B5 BE /100`; OBD comparisons available |
+| Odometer (km) | Confirmed | `0x5C5 B1–B3 BE`; owner confirmation |
+| Engine RPM | Confirmed | `0x180 B0–B1 BE /8`; OBD comparisons available |
+| Steering / dynamic guidelines | Confirmed | `0x002 B0–B1 I16LE`; owner's settings: `steerScale=500`, `steerOffset=0`, `steerInvert=1` |
+| Indicators | Confirmed | Left/right, `0x60D B1 bit5/bit6` |
+| Doors and trunk | Confirmed | Existing `0x60D` mapping; owner confirmation |
+| Handbrake | Confirmed | `0x5C5 B0 bit2`; state exposed through `SYS DATA` |
+| Lights | Confirmed on the CANBox side | Parking lights, low beam and high beam; Manager parsing checks documented in the lighting section |
+| Battery voltage | Confirmed | `0x6F6 B0 /10`; consistent OBD comparison |
+| Engine coolant temperature | Confirmed | `0x551 B0−40`; owner confirmation and OBD comparison |
+
+**Outside temperature is not validated**: `0x540 B0−40` gives 28 °C in the
+captures, versus approximately 20 °C reported by the owner. Do not confuse
+this signal with the confirmed engine coolant temperature.
+
+Other data remains **approximate, unvalidated or unavailable**: instantaneous
+and average consumption need calibration; range and brake pedal need checks;
+fuel level and reverse/gear need identification. Available raw values or
+correlations do not establish these functions; additional captures or
+decoding work are still needed.
+
 ## Application in the current firmware and preset
 
 The repository's [Juke preset](../data/NissanJukeF15.json) applies the
@@ -17,7 +46,7 @@ consumption estimate:
 
 | Target | CAN field / conversion | Scope and limitation |
 | --- | --- | --- |
-| `STEERING` | `0x002 B0–B1 I16LE`, raw 0.1° units | Corrected extraction; `scale=1000`, `offset=0`, inversion; UART `0x29` bounded to ±500 |
+| `STEERING` | `0x002 B0–B1 I16LE`, raw 0.1° units | Corrected extraction; preset `scale=1000`, confirmed owner setting `500`; `offset=0`, inversion; UART `0x29` bounded to ±500 |
 | `ENGINE_RPM` | `0x180 B0–B1 BE /8` | Integer rpm; supported by the OBD comparisons below |
 | `VEHICLE_SPEED` | `0x284 B4–B5 BE /100` | Integer km/h; corroborated over the captured low-speed range |
 | `HANDBRAKE` | `0x5C5 B0 bit2` | `SYS DATA` → `Handbrake`; observed 1 = applied |
@@ -50,7 +79,8 @@ frame is received. Availability resets when a profile is loaded; it indicates
 reception, not physical calibration or a freshness timeout for these raw
 fields. Existing `RX` and `ODB` records, OBD polling and indicator handling
 remain unchanged. DTE, ambient temperature and odometer retain
-their legacy mappings and the limitations documented below.
+their legacy mappings. The owner now confirms the odometer; range and
+outside temperature remain unvalidated.
 
 The [applied-preset replay](vehicle/nissan-juke-f15/evidence/20261014-210614-applied-preset.json)
 uses production integer divisions on the same capture: mean absolute error
@@ -75,19 +105,20 @@ derivative correlates with VBOX rotational speed `B2×4 °/s` at 0.999162 over
 measure physical stops or the straight-ahead zero. The former B1–B2 read
 mixed angle and rotational speed.
 
-The preset retains raw tenths of a degree. Radio output applies
-`steerScale=1000`, `steerOffset=0`, `steerInvert=true`:
-`UART = clamp(-trunc(raw/10), -500, 500)`. The limit matches the `0x29`
+The preset retains raw tenths of a degree. The owner confirmed operation
+with `steerScale=500`, `steerOffset=0`, `steerInvert=true`:
+`UART = clamp(-trunc(raw/20), -500, 500)`. The limit matches the `0x29`
 decoder in the [examined APK](technical/RADIO_SEND.md#1-steering-wheel-angle-command-0x29).
-One UART unit per degree is the accepted starting calibration for this vehicle;
-guideline direction and amplitude still need checking on the head unit.
+The starting value of `1000` made the guidelines turn too far; `500` halves
+that gain. The repository JSON retains `1000`; the calibration used on the
+vehicle is stored separately in NVS.
 Toyota CAN `0x025` and its possible factor do not establish this UART unit.
 
 When updating the same preset, explicitly update the saved calibration after
 transferring the JSON and running `CAN LOAD NissanJukeF15.json`:
 
 ```text
-CFG SET steerScale 1000
+CFG SET steerScale 500
 CFG SET steerOffset 0
 CFG SET steerInvert 1
 CFG SAVE
@@ -184,6 +215,11 @@ capture, not universal validation. “Candidate” still requires an independent
 measurement. “Contradicted” concerns the preset interpretation, not whether
 the signal exists in the vehicle.
 
+This table retains the limitations of the 14 October capture analysis.
+The owner's 15 October confirmations, summarised at the top of this page,
+complement this evidence without turning historical captures into new
+physical tests.
+
 | Signal | Field / formula assessed | Evidence and status | Difference from baseline preset (`cd02abf`) |
 | --- | --- | --- | --- |
 | Engine speed | `0x180 B0–B1 BE /8`; copy `0x1F9 B2–B3 /8` | **Corroborated**: 36 references within 5 ms, mean absolute error 7.55 rpm, maximum 28.125; OBD 612.5–1,762.5 | `/7` gives a mean error of 131.22 rpm |
@@ -199,9 +235,9 @@ the signal exists in the vehicle.
 | Steering wheel | Current: `0x002 B0–B1 I16LE /10`, ° | **Extraction strongly supported** by VBOX rotational speed; zero, stops and display still to check | Former `B1–B2 I16BE` mixed angle and rotational speed |
 | Indicators | `0x60D B1 bit5` left, `bit6` right | Racelogic source agrees, operation confirmed by owner | Neither bit active in the 720 frames of this capture; dashboard fix does not recalibrate mapping |
 | Lights | `0x60D B0 bit1/bit2`, `B1 bit3` | External definition agrees with preset light fields | No annotated lighting change; distinguish command, switch and actual state |
-| Doors | Bits of `0x60D B0` | **Validate each door separately**; left/right/driver convention unconfirmed | Driver/passenger labels depend on the vehicle; do not infer a door from an isolated B2 transition |
+| Doors | Bits of `0x60D B0` | **Operation confirmed by the owner**; the historical capture does not isolate every door | Existing mapping retained; do not infer a door from an isolated B2 transition |
 | Outside temperature | `0x540 B0−40` | **Not physically validated**: 718 constant values at 28 °C, no ambient reference | `01 46` not advertised; requires an independent reading |
-| Odometer | `0x5C5 B1–B3 BE` | **Candidate**: 719 constant values at 246,945, no associated cluster photograph/reading | A realistic value establishes neither unit nor offset |
+| Odometer | `0x5C5 B1–B3 BE` | **Operation confirmed by the owner**; historical capture: 719 constant values at 246,945 | Owner confirmation complements the capture, which alone did not establish the unit or offset |
 
 The 35 speed references include **23 zeros**. For the 12 nonzero references,
 the B4–B5 candidate's mean absolute error is **0.617 km/h**; the overall mean must
@@ -421,10 +457,10 @@ Timestamps are assigned by ESP32 software; sensor latency and ECU filtering
 are unknown. OBD references are roughly two seconds apart per parameter
 and are not simultaneous.
 
-To resolve remaining fields: separate, timestamped parking-brake, door,
-light and indicator actions; centred steering followed by known angles
-and directions; cluster readings for fuel level, odometer, range and units;
-consumption parameter capture with an independent reference, and a separate
-brake-pedal action to verify `0x180 B7 bit0`. Estimated
+To resolve remaining fields: synchronised cluster and outside-temperature
+readings, fuel level and range; consumption capture with an independent
+reference; a separate brake-pedal action to verify `0x180 B7 bit0`, then a
+timestamped neutral/reverse sequence. Confirmed functions remain usable;
+additional annotated captures can extend their evidence to other ranges. Estimated
 manoeuvre distances do not replace a measurement. Additional OBD readings
 and further preset changes still require their own implementation and validation.

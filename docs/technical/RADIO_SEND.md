@@ -89,8 +89,10 @@ Byte 1: Angle MSB
 - Scale, offset and sign inversion come from ConfigManager settings.
 - F15 input: signed LE `0x002 B0–B1`, in tenths of a degree. With scale 1000,
   offset 0 and inversion enabled, output is `clamp(-trunc(raw / 10), -500, 500)`.
-  This chooses one UART unit per degree as a starting calibration; check the
-  visible direction and amplitude on the owner's head unit.
+  This was the starting calibration. On 15 October 2026, the owner reported
+  that it turned the guidelines too far and confirmed scale **500**, keeping
+  offset 0 and inversion: `clamp(-trunc(raw / 20), -500, 500)`. This is the
+  saved vehicle calibration; the repository JSON still defaults to 1000.
 - Used for reverse camera dynamic guidelines
 
 Decoder evidence: `com.syu.ms` 26.0507 / versionCode 2126050716, SHA256

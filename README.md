@@ -38,22 +38,29 @@ The project started as a custom solution for the **Nissan Juke F15**, but has si
 
 ### Feature Status
 
+Status as of **15 October 2026**, based on the owner's checks and feedback
+on their **2011 Juke F15 1.6 DIG-T manual**. The ten confirmed functions
+below work on this vehicle. Other data remains approximate, unvalidated
+or unavailable, requiring further captures, calibration or decoding work.
+
 | Feature | Status | Notes |
 | --- | --- | --- |
-| Engine RPM | Corrected in the preset | `0x180` bytes 0–1 BE `/8`, corroborated by OBD |
-| Vehicle Speed | Corrected in the preset | `0x284` bytes 4–5 BE `/100`; OBD corroboration covers low speed |
+| Vehicle Speed | ✅ Operation confirmed | `0x284` bytes 4–5 BE `/100`; also corroborated by OBD at low speed |
+| Odometer (km) | ✅ Operation confirmed | `0x5C5` bytes 1–3 BE; owner confirmation of the odometer |
+| Engine RPM | ✅ Operation confirmed | `0x180` bytes 0–1 BE `/8`; also corroborated by OBD |
+| Steering / Dynamic Guidelines | ✅ Operation confirmed | `0x002` signed LE B0–B1, 0.1°; owner's settings: `steerScale=500`, `steerOffset=0`, inversion enabled |
+| Indicators | ✅ Operation confirmed | Left/right; owner feedback after the dashboard state fix |
+| Doors and Trunk | ✅ Operation confirmed | Owner confirmation; existing mapping retained |
+| Handbrake | ✅ Operation confirmed | `0x5C5[0] & 0x04`; available in `SYS DATA` |
+| Lights | ✅ Operation confirmed on the CANBox side | Parking lights, low beam and high beam; the Manager parking-light display check is [documented](docs/protocols/USB_SERIAL_PROTOCOL.md#lights-dashboard-field) |
+| Battery Voltage | ✅ Operation confirmed | Also consistent with OBD: mean absolute difference 0.139 V, potentially different measurement points |
+| Engine Coolant Temperature | ✅ Operation confirmed | Owner confirmation and `0x551[0]−40` extraction corroborated by OBD; distinct from outside temperature |
 | Fuel Tank Level | Unavailable in the Juke preset | False `0x5C5[0]` gauge removed; `FuelValid: 0` distinguishes the compatibility value `0 L` from a measurement |
-| Battery Voltage | Consistent with OBD | Mean absolute difference 0.139 V; potentially different measurement points |
-| Steering / Dynamic Guidelines | F15 extraction corrected | `0x002` signed LE B0–B1, 0.1°; UART `0x29` bounded to ±500, display amplitude and direction still to check |
-| Door Status | Feature implemented | Verify each door/bit correspondence with separate actions |
-| Indicators | ✅ Operation confirmed | Owner feedback after the dashboard state fix |
-| Lights | Feature implemented | Headlights, high beam, parking lights; no annotated sequence in the latest capture |
-| Handbrake | Decoded in the preset | `0x5C5[0] & 0x04`, corroborated by Juke source and owner maneuver; available in `SYS DATA` |
-| Brake pedal | Raw switch bit decoded | `0x180[7] & 0x01`; action and polarity still need a separate vehicle check |
-| External Temperature | Calibration pending | `0x540[0]−40`; no independent reference in the log |
-| Instant Fuel Consumption | Provisional estimate | `0x551[1]` counter increments and `0x284` speed; 80 mm³/increment awaits Juke calibration; 1 s window |
-| Average Fuel Consumption | Provisional session estimate | Available after 100 m; includes stationary fuel use; resets on reload, restart or source discontinuity |
-| Distance to Empty | Unit unverified | Initial CAN 0x54C mapping restored; dashboard reference needed |
+| Brake pedal | Unvalidated | `0x180[7] & 0x01`; action and polarity still need a separate vehicle check |
+| External Temperature | Unvalidated, incorrect value reported | `0x540[0]−40` gives 28 °C in captures; the owner reports approximately 20 °C |
+| Instant Fuel Consumption | Approximate, calibration pending | `0x551[1]` counter and `0x284` speed; provisional 80 mm³/increment; 1 s window |
+| Average Fuel Consumption | Approximate, calibration pending | Session estimate available after 100 m; same provisional coefficient; resets on reload, restart or source discontinuity |
+| Distance to Empty | Unvalidated | CAN `0x54C` mapping; unit and cluster reference still to verify |
 
 > **Note:** Documentation for the Raise/Toyota RAV4 protocol used by Android head units is scarce. Some features are still being reverse-engineered due to lack of official protocol specifications.
 
@@ -314,14 +321,17 @@ also apply these settings if this preset was already selected: reloading
 the same filename preserves the existing NVS calibration.
 
 ```text
-CFG SET steerScale 1000
+CFG SET steerScale 500
 CFG SET steerOffset 0
 CFG SET steerInvert 1
 CFG SAVE
 ```
 
-This sends one UART unit per F15 degree, inverted and bounded to ±500.
-The amplitude setting still needs a visual check on the head unit's guidelines.
+The owner confirmed `500`: `1000` made the guidelines turn too far.
+This applies `UART = clamp(-trunc(raw/20), -500, 500)`, or half a UART unit
+per F15 degree before rounding. The repository JSON retains its starting
+value of `1000`; the commands above save the calibration used on this
+vehicle without changing the file.
 
 ---
 
@@ -329,7 +339,7 @@ The amplitude setting still needs a visual check on the head unit's guidelines.
 
 | Data | CAN ID | Send Rate | Notes |
 | --- | --- | --- | --- |
-| Steering Angle | 0x002 | 200ms | Signed LE B0–B1 in 0.1°; `scale=1000`, `offset=0`, inversion; UART output bounded to ±500 |
+| Steering Angle | 0x002 | 200ms | Confirmed with `scale=500`, `offset=0`, inversion; signed LE B0–B1 in 0.1°; UART output bounded to ±500 |
 | Engine RPM | 0x180 | 333ms | Bytes 0–1, big endian, raw / 8; integer RPM |
 | Vehicle Speed | 0x284 | 500ms | Bytes 4–5, big endian, raw / 100; integer km/h |
 | Handbrake | 0x5C5 | On `SYS DATA` request | Byte 0 bit 2; `unknown` before the first configured frame |
@@ -338,11 +348,12 @@ The amplitude setting still needs a visual check on the head unit's guidelines.
 | Fuel Level | — | — | No Juke source; compatibility `Fuel: 0 L` with `FuelValid: 0` |
 | Battery Voltage | 0x6F6 | — | Alternator output |
 | External Temperature | 0x540 | 5000ms | Legacy byte 0 − 40; physical reference pending |
-| Coolant Temperature | 0x551 | 5000ms | Sent in CMD 0x28 byte 0 as an undocumented, unverified hypothesis |
+| Coolant Temperature | 0x551 | 5000ms | Confirmed `0x551[0]−40` measurement; current UART placement in CMD 0x28 B0 is not established by a specification |
 | Door Status | 0x60D | 250ms | All doors + trunk (or on change) |
+| Indicators / Lights | 0x60D | 200ms or on change | Operation confirmed; UART `0x7D/01` and the `SYS DATA` `Lights:` line |
 | Distance to Empty | 0x54C | 5000ms | Initial bytes 6–7, big endian, raw * 100 / 338; calibration pending |
 | Instant / Average Fuel Consumption | 0x551 + 0x284 | 1000ms / 5000ms | Provisional 0.1 L/100 km; unavailable instant omitted, unavailable average `0xFFFF`; [settings and limits](docs/VEHICLE_PRESET_GUIDE.md#counter-based-fuel-consumption-fuelconsumption) |
-| Odometer | 0x5C5 | 10000ms | Legacy bytes 1–3 BE (24-bit); units unvalidated |
+| Odometer | 0x5C5 | 10000ms | Bytes 1–3 BE (24-bit); operation confirmed by the owner |
 
 ---
 

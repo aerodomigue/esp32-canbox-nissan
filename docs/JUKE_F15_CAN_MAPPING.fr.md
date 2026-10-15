@@ -10,6 +10,35 @@ preuves** est `data/NissanJukeF15.json` à la révision `cd02abf`, dont
 l'empreinte figure dans les résultats. Les statistiques JSON/CSV publiées
 restent des comparaisons avec cet état historique.
 
+## Capteurs confirmés sur le véhicule
+
+Mise à jour du **15 octobre 2026**, sur confirmation du propriétaire de ce
+Juke F15 2011 1.6 DIG-T manuel. Il s'agit du fonctionnement observé sur son
+véhicule ; les preuves de capture et leurs limites sont conservées plus bas.
+
+| Donnée | Statut actuel | Référence |
+| --- | --- | --- |
+| Vitesse | Confirmée | `0x284 B4–B5 BE /100` ; rapprochements OBD disponibles |
+| Kilométrage total (km) | Confirmé | `0x5C5 B1–B3 BE` ; confirmation utilisateur |
+| Régime moteur (tr/min) | Confirmé | `0x180 B0–B1 BE /8` ; rapprochements OBD disponibles |
+| Volant / lignes de guidage | Confirmés | `0x002 B0–B1 I16LE` ; réglage utilisateur `steerScale=500`, `steerOffset=0`, `steerInvert=1` |
+| Clignotants | Confirmés | Gauche/droit, `0x60D B1 bit5/bit6` |
+| Portes et coffre | Confirmés | Mapping `0x60D` existant ; confirmation utilisateur |
+| Frein à main | Confirmé | `0x5C5 B0 bit2` ; état exposé par `SYS DATA` |
+| Feux | Confirmés côté boîtier | Position, croisement et pleins phares ; contrôle du parsing Manager documenté dans la section éclairage |
+| Tension batterie | Confirmée | `0x6F6 B0 /10` ; comparaison avec l'OBD cohérente |
+| Température moteur | Confirmée | `0x551 B0−40` ; confirmation utilisateur et comparaison OBD |
+
+La **température extérieure n'est pas validée** : `0x540 B0−40` donne 28 °C
+dans les captures, contre environ 20 °C indiqués par le propriétaire. Ne pas
+confondre ce signal avec la température moteur confirmée.
+
+Le reste demeure **approximatif, non validé ou indisponible** : consommations
+instantanée/moyenne à calibrer, autonomie et pédale de frein à vérifier,
+niveau de carburant et marche arrière/rapport à identifier. Les données
+brutes ou corrélations disponibles ne suffisent pas à valider ces fonctions ;
+des captures supplémentaires ou du travail de décodage restent nécessaires.
+
 ## Application dans le firmware et le preset actuels
 
 Le [preset Juke du dépôt](../data/NissanJukeF15.json) applique les corrections
@@ -18,7 +47,7 @@ consommation :
 
 | Cible | Champ CAN / conversion | Portée et limite |
 | --- | --- | --- |
-| `STEERING` | `0x002 B0–B1 I16LE`, brut en 0,1° | Lecture corrigée ; `scale=1000`, `offset=0`, inversion ; UART `0x29` limité à ±500 |
+| `STEERING` | `0x002 B0–B1 I16LE`, brut en 0,1° | Lecture corrigée ; preset `scale=1000`, réglage utilisateur confirmé `500` ; `offset=0`, inversion ; UART `0x29` limité à ±500 |
 | `ENGINE_RPM` | `0x180 B0–B1 BE /8` | Tr/min entiers ; étayé par les rapprochements OBD ci-dessous |
 | `VEHICLE_SPEED` | `0x284 B4–B5 BE /100` | Km/h entiers ; corroboré sur la plage de faible vitesse capturée |
 | `HANDBRAKE` | `0x5C5 B0 bit2` | `SYS DATA` → `Handbrake` ; état observé 1 = serré |
@@ -54,8 +83,9 @@ trame CAN configurée. La disponibilité est réinitialisée au chargement d'un
 profil ; elle indique une réception, pas une calibration physique ni un
 timeout de fraîcheur pour ces champs bruts. Les lignes `RX` et `ODB`, le
 polling OBD et le traitement des clignotants restent inchangés. Autonomie,
-température extérieure et kilométrage gardent leurs mappings
-historiques et les limites documentées ci-dessous.
+température extérieure et kilométrage gardent leurs mappings historiques.
+Le kilométrage est désormais confirmé par le propriétaire ; autonomie et
+température extérieure restent non validées.
 
 Le [rejeu du preset appliqué](vehicle/nissan-juke-f15/evidence/20261014-210614-applied-preset.json)
 utilise les divisions entières de production sur la même capture : erreur
@@ -82,19 +112,20 @@ de 0,999162 sur 7 180 intervalles. Cela étaye fortement l'extraction et son
 échelle ; ce ne sont pas des mesures des butées ni du zéro roues droites.
 L'ancienne lecture B1–B2 mélangeait l'angle et la vitesse de rotation.
 
-Le preset conserve le brut en dixièmes de degré, puis la sortie applique
-`steerScale=1000`, `steerOffset=0`, `steerInvert=true` :
-`UART = clamp(-trunc(raw/10), -500, 500)`. Le plafond correspond au décodeur
+Le preset conserve le brut en dixièmes de degré. Le propriétaire a confirmé
+le fonctionnement avec `steerScale=500`, `steerOffset=0`, `steerInvert=true` :
+`UART = clamp(-trunc(raw/20), -500, 500)`. Le plafond correspond au décodeur
 `0x29` de l'[APK étudié](technical/RADIO_SEND.md#1-steering-wheel-angle-command-0x29).
-Une unité UART par degré est un réglage de départ accepté pour ce véhicule ;
-le sens et l'amplitude des lignes de guidage restent à vérifier sur l'autoradio.
+Le réglage de départ `1000` faisait trop tourner les lignes de guidage ;
+`500` divise ce gain par deux. Le JSON du dépôt conserve `1000` : la calibration
+utilisée sur le véhicule est enregistrée séparément en NVS.
 La trame CAN Toyota `0x025` et son éventuel facteur ne définissent pas l'unité UART.
 
 Lors d'une mise à jour du même preset, appliquer explicitement la calibration
 mémorisée, après le transfert du JSON et `CAN LOAD NissanJukeF15.json` :
 
 ```text
-CFG SET steerScale 1000
+CFG SET steerScale 500
 CFG SET steerOffset 0
 CFG SET steerInvert 1
 CFG SAVE
@@ -191,6 +222,11 @@ dans cette capture, et non validation universelle. « Candidat » exige encore
 une mesure indépendante. « Contredit » concerne l'interprétation du preset,
 pas l'existence du signal dans le véhicule.
 
+Ce tableau conserve les limites de l'analyse des captures du 14 octobre.
+Les confirmations utilisateur du 15 octobre, résumées en tête de page,
+complètent ces preuves sans transformer les anciennes captures en nouveaux
+essais physiques.
+
 | Signal | Champ / formule étudiée | Preuve et état | Écart avec le preset historique (`cd02abf`) |
 | --- | --- | --- | --- |
 | Régime | `0x180 B0–B1 BE /8` ; copie `0x1F9 B2–B3 /8` | **Corroboré** : 36 références à ≤5 ms, erreur absolue moyenne 7,55 tr/min, maximum 28,125 ; OBD 612,5–1 762,5 | `/7` donne une erreur moyenne de 131,22 tr/min |
@@ -206,9 +242,9 @@ pas l'existence du signal dans le véhicule.
 | Volant | Actuel : `0x002 B0–B1 I16LE /10`, ° | **Extraction fortement étayée** par la vitesse de rotation VBOX ; zéro, butées et affichage à vérifier | L'ancien `B1–B2 I16BE` mélange angle et vitesse de rotation |
 | Clignotants | `0x60D B1 bit5` gauche, `bit6` droit | Source Racelogic concordante, fonctionnement confirmé par l'utilisateur | Aucun de ces bits actif dans les 720 trames de cette capture ; le correctif dashboard ne recalibre pas le mapping |
 | Feux | `0x60D B0 bit1/bit2`, `B1 bit3` | Définition externe concordante avec les champs de feux du preset | Pas de changement d'éclairage annoté ; distinguer commande, contact et état réel |
-| Portes | Bits de `0x60D B0` | **À valider porte par porte** ; convention gauche/droite/conducteur non certifiée | Les noms conducteur/passager dépendent du véhicule ; ne pas déduire une porte d'une transition isolée de B2 |
+| Portes | Bits de `0x60D B0` | **Fonctionnement confirmé par le propriétaire** ; la capture historique n'isole pas chaque porte | Mapping conservé ; ne pas déduire une porte d'une transition isolée de B2 |
 | Température extérieure | `0x540 B0−40` | **Non validé physiquement** : 718 valeurs constantes à 28 °C, sans référence ambiante | `01 46` n'est pas annoncé ; il faut un relevé indépendant |
-| Kilométrage total | `0x5C5 B1–B3 BE` | **Candidat** : 719 valeurs constantes à 246 945, sans photo/relevé compteur associé | Une valeur réaliste ne confirme ni l'unité ni l'offset |
+| Kilométrage total | `0x5C5 B1–B3 BE` | **Fonctionnement confirmé par le propriétaire** ; capture historique : 719 valeurs constantes à 246 945 | La confirmation utilisateur complète la capture, qui seule n'établissait pas l'unité ni l'offset |
 
 Les 35 références de vitesse contiennent **23 zéros**. Sur les 12 références
 non nulles, l'erreur absolue moyenne du candidat B4–B5 est **0,617 km/h** ; on ne
@@ -437,11 +473,12 @@ au maximum 60 ms. Les timestamps sont ceux du logiciel ESP32 ; la latence
 des capteurs et le filtrage ECU ne sont pas connus. Les références OBD sont
 espacées d'environ deux secondes par paramètre, et non simultanées.
 
-Pour compléter les champs restant ouverts : gestes séparés et horodatés du
-frein à main, des portes, des feux et des clignotants ; volant centré puis
-angles et sens connus ; relevés du combiné pour jauge, kilométrage, autonomie
-et unités ; collecte des paramètres de consommation avec une référence,
-puis geste séparé sur la pédale de frein pour vérifier `0x180 B7 bit0`.
+Pour compléter les champs restant ouverts : relevés synchronisés du combiné
+et de la température extérieure, niveau de carburant et autonomie ; collecte
+des paramètres de consommation avec une référence indépendante ; geste séparé
+sur la pédale de frein pour vérifier `0x180 B7 bit0`, puis séquence neutre /
+marche arrière horodatée. Les fonctions confirmées restent utilisables ;
+de nouvelles captures annotées peuvent étendre leurs preuves à d'autres plages.
 La distance estimée des manœuvres ne remplace pas une mesure. Les nouvelles
 lectures OBD et les prochains changements de preset doivent faire l’objet
 de leur propre implémentation et validation.

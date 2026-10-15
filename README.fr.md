@@ -38,22 +38,30 @@ Le projet a démarré comme une solution dédiée à la **Nissan Juke F15**, mai
 
 ### État des Fonctionnalités
 
+État au **15 octobre 2026**, d'après les essais et confirmations du propriétaire
+sur son **Juke F15 2011 1.6 DIG-T manuel**. Les dix fonctions confirmées
+ci-dessous sont opérationnelles sur ce véhicule. Les autres données restent
+approximatives, non validées ou indisponibles : elles demandent davantage de
+captures, une calibration ou du travail de décodage.
+
 | Fonctionnalité | Statut | Notes |
 | --- | --- | --- |
-| Régime Moteur (RPM) | Corrigé dans le preset | `0x180` octets 0–1 BE `/8`, corroboré par OBD |
-| Vitesse Véhicule | Corrigée dans le preset | `0x284` octets 4–5 BE `/100` ; corroboration OBD limitée aux faibles vitesses |
+| Vitesse Véhicule | ✅ Fonctionnement confirmé | `0x284` octets 4–5 BE `/100` ; également corroboré par OBD à faible vitesse |
+| Kilométrage Total (km) | ✅ Fonctionnement confirmé | `0x5C5` octets 1–3 BE ; retour utilisateur sur le compteur kilométrique |
+| Régime Moteur (tr/min) | ✅ Fonctionnement confirmé | `0x180` octets 0–1 BE `/8` ; également corroboré par OBD |
+| Direction / Lignes Dynamiques | ✅ Fonctionnement confirmé | `0x002` B0–B1 LE signés, 0,1° ; réglage utilisateur `steerScale=500`, `steerOffset=0`, inversion activée |
+| Clignotants | ✅ Fonctionnement confirmé | Gauche/droit ; retour utilisateur après correction de l'état dashboard |
+| Portes et Coffre | ✅ Fonctionnement confirmé | Retour utilisateur ; mapping conservé |
+| Frein à Main | ✅ Fonctionnement confirmé | `0x5C5[0] & 0x04` ; disponible dans `SYS DATA` |
+| Feux | ✅ Fonctionnement confirmé côté boîtier | Position, croisement et pleins phares ; le contrôle de l'affichage des positions dans Manager est [documenté](docs/protocols/USB_SERIAL_PROTOCOL.md#lights-dashboard-field) |
+| Tension Batterie | ✅ Fonctionnement confirmé | Également cohérente avec l'OBD : écart moyen 0,139 V, points de mesure potentiellement différents |
+| Température Eau Moteur | ✅ Fonctionnement confirmé | Confirmation utilisateur et décodage `0x551[0]−40` corroboré par OBD ; distincte de la température extérieure |
 | Niveau Essence | Indisponible dans le preset Juke | Fausse jauge `0x5C5[0]` retirée ; `FuelValid: 0` distingue la valeur de compatibilité `0 L` d'une mesure |
-| Tension Batterie | Cohérente avec l'OBD | Écart moyen 0,139 V ; points de mesure potentiellement différents |
-| Direction / Lignes Dynamiques | Lecture F15 corrigée | `0x002` B0–B1 LE signés, 0,1° ; UART `0x29` limité à ±500, amplitude et sens à vérifier à l'écran |
-| État des Portes | Fonction implémentée | Correspondance porte/bit à vérifier par gestes séparés |
-| Clignotants | ✅ Fonctionnement confirmé | Retour utilisateur après correction de l'état dashboard |
-| Feux | Fonction implémentée | Phares, route, veilleuses ; pas de séquence annotée dans le dernier log |
-| Frein à Main | Décodé dans le preset | `0x5C5[0] & 0x04`, corroboré par source Juke et manœuvre utilisateur ; disponible dans `SYS DATA` |
-| Pédale de frein | Bit de contact décodé | `0x180[7] & 0x01` ; geste et polarité à vérifier séparément sur le véhicule |
-| Température Extérieure | Calibration à vérifier | `0x540[0]−40` ; aucune référence indépendante dans le log |
-| Conso. Instantanée | Estimation provisoire | Incréments du compteur `0x551[1]` et vitesse `0x284` ; 80 mm³/incrément à calibrer sur le Juke ; fenêtre de 1 s |
-| Conso. Moyenne | Estimation provisoire de session | Disponible après 100 m, inclut le carburant consommé à l’arrêt ; réinitialisée au rechargement, redémarrage ou interruption des sources |
-| Autonomie Restante | Unité à vérifier | Mapping initial CAN 0x54C restauré ; référence du combiné nécessaire |
+| Pédale de frein | Non validée | `0x180[7] & 0x01` ; geste et polarité à vérifier séparément sur le véhicule |
+| Température Extérieure | Non validée, valeur incorrecte signalée | Le mapping `0x540[0]−40` donne 28 °C dans les captures ; le propriétaire indique environ 20 °C |
+| Conso. Instantanée | Approximative, à calibrer | Compteur `0x551[1]` et vitesse `0x284` ; 80 mm³/incrément provisoires ; fenêtre de 1 s |
+| Conso. Moyenne | Approximative, à calibrer | Estimation de session disponible après 100 m ; même coefficient provisoire ; réinitialisée au rechargement, redémarrage ou interruption des sources |
+| Autonomie Restante | Non validée | Mapping CAN `0x54C` ; unité et référence du combiné à vérifier |
 
 > **Note :** La documentation du protocole Raise/Toyota RAV4 utilisé par les autoradios Android est rare. Certaines fonctionnalités sont encore en cours de reverse-engineering par manque de spécifications officielles du protocole.
 
@@ -314,14 +322,17 @@ appliquer aussi les réglages ci-dessous si ce preset était déjà sélectionn�
 le rechargement du même fichier conserve la calibration NVS existante.
 
 ```text
-CFG SET steerScale 1000
+CFG SET steerScale 500
 CFG SET steerOffset 0
 CFG SET steerInvert 1
 CFG SAVE
 ```
 
-Cela envoie une unité UART par degré F15, avec inversion et limitation à ±500.
-Le réglage d'amplitude reste à vérifier sur les lignes de guidage de l'autoradio.
+Le propriétaire a confirmé `500` : `1000` faisait trop tourner les lignes.
+Cela applique `UART = clamp(-trunc(brut/20), -500, 500)`, soit une demi-unité
+UART par degré F15 avant arrondi. Le JSON du dépôt conserve son réglage de
+départ `1000` ; les commandes ci-dessus enregistrent la calibration utilisée
+sur ce véhicule sans modifier le fichier.
 
 ---
 
@@ -329,7 +340,7 @@ Le réglage d'amplitude reste à vérifier sur les lignes de guidage de l'autora
 
 | Donnée | ID CAN | Fréq. envoi | Notes |
 | --- | --- | --- | --- |
-| Angle Volant | 0x002 | 200ms | B0–B1 LE signés en 0,1° ; `scale=1000`, `offset=0`, inversion ; sortie UART limitée à ±500 |
+| Angle Volant | 0x002 | 200ms | Confirmé avec `scale=500`, `offset=0`, inversion ; B0–B1 LE signés en 0,1° ; sortie UART limitée à ±500 |
 | Régime Moteur | 0x180 | 333ms | Octets 0–1, big endian, brut / 8 ; tr/min entiers |
 | Vitesse Véhicule | 0x284 | 500ms | Octets 4–5, big endian, brut / 100 ; km/h entiers |
 | Frein à Main | 0x5C5 | Sur requête `SYS DATA` | Octet 0 bit 2 ; `unknown` avant la première trame configurée |
@@ -338,11 +349,12 @@ Le réglage d'amplitude reste à vérifier sur les lignes de guidage de l'autora
 | Niveau Essence | — | — | Aucune source Juke ; compatibilité `Fuel: 0 L` avec `FuelValid: 0` |
 | Tension Batterie | 0x6F6 | — | Sortie alternateur |
 | Température Extérieure | 0x540 | 5000ms | Octet historique 0 − 40 ; référence physique à vérifier |
-| Température Eau Moteur | 0x551 | 5000ms | Envoyée dans l’octet 0 de CMD 0x28 ; hypothèse non documentée et non vérifiée |
+| Température Eau Moteur | 0x551 | 5000ms | Mesure `0x551[0]−40` confirmée ; placement UART actuel dans CMD 0x28 B0 non établi par une spécification |
 | État Portes | 0x60D | 250ms | Toutes portes + coffre (ou sur changement) |
+| Clignotants / Feux | 0x60D | 200ms ou sur changement | Fonctionnement confirmé ; UART `0x7D/01` et ligne `Lights:` de `SYS DATA` |
 | Autonomie | 0x54C | 5000ms | Octets initiaux 6–7, big endian, brut × 100 / 338 ; calibration à vérifier |
 | Conso. Instantanée / Moyenne | 0x551 + 0x284 | 1000ms / 5000ms | Estimation en 0,1 L/100 km ; instantanée indisponible non émise, moyenne indisponible `0xFFFF` ; [réglages et limites](docs/VEHICLE_PRESET_GUIDE.md#counter-based-fuel-consumption-fuelconsumption) |
-| Compteur km | 0x5C5 | 10000ms | Octets historiques 1–3 BE (24 bits) ; unités non validées |
+| Compteur km | 0x5C5 | 10000ms | Octets 1–3 BE (24 bits) ; fonctionnement confirmé par l’utilisateur |
 
 ---
 
