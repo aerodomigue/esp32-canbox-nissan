@@ -81,7 +81,7 @@ A vehicle preset is a JSON file that tells the ESP32 how to decode CAN frames fr
 
 ## Vehicle Parameters (`vehicleParams`)
 
-The optional `vehicleParams` object embeds calibration directly in the preset file. Explicit values take priority over local settings on **every successful load**, including `CAN LOAD`, `CAN RELOAD` and reboot. Changed values are saved to persistent storage (NVS); unchanged calibration is not saved again.
+The optional `vehicleParams` object embeds calibration directly in the preset file. Explicit values take priority over local settings on **every successful load**, including `CAN LOAD`, `CAN RELOAD` and reboot. Only explicit keys are saved to persistent storage (NVS) on a same-file reload, and only when their stored values differ. Temporary changes to null/absent keys remain in RAM until `CFG SAVE`.
 
 ### Null semantics
 
@@ -106,7 +106,24 @@ When a **different vehicle file** is loaded, NVS is reset to firmware defaults f
 
 `CFG SET` still changes the running calibration immediately, and `CFG SAVE` still saves it to NVS. Neither command edits the JSON: an explicit JSON value wins again on the next load/reboot. To share a lasting adjustment between head units, edit and transfer the same JSON to each unit, then load it. To deliberately keep a setting local instead, set that key to `null` or omit it. `CFG RESET` also remains temporary for keys specified in the JSON.
 
-All provided values are checked before changing the active profile or NVS. Numeric keys require integers within the ranges below; `steerInvert` requires a JSON boolean (not `0`/`1`). Invalid types or ranges reject the entire load and leave the active profile and calibration untouched. `CAN GET` returns the file contents; `CFG LIST` reports the current runtime values.
+All provided values are checked before changing the active profile or NVS. Numeric keys require finite integer values within the ranges below: `500`, `500.0` and `5e2` are equivalent, while `500.5` is rejected. Numeric strings and booleans are rejected for numeric keys; `steerInvert` requires a JSON boolean (not `0`/`1`). Invalid types or ranges reject the entire load and leave the active profile and calibration untouched. `CAN GET` returns the file contents; `CFG LIST` reports the current runtime values.
+
+### Load failures and recovery
+
+`CAN RELOAD` loads only the selected file. A missing or invalid file returns
+`ERROR` and preserves the running profile, decoded data, calibration and saved
+selection. It never selects a fallback vehicle or demo profile.
+
+At boot, a missing/invalid saved selection leaves the device without an active
+profile: `CAN STATUS` reports `Mode: ERROR (no valid profile)`. Raw CAN/OBD logs
+and USB commands remain available, but radio output is disabled and simulated
+data is not generated. Upload a corrected file and use `CAN RELOAD`, or explicitly
+select another valid profile with `CAN LOAD <filename>`.
+
+Only when there is no saved selection does boot check `/vehicle.json`,
+`/MockDemo.json`, then `/NissanJukeF15.json`. It tries the first existing file
+and stops on an error. A valid demo profile still enables simulation; having
+no valid file does not. LittleFS is never formatted automatically on mount failure.
 
 ### Supported keys
 

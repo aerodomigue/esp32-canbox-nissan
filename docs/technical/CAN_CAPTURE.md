@@ -140,13 +140,17 @@ The capture relies on the **ESP32-TWAI-CAN** library.
 Before any CAN frame is processed, `CanConfigProcessor::begin()` runs once during `setup()`:
 
 ```
-1. LittleFS mounted
-2. Vehicle JSON located (NVS → /vehicle.json → /MockDemo.json → /NissanJukeF15.json)
+1. LittleFS mounted without automatic formatting
+2. Load the NVS-selected file; failure never selects a fallback
+   Without a saved selection, try the first existing file:
+   /vehicle.json → /MockDemo.json → /NissanJukeF15.json (stop on error)
 3. JSON parsed and validated before modifying the active profile or calibration
 4. Vehicle switch detection:
    ├─ Same file as previously loaded → keep local values as the starting point
    └─ Different file (or first boot) → configReset() to firmware defaults
-5. Apply non-null vehicleParams on EVERY load; save calibration if changed or switched
+5. Apply non-null vehicleParams on EVERY load
+   Same file: persist only explicit keys, comparing each value against NVS
+   New file: persist defaults plus explicit overrides
 6. CAN frame processing begins
 ```
 
@@ -156,6 +160,12 @@ or reload. Null or absent keys keep local values on a same-file reload, or
 firmware defaults on a switch. Permanent shared adjustments belong in the JSON;
 application OTA alone does not replace that file. See [Vehicle Parameters](../VEHICLE_PRESET_GUIDE.md#vehicle-parameters-vehicleparams)
 for the full key reference and the legacy settings that are stored but unused.
+
+`CAN RELOAD` reloads only the selected file and preserves the active profile
+and decoded data on failure. A failed boot load leaves `hasProfile()` false:
+CAN acquisition/USB recovery remain available, simulated data is disabled, and
+the main loop suppresses radio output until a valid profile loads. Thus an invalid
+profile cannot silently replace real CAN measurements with demo values.
 
 ### Processing Pipeline
 

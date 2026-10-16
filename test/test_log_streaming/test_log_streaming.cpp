@@ -7,7 +7,9 @@
 #include "LittleFS.h"
 #include "CanConfigProcessor.h"
 #include "ConfigManager.h"
-#include "ConfigManager_mock.h"
+#include "Preferences.h"
+#include <filesystem>
+#include <fstream>
 #include "GlobalData.h"
 #include "ObdCalibration.h"
 #include "SerialCommand.h"
@@ -22,6 +24,7 @@ extern CanConfigProcessor canProcessor;
 extern ObdCalibration obdCalibration;
 extern HardwareSerial RadioSerial;
 static unsigned expectedRestarts = 0;
+static std::string profileSandbox;
 
 static CanFrame frame(uint32_t id, std::initializer_list<uint8_t> payload, bool extended = false, bool rtr = false) {
     CanFrame result = {};
@@ -109,7 +112,8 @@ void setUp() {
     testProcessCommand("LOG OFF");
     Serial.reset();
     canProcessor = CanConfigProcessor{};
-    mockReset();
+    FakeNvs::reset();
+    configInit();
     configSetVehicleFile("NissanJukeF15.json");
     LittleFS.basePath = "data";
     resetVehicleData();
@@ -120,6 +124,12 @@ void setUp() {
 }
 
 void tearDown() {
+    if (!profileSandbox.empty()) {
+        std::filesystem::remove_all(profileSandbox);
+        profileSandbox.clear();
+    }
+    LittleFS.basePath = "data";
+    LittleFS.mountSucceeds = true;
     StreamingSimulation::onAdvance = {};
     TEST_ASSERT_EQUAL_UINT32(expectedRestarts, ESP.restarts);
     TEST_ASSERT_EQUAL_UINT32(0, Serial.unsafeWriteAttempts);
@@ -331,6 +341,238 @@ void test_juke_raw_fuel_without_fresh_speed_keeps_logs_and_clears_radio_average(
     for (size_t i = 1; i < average.size(); ++i) TEST_ASSERT_EQUAL_HEX8(0xFF, average[i]);
     TEST_ASSERT_GREATER_THAN_UINT32(0, radioCommandCount(0x7D));
     assertRawLinesComplete(Serial.captured);
+}
+
+// Regression coverage uses production ConfigManager and separate persistent NVS.
+static void useProfileSandbox() {
+    char directory[] = "/tmp/canbox-profile-XXXXXX";
+    TEST_ASSERT_NOT_NULL(mkdtemp(directory));
+    profileSandbox = directory;
+    for (const char* file : {"NissanJukeF15.json", "MockDemo.json"}) {
+        std::filesystem::copy_file(std::string("data/") + file, profileSandbox + "/" + file);
+    }
+    LittleFS.basePath = profileSandbox.c_str();
+}
+
+static void writeProfileParams(const char* params) {
+    std::ofstream output(profileSandbox + "/NissanJukeF15.json");
+    TEST_ASSERT_TRUE(output.good());
+    output << "{\"name\":\"Audit F15\",\"isMock\":false,\"vehicleParams\":" << params
+           << R"(,"frames":[{"canId":"0x002","fields":[{"target":"STEERING","startByte":0,"byteCount":2,"byteOrder":"LE","dataType":"INT16","formula":"NONE"}]}]})";
+}
+
+static void runCommand(const char* command) {
+    Serial.inject((std::string(command) + "\n").c_str());
+    loop();
+    flushConsole();
+}
+
+static void assertProfileRejected() {
+    TEST_ASSERT_FALSE(canProcessor.isMockMode());
+    TEST_ASSERT_EQUAL_STRING("NissanJukeF15.json", configGetVehicleFile());
+    TEST_ASSERT_EQUAL_STRING("NissanJukeF15.json", FakeNvs::strings.at("vehicleFile").c_str());
+    TEST_ASSERT_GREATER_THAN_UINT32(0, countPrefix(Serial.captured, "ERROR:"));
+    TEST_ASSERT_FALSE(hasLine(Serial.captured, "OK"));
+}
+
+void test_failed_can_reload_preserves_active_profile_data_and_nvs() {
+    useProfileSandbox();
+    const auto numbers = FakeNvs::numbers;
+    const auto strings = FakeNvs::strings;
+    for (const char* params : {"{\"steerScale\":500.5}", "{\"steerInvert\":1}", "{\"steerScale\":0}"}) {
+        writeProfileParams(params);
+        engineRPM = 1234;
+        canAuxData.handbrake = true;
+        canAuxData.handbrakeValid = true;
+        Serial.clearOutput();
+        runCommand("CAN RELOAD");
+        assertProfileRejected();
+        TEST_ASSERT_TRUE(canProcessor.hasProfile());
+        TEST_ASSERT_EQUAL_STRING("Nissan Juke F15", canProcessor.getProfileName());
+        TEST_ASSERT_EQUAL_UINT16(1234, engineRPM);
+        TEST_ASSERT_TRUE(canAuxData.handbrake && canAuxData.handbrakeValid);
+        TEST_ASSERT_TRUE(numbers == FakeNvs::numbers && strings == FakeNvs::strings);
+        TEST_ASSERT_EQUAL_UINT16(500, configGetSteerScale());
+    }
+    // The old decoder and the raw stream must still run after the rejection.
+    enableLoggingThroughLoop();
+    Serial.clearOutput();
+    TEST_ASSERT_TRUE(ESP32Can.enqueue(frame(0x002, {0x20, 0xEC, 9, 7, 0xE0})));
+    loop();
+    flushConsole();
+    TEST_ASSERT_EQUAL_INT16(-5088, currentSteer);
+    TEST_ASSERT_EQUAL_UINT32(1, countPrefix(Serial.captured, "RX 0x002"));
+    TEST_ASSERT_TRUE(obdCalibration.enabled());
+}
+
+void test_missing_or_malformed_selected_file_never_falls_back_on_reload() {
+    useProfileSandbox();
+    const auto numbers = FakeNvs::numbers;
+    for (bool missing : {false, true}) {
+        { std::ofstream broken(profileSandbox + "/NissanJukeF15.json"); broken << "{"; }
+        if (missing) std::filesystem::remove(profileSandbox + "/NissanJukeF15.json");
+        Serial.clearOutput();
+        runCommand("CAN RELOAD");
+        assertProfileRejected();
+        TEST_ASSERT_TRUE(canProcessor.hasProfile());
+        TEST_ASSERT_EQUAL_STRING("Nissan Juke F15", canProcessor.getProfileName());
+        TEST_ASSERT_TRUE(numbers == FakeNvs::numbers);
+    }
+}
+
+void test_integral_decimal_calibration_remains_compatible() {
+    useProfileSandbox();
+    writeProfileParams(R"({"steerScale":500.0,"steerOffset":0.0,"indTimeout":5e2})");
+    Serial.clearOutput();
+    runCommand("CAN RELOAD");
+    TEST_ASSERT_TRUE(hasLine(Serial.captured, "OK"));
+    TEST_ASSERT_FALSE(canProcessor.isMockMode());
+    TEST_ASSERT_EQUAL_STRING("Audit F15", canProcessor.getProfileName());
+    TEST_ASSERT_EQUAL_UINT16(500, configGetSteerScale());
+    TEST_ASSERT_EQUAL_INT16(0, configGetSteerOffset());
+    TEST_ASSERT_EQUAL_UINT16(500, configGetIndicatorTimeout());
+}
+
+void test_invalid_selected_profile_on_boot_keeps_raw_logs_and_suppresses_radio() {
+    useProfileSandbox();
+    const auto numbers = FakeNvs::numbers;
+    const auto strings = FakeNvs::strings;
+    for (bool missing : {false, true}) {
+        writeProfileParams(R"({"steerScale":500.5})");
+        if (missing) std::filesystem::remove(profileSandbox + "/NissanJukeF15.json");
+        canProcessor = CanConfigProcessor{};
+        resetVehicleData();
+        ESP32Can.reset();
+        setup();  // Production configInit() reloads the persistent selection.
+        TEST_ASSERT_FALSE(canProcessor.hasProfile());
+        TEST_ASSERT_FALSE(canProcessor.isMockMode());
+        TEST_ASSERT_TRUE(ESP32Can.started);
+        TEST_ASSERT_TRUE(numbers == FakeNvs::numbers && strings == FakeNvs::strings);
+        RadioSerial.clear();
+        Serial.clearOutput();
+        runCommand("LOG ON");
+        TEST_ASSERT_TRUE(ESP32Can.enqueue(frame(0x002, {0x20, 0xEC, 9, 7, 0xE0})));
+        StreamingSimulation::advance(6000);
+        loop();
+        flushConsole();
+        TEST_ASSERT_EQUAL_UINT32(0, RadioSerial.captured.size());
+        TEST_ASSERT_EQUAL_UINT32(1, countPrefix(Serial.captured, "RX 0x002"));
+        TEST_ASSERT_EQUAL_INT16(0, currentSteer);
+        runCommand("CAN STATUS");
+        TEST_ASSERT_TRUE(hasLine(Serial.captured, "Mode: ERROR (no valid profile)"));
+    }
+    // A corrected file can be explicitly reloaded without reboot or factory reset.
+    writeProfileParams(R"({"steerScale":500})");
+    Serial.clearOutput();
+    runCommand("CAN RELOAD");
+    TEST_ASSERT_TRUE(hasLine(Serial.captured, "OK"));
+    TEST_ASSERT_TRUE(canProcessor.hasProfile());
+    RadioSerial.clear();
+    TEST_ASSERT_TRUE(ESP32Can.enqueue(frame(0x002, {0x20, 0xEC, 9, 7, 0xE0})));
+    StreamingSimulation::advance(200);
+    loop();
+    TEST_ASSERT_EQUAL_INT16(-5088, currentSteer);
+    TEST_ASSERT_GREATER_THAN_UINT32(0, radioCommandCount(0x29));
+}
+
+void test_mount_failure_preserves_active_profile_without_formatting() {
+    LittleFS.mountSucceeds = false;
+    const auto numbers = FakeNvs::numbers;
+    TEST_ASSERT_FALSE(canProcessor.begin());
+    TEST_ASSERT_FALSE(LittleFS.formatRequested);
+    TEST_ASSERT_TRUE(canProcessor.hasProfile());
+    TEST_ASSERT_FALSE(canProcessor.isMockMode());
+    TEST_ASSERT_TRUE(numbers == FakeNvs::numbers);
+}
+
+void test_first_selection_rejects_bad_primary_and_still_allows_valid_demo() {
+    useProfileSandbox();
+    FakeNvs::reset();
+    configInit();
+    canProcessor = CanConfigProcessor{};
+    { std::ofstream broken(profileSandbox + "/vehicle.json"); broken << "{"; }
+    TEST_ASSERT_FALSE(canProcessor.begin());
+    TEST_ASSERT_FALSE(canProcessor.hasProfile());
+    TEST_ASSERT_FALSE(canProcessor.isMockMode());
+    TEST_ASSERT_TRUE(FakeNvs::strings.empty());
+    std::filesystem::remove(profileSandbox + "/vehicle.json");
+    TEST_ASSERT_TRUE(canProcessor.begin());
+    TEST_ASSERT_TRUE(canProcessor.hasProfile());
+    TEST_ASSERT_TRUE(canProcessor.isMockMode());
+    TEST_ASSERT_EQUAL_STRING("MockDemo.json", configGetVehicleFile());
+}
+
+void test_reload_without_selection_does_not_select_default_demo() {
+    FakeNvs::reset();
+    configInit();
+    canProcessor = CanConfigProcessor{};
+    Serial.clearOutput();
+    runCommand("CAN RELOAD");
+    TEST_ASSERT_FALSE(canProcessor.hasProfile());
+    TEST_ASSERT_FALSE(canProcessor.isMockMode());
+    TEST_ASSERT_GREATER_THAN_UINT32(0, countPrefix(Serial.captured, "ERROR:"));
+    TEST_ASSERT_TRUE(FakeNvs::strings.empty());
+}
+
+void test_partial_reload_does_not_persist_unsaved_local_overrides() {
+    useProfileSandbox();
+    for (const char* params : {
+        R"({"steerScale":500})",
+        R"({"steerScale":500,"steerOffset":null,"steerInvert":null,"indTimeout":null,"rpmDiv":null,"tankCap":null,"dteDiv":null})"
+    }) {
+        writeProfileParams(params);
+        runCommand("CAN RELOAD");
+        const auto saved = FakeNvs::numbers;
+        for (const char* command : {
+            "CFG SET steerScale 600", "CFG SET steerOffset 250", "CFG SET steerInvert 0",
+            "CFG SET indTimeout 900", "CFG SET rpmDiv 4", "CFG SET tankCap 60", "CFG SET dteDiv 200"
+        }) runCommand(command);
+        runCommand("CAN RELOAD");
+        TEST_ASSERT_EQUAL_UINT16(500, configGetSteerScale());
+        TEST_ASSERT_EQUAL_INT16(250, configGetSteerOffset());
+        TEST_ASSERT_FALSE(configGetSteerInvert());
+        TEST_ASSERT_EQUAL_UINT16(900, configGetIndicatorTimeout());
+        TEST_ASSERT_EQUAL_UINT8(4, configGetRpmDivisor());
+        TEST_ASSERT_EQUAL_UINT8(60, configGetTankCapacity());
+        TEST_ASSERT_EQUAL_UINT16(200, configGetDteDivisor());
+        TEST_ASSERT_TRUE_MESSAGE(saved == FakeNvs::numbers, "Temporary local values leaked into NVS");
+        configInit();
+        canProcessor = CanConfigProcessor{};
+        TEST_ASSERT_TRUE(canProcessor.begin());
+        TEST_ASSERT_EQUAL_INT16(0, configGetSteerOffset());
+        TEST_ASSERT_TRUE(configGetSteerInvert());
+        TEST_ASSERT_EQUAL_UINT16(500, configGetIndicatorTimeout());
+        TEST_ASSERT_EQUAL_UINT8(8, configGetRpmDivisor());
+        TEST_ASSERT_EQUAL_UINT8(45, configGetTankCapacity());
+        TEST_ASSERT_EQUAL_UINT16(338, configGetDteDivisor());
+    }
+}
+
+void test_cfg_save_still_persists_local_values_for_partial_profiles() {
+    useProfileSandbox();
+    writeProfileParams(R"({"steerScale":500,"steerOffset":null})");
+    runCommand("CAN RELOAD");
+    runCommand("CFG SET steerOffset -250");
+    runCommand("CFG SAVE");
+    configInit();
+    canProcessor = CanConfigProcessor{};
+    TEST_ASSERT_TRUE(canProcessor.begin());
+    TEST_ASSERT_EQUAL_INT16(-250, configGetSteerOffset());
+    TEST_ASSERT_EQUAL_INT(-250, FakeNvs::numbers.at("steerOffset"));
+}
+
+void test_json_reload_compares_persisted_values_even_when_ram_matches() {
+    runCommand("CFG SET steerScale 600");
+    runCommand("CFG SAVE");
+    runCommand("CFG SET steerScale 500");
+    TEST_ASSERT_EQUAL_INT(600, FakeNvs::numbers.at("steerScale"));
+    runCommand("CAN RELOAD");
+    TEST_ASSERT_EQUAL_INT(500, FakeNvs::numbers.at("steerScale"));
+    const auto writes = FakeNvs::writes;
+    runCommand("CAN RELOAD");
+    for (const auto& entry : FakeNvs::numbers) {
+        TEST_ASSERT_EQUAL_UINT32_MESSAGE(writes.at(entry.first), FakeNvs::writes.at(entry.first), entry.first.c_str());
+    }
 }
 
 void test_f15_can_load_and_reload_replace_saved_cfg_overrides() {
@@ -924,6 +1166,16 @@ int main() {
     RUN_TEST(test_obd_reference_sys_data_and_partial_command_keep_complete_lines);
     RUN_TEST(test_sys_data_distinguishes_unknown_from_observed_zero);
     RUN_TEST(test_juke_raw_fuel_without_fresh_speed_keeps_logs_and_clears_radio_average);
+    RUN_TEST(test_failed_can_reload_preserves_active_profile_data_and_nvs);
+    RUN_TEST(test_missing_or_malformed_selected_file_never_falls_back_on_reload);
+    RUN_TEST(test_integral_decimal_calibration_remains_compatible);
+    RUN_TEST(test_invalid_selected_profile_on_boot_keeps_raw_logs_and_suppresses_radio);
+    RUN_TEST(test_mount_failure_preserves_active_profile_without_formatting);
+    RUN_TEST(test_first_selection_rejects_bad_primary_and_still_allows_valid_demo);
+    RUN_TEST(test_reload_without_selection_does_not_select_default_demo);
+    RUN_TEST(test_partial_reload_does_not_persist_unsaved_local_overrides);
+    RUN_TEST(test_cfg_save_still_persists_local_values_for_partial_profiles);
+    RUN_TEST(test_json_reload_compares_persisted_values_even_when_ram_matches);
     RUN_TEST(test_f15_can_load_and_reload_replace_saved_cfg_overrides);
     RUN_TEST(test_f15_steering_reaches_rav4_with_profile_calibration);
     RUN_TEST(test_mock_consumption_is_available_and_profile_reload_clears_it);

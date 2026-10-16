@@ -77,13 +77,14 @@ void test_same_vehicle_reapplies_json_values() {
     TEST_ASSERT_EQUAL_UINT16(200, g_mock.dteDivisor);
 }
 
-void test_unchanged_reload_does_not_save_calibration_again() {
+void test_unchanged_reload_requests_only_explicit_fields() {
     CanConfigProcessor proc;
     TEST_ASSERT_TRUE(proc.loadFromJson("/full_params.json"));
     g_mock.resetCount = g_mock.saveCount = 0;
     TEST_ASSERT_TRUE(proc.loadFromJson("/full_params.json"));
     TEST_ASSERT_EQUAL_INT(0, g_mock.resetCount);
-    TEST_ASSERT_EQUAL_INT(0, g_mock.saveCount);
+    TEST_ASSERT_EQUAL_INT(1, g_mock.saveCount);
+    TEST_ASSERT_EQUAL_HEX8(0x7F, g_mock.lastSavedFields);
 }
 
 void test_begin_restores_json_over_saved_local_values() {
@@ -109,6 +110,7 @@ void test_partial_reload_preserves_null_overrides() {
     g_mock.dteDivisor = 338;
     g_mock.resetCount = g_mock.saveCount = 0;
     TEST_ASSERT_TRUE(proc.loadFromJson("/partial_params.json"));
+    TEST_ASSERT_EQUAL_HEX8(1 << 2, g_mock.lastSavedFields);
     TEST_ASSERT_EQUAL_UINT16(200, g_mock.steerScale);
     TEST_ASSERT_EQUAL_INT16(-123, g_mock.steerOffset);
     TEST_ASSERT_FALSE(g_mock.steerInvert);
@@ -305,7 +307,7 @@ int main(int argc, char** argv) {
 
     RUN_TEST(test_first_boot_applies_all_vehicle_params);
     RUN_TEST(test_same_vehicle_reapplies_json_values);
-    RUN_TEST(test_unchanged_reload_does_not_save_calibration_again);
+    RUN_TEST(test_unchanged_reload_requests_only_explicit_fields);
     RUN_TEST(test_begin_restores_json_over_saved_local_values);
     RUN_TEST(test_partial_reload_preserves_null_overrides);
     RUN_TEST(test_reload_without_overrides_preserves_local_values);

@@ -485,7 +485,7 @@ static void handleCanCommand(const char* args) {
     }
     else if (strcmp(subCmd, "RELOAD") == 0) {
         Console.println("Reloading CAN configuration...");
-        if (canProcessor.begin()) {
+        if (canProcessor.reload()) {
             // Reset vehicle data to clear stale values
             resetVehicleData();
 
@@ -494,7 +494,7 @@ static void handleCanCommand(const char* args) {
                           canProcessor.getProfileName(),
                           canProcessor.isMockMode() ? "MOCK" : "REAL");
         } else {
-            Console.println("No config found - MOCK mode active");
+            printError("Failed to reload selected profile; active configuration unchanged");
         }
     }
     else {
@@ -508,7 +508,8 @@ static void handleCanCommand(const char* args) {
 static void canStatus() {
     Console.println("=== CAN Configuration Status ===");
     Console.printf("Config: %s\n", configGetVehicleFile());
-    Console.printf("Mode: %s\n", canProcessor.isMockMode() ? "MOCK (simulated data)" : "REAL (CAN bus)");
+    Console.printf("Mode: %s\n", !canProcessor.hasProfile() ? "ERROR (no valid profile)" :
+                   canProcessor.isMockMode() ? "MOCK (simulated data)" : "REAL (CAN bus)");
     Console.printf("Profile: %s\n", canProcessor.getProfileName());
     Console.printf("Frames processed: %lu\n", static_cast<unsigned long>(canProcessor.getFramesProcessed()));
     Console.printf("Unknown frames: %lu\n", static_cast<unsigned long>(canProcessor.getUnknownFrames()));
@@ -1128,7 +1129,7 @@ static void handleSysCommand(const char* args) {
         Console.println("=== Live Vehicle Data ===");
         Console.printf("Config:   %s\n", configGetVehicleFile());
         Console.printf("Mode:     %s (%s)\n",
-            canProcessor.isMockMode() ? "MOCK" : "REAL",
+            !canProcessor.hasProfile() ? "ERROR" : canProcessor.isMockMode() ? "MOCK" : "REAL",
             canProcessor.getProfileName());
         Console.printf("RPM:      %d\n", engineRPM);
         Console.printf("Speed:    %d km/h\n", vehicleSpeed);

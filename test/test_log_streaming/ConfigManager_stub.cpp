@@ -1,2 +1,2 @@
-// NVS is outside this host integration test. Reuse the existing tested configuration stub.
-#include "../test_serial_commands/ConfigManager_stub.cpp"
+// Exercise production persistence; only the Preferences backend is simulated.
+#include "../../src/ConfigManager.cpp"

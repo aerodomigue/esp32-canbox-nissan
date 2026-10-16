@@ -48,6 +48,7 @@ static void loadDefaults() {
 void configInit() {
     // Load defaults first
     loadDefaults();
+    vehicleFile[0] = '\0';
 
     // Open NVS namespace (read-only first to check if values exist)
     if (prefs.begin(NVS_NAMESPACE, true)) {
@@ -64,15 +65,30 @@ void configInit() {
     // If prefs.begin() fails, we just use defaults (already loaded)
 }
 
-void configSave() {
+void configSave(uint8_t fields) {
+    if (!(fields & CONFIG_ALL)) return;
     if (prefs.begin(NVS_NAMESPACE, false)) { // false = read-write mode
-        prefs.putShort(KEY_STEER_OFFSET, config.steerOffset);
-        prefs.putBool(KEY_STEER_INVERT, config.steerInvert);
-        prefs.putUShort(KEY_STEER_SCALE, config.steerScale);
-        prefs.putUShort(KEY_IND_TIMEOUT, config.indicatorTimeout);
-        prefs.putUChar(KEY_RPM_DIVISOR, config.rpmDivisor);
-        prefs.putUChar(KEY_TANK_CAPACITY, config.tankCapacity);
-        prefs.putUShort(KEY_DTE_DIVISOR, config.dteDivisor);
+        if ((fields & CONFIG_STEER_OFFSET) && (!prefs.isKey(KEY_STEER_OFFSET) ||
+            prefs.getShort(KEY_STEER_OFFSET) != config.steerOffset))
+            prefs.putShort(KEY_STEER_OFFSET, config.steerOffset);
+        if ((fields & CONFIG_STEER_INVERT) && (!prefs.isKey(KEY_STEER_INVERT) ||
+            prefs.getBool(KEY_STEER_INVERT) != config.steerInvert))
+            prefs.putBool(KEY_STEER_INVERT, config.steerInvert);
+        if ((fields & CONFIG_STEER_SCALE) && (!prefs.isKey(KEY_STEER_SCALE) ||
+            prefs.getUShort(KEY_STEER_SCALE) != config.steerScale))
+            prefs.putUShort(KEY_STEER_SCALE, config.steerScale);
+        if ((fields & CONFIG_IND_TIMEOUT) && (!prefs.isKey(KEY_IND_TIMEOUT) ||
+            prefs.getUShort(KEY_IND_TIMEOUT) != config.indicatorTimeout))
+            prefs.putUShort(KEY_IND_TIMEOUT, config.indicatorTimeout);
+        if ((fields & CONFIG_RPM_DIV) && (!prefs.isKey(KEY_RPM_DIVISOR) ||
+            prefs.getUChar(KEY_RPM_DIVISOR) != config.rpmDivisor))
+            prefs.putUChar(KEY_RPM_DIVISOR, config.rpmDivisor);
+        if ((fields & CONFIG_TANK_CAP) && (!prefs.isKey(KEY_TANK_CAPACITY) ||
+            prefs.getUChar(KEY_TANK_CAPACITY) != config.tankCapacity))
+            prefs.putUChar(KEY_TANK_CAPACITY, config.tankCapacity);
+        if ((fields & CONFIG_DTE_DIV) && (!prefs.isKey(KEY_DTE_DIVISOR) ||
+            prefs.getUShort(KEY_DTE_DIVISOR) != config.dteDivisor))
+            prefs.putUShort(KEY_DTE_DIVISOR, config.dteDivisor);
         prefs.end();
     }
 }

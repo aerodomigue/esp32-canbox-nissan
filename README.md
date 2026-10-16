@@ -187,7 +187,7 @@ The device can be configured via USB serial without recompiling. Connect to the 
 | `CFG LIST` | Show calibration parameters |
 | `CFG SET <param> <value>` | Change a parameter |
 | `CFG SAVE` | Save to flash (NVS) |
-| `CAN STATUS` | Show CAN config status (MOCK/REAL mode) |
+| `CAN STATUS` | Show CAN config status (MOCK/REAL, or ERROR without a valid profile) |
 | `CAN LIST` | List vehicle config files |
 | `CAN LOAD <file>` | Load a vehicle config |
 | `CAN UPLOAD START/DATA/END` | Upload config via Base64 |
@@ -337,6 +337,13 @@ per F15 degree before rounding. With the matching firmware, `CAN LOAD`,
 Check the result with `CFG LIST`. `CFG SET`/`CFG SAVE` do not edit the JSON;
 put lasting, shared adjustments in the file. Null/absent keys can still keep
 local settings on reload.
+
+A failed `CAN RELOAD` returns `ERROR` and preserves the active profile and
+calibration. If the selected JSON is missing/invalid at boot, raw CAN/OBD logs
+and USB remain available, with radio output disabled until a valid profile
+loads; there is no automatic switch to demo mode. Only explicit JSON keys are
+saved on reload: local changes to null/absent keys still require `CFG SAVE`
+to survive a reboot. Integral values such as `500.0` remain compatible.
 
 `rpmDiv`, `tankCap` and `dteDiv` are stored legacy settings, currently unused
 by the decoder. `8` and `338` mirror the RPM/DTE formulas in `frames`;

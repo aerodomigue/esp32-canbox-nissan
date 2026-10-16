@@ -27,6 +27,7 @@
 #include <LittleFS.h>
 #include <ArduinoJson.h>
 #include <utility>
+#include <cmath>
 
 namespace {
 bool validateVehicleParams(JsonVariantConst value) {
@@ -40,22 +41,24 @@ bool validateVehicleParams(JsonVariantConst value) {
     for (const auto& range : ranges) {
         JsonVariantConst v = value[range.key];
         if (v.isNull()) continue;
-        if (!v.is<int32_t>() || v.as<int32_t>() < range.min ||
-            v.as<int32_t>() > range.max) return false;
+        if (!v.is<double>()) return false;
+        const double number = v.as<double>();
+        // Accept integral JSON numbers such as 500.0, but never truncate fractions.
+        if (!std::isfinite(number) || std::floor(number) != number ||
+            number < range.min || number > range.max) return false;
     }
     return value["steerInvert"].isNull() || value["steerInvert"].is<bool>();
 }
 
 template <typename T>
-bool applyVehicleParam(JsonObjectConst params, const char* key,
-                       T (*get)(), void (*set)(T)) {
+uint8_t applyVehicleParam(JsonObjectConst params, const char* key,
+                          void (*set)(T), uint8_t field) {
     JsonVariantConst value = params[key];
-    if (value.isNull()) return false;
+    if (value.isNull()) return 0;
     const T next = value.as<T>();
-    const bool changed = get() != next;
     set(next);
     Console.printf("[CanConfig] vehicleParam: %s = %d\n", key, static_cast<int>(next));
-    return changed;
+    return field;
 }
 
 bool parseFuelConsumption(JsonVariantConst value, VehicleProfile& profile) {
@@ -116,7 +119,8 @@ bool parseFuelConsumption(JsonVariantConst value, VehicleProfile& profile) {
 // =============================================================================
 
 CanConfigProcessor::CanConfigProcessor()
-    : _mockMode(true)           // Default to mock until config loaded
+    : _mockMode(false)
+    , _hasProfile(false)
     , _framesProcessed(0)
     , _unknownFrames(0)
 {
@@ -127,61 +131,34 @@ CanConfigProcessor::CanConfigProcessor()
 // =============================================================================
 
 /**
- * @brief Initialize processor and load configuration from SPIFFS
- *
- * Attempts to load configuration from known file paths.
- * If no config found, falls back to mock mode.
+ * Mount without formatting on failure. A selected file is authoritative:
+ * an error must never select a different vehicle or activate simulated data.
  */
 bool CanConfigProcessor::begin() {
-    // Initialize LittleFS filesystem
-    if (!LittleFS.begin(true)) {
+    if (!LittleFS.begin(false)) {
         Console.println("[CanConfig] LittleFS mount failed");
-        _mockMode = true;
         return false;
     }
+    if (configGetVehicleFile()[0] != '\0') return reload();
 
-    // Check if a previously loaded config is saved in NVS
-    const char* savedFile = configGetVehicleFile();
-    if (savedFile[0] != '\0') {
-        char savedPath[48];
-        snprintf(savedPath, sizeof(savedPath), "/%s", savedFile);
-        if (LittleFS.exists(savedPath)) {
-            Console.printf("[CanConfig] Restoring saved config: %s\n", savedPath);
-            if (loadFromJson(savedPath)) {
-                Console.printf("[CanConfig] Loaded: %s (%d frames) - %s mode\n",
-                              _profile.name.c_str(),
-                              static_cast<int>(_profile.frames.size()),
-                              _mockMode ? "MOCK" : "REAL CAN");
-                return true;
-            }
-        }
-    }
-
-    // Fallback: Configuration file search order
-    const char* configPaths[] = {
-        "/vehicle.json",        // Primary: generic name for current vehicle
-        "/MockDemo.json",       // Default: mock mode for testing
-        "/NissanJukeF15.json"   // Fallback: specific vehicle config
-    };
-
-    // Try each config path until one succeeds
+    // First selection only: keep the existing default demo profile if present.
+    const char* configPaths[] = {"/vehicle.json", "/MockDemo.json", "/NissanJukeF15.json"};
     for (const char* path : configPaths) {
-        if (LittleFS.exists(path)) {
-            Console.printf("[CanConfig] Found config: %s\n", path);
-            if (loadFromJson(path)) {
-                Console.printf("[CanConfig] Loaded: %s (%d frames) - %s mode\n",
-                              _profile.name.c_str(),
-                              static_cast<int>(_profile.frames.size()),
-                              _mockMode ? "MOCK" : "REAL CAN");
-                return true;
-            }
-        }
+        if (LittleFS.exists(path)) return loadFromJson(path);
     }
-
-    // No config found - use mock mode with simulated data
-    Console.println("[CanConfig] No config found - MOCK mode active (default)");
-    _mockMode = true;
+    Console.println("[CanConfig] No profile found; radio output disabled");
     return false;
+}
+
+bool CanConfigProcessor::reload() {
+    const char* filename = configGetVehicleFile();
+    if (filename[0] == '\0') {
+        Console.println("[CanConfig] No selected profile to reload");
+        return false;
+    }
+    char path[48];
+    snprintf(path, sizeof(path), "/%s", filename);
+    return loadFromJson(path);
 }
 
 // =============================================================================
@@ -294,6 +271,7 @@ bool CanConfigProcessor::loadFromJson(const char* path) {
     if (isValid) {
         _profile = std::move(nextProfile);
         _mockMode = _profile.isMock;
+        _hasProfile = true;
         // Never retain a previous profile's fuel values or observed flags.
         canAuxData = {};
         _fuelEstimator.configure(_profile.fuelConsumption);
@@ -316,8 +294,8 @@ bool CanConfigProcessor::loadFromJson(const char* path) {
 
         // Explicit JSON values are authoritative, including on reload/reboot.
         // Null/missing keys retain NVS on reload, or defaults on vehicle switch.
-        const bool changed = applyVehicleParams(doc["vehicleParams"].as<JsonObjectConst>());
-        if (isVehicleSwitch || changed) configSave();
+        const uint8_t fields = applyVehicleParams(doc["vehicleParams"].as<JsonObjectConst>());
+        if (isVehicleSwitch || fields) configSave(isVehicleSwitch ? uint8_t(CONFIG_ALL) : fields);
         configSetVehicleFile(filename);
     }
 
@@ -328,16 +306,16 @@ bool CanConfigProcessor::loadFromJson(const char* path) {
 // VEHICLE PARAMS
 // =============================================================================
 
-bool CanConfigProcessor::applyVehicleParams(JsonObjectConst params) {
-    bool changed = false;
-    changed |= applyVehicleParam(params, "steerScale", configGetSteerScale, configSetSteerScale);
-    changed |= applyVehicleParam(params, "steerOffset", configGetSteerOffset, configSetSteerOffset);
-    changed |= applyVehicleParam(params, "steerInvert", configGetSteerInvert, configSetSteerInvert);
-    changed |= applyVehicleParam(params, "indTimeout", configGetIndicatorTimeout, configSetIndicatorTimeout);
-    changed |= applyVehicleParam(params, "rpmDiv", configGetRpmDivisor, configSetRpmDivisor);
-    changed |= applyVehicleParam(params, "tankCap", configGetTankCapacity, configSetTankCapacity);
-    changed |= applyVehicleParam(params, "dteDiv", configGetDteDivisor, configSetDteDivisor);
-    return changed;
+uint8_t CanConfigProcessor::applyVehicleParams(JsonObjectConst params) {
+    uint8_t fields = 0;
+    fields |= applyVehicleParam(params, "steerScale", configSetSteerScale, CONFIG_STEER_SCALE);
+    fields |= applyVehicleParam(params, "steerOffset", configSetSteerOffset, CONFIG_STEER_OFFSET);
+    fields |= applyVehicleParam(params, "steerInvert", configSetSteerInvert, CONFIG_STEER_INVERT);
+    fields |= applyVehicleParam(params, "indTimeout", configSetIndicatorTimeout, CONFIG_IND_TIMEOUT);
+    fields |= applyVehicleParam(params, "rpmDiv", configSetRpmDivisor, CONFIG_RPM_DIV);
+    fields |= applyVehicleParam(params, "tankCap", configSetTankCapacity, CONFIG_TANK_CAP);
+    fields |= applyVehicleParam(params, "dteDiv", configSetDteDivisor, CONFIG_DTE_DIV);
+    return fields;
 }
 
 // =============================================================================

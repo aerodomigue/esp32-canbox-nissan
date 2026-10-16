@@ -3,7 +3,7 @@
 
 void configInit() {}
 void configReset() {}
-void configSave() {}
+void configSave(uint8_t fields) {}
 
 const CanboxConfig* configGet() { return nullptr; }
 const char* configGetVehicleFile() { return ""; }

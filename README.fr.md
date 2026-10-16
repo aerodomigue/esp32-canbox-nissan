@@ -188,7 +188,7 @@ Le boîtier peut être configuré via USB série sans recompilation. Connectez-v
 | `CFG LIST` | Afficher les paramètres de calibration |
 | `CFG SET <param> <valeur>` | Modifier un paramètre |
 | `CFG SAVE` | Sauvegarder en flash (NVS) |
-| `CAN STATUS` | État de la config CAN (mode MOCK/REAL) |
+| `CAN STATUS` | État de la config CAN (MOCK/REAL, ou ERROR sans profil valide) |
 | `CAN LIST` | Lister les fichiers de config véhicule |
 | `CAN LOAD <fichier>` | Charger une config véhicule |
 | `CAN UPLOAD START/DATA/END` | Upload config via Base64 |
@@ -339,6 +339,14 @@ même pour le même fichier. Vérifier avec `CFG LIST`. `CFG SET`/`CFG SAVE`
 n'écrivent pas dans le JSON : les ajustements durables et partagés doivent
 être reportés dans le fichier. Les clés nulles/absentes peuvent toujours
 conserver un réglage local au rechargement.
+
+Un échec de `CAN RELOAD` renvoie `ERROR` et conserve le profil actif ainsi que
+la calibration. Si le JSON sélectionné manque ou est invalide au démarrage,
+les logs CAN/OBD et l'USB restent disponibles, avec les sorties radio désactivées
+jusqu'au chargement d'un profil valide ; aucune bascule automatique en démo.
+Seules les clés explicites du JSON sont sauvegardées au rechargement : un
+réglage local sur une clé nulle/absente nécessite toujours `CFG SAVE` pour
+survivre au redémarrage. Les valeurs entières comme `500.0` restent compatibles.
 
 `rpmDiv`, `tankCap` et `dteDiv` sont des réglages historiques mémorisés mais
 actuellement inutilisés par le décodeur. `8` et `338` reprennent les diviseurs

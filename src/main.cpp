@@ -104,15 +104,19 @@ void setup() {
     RadioSerial.begin(38400, SERIAL_8N1, 6, 5);
 
     // G. CAN Configuration - Load from JSON or use mock mode
-    canProcessor.begin();  // Attempts to load /vehicle.json or /NissanJukeF15.json
+    canProcessor.begin();  // A failed selected profile must not enable simulation.
 
     if (canProcessor.isMockMode()) {
         Console.println("=== MOCK MODE ACTIVE ===");
-        Console.println("No vehicle config found - using simulated data");
+        Console.println("Using the loaded simulation profile");
         mockGenerator.begin();
         // Skip CAN hardware initialization in mock mode
     } else {
-        Console.printf("Vehicle config loaded: %s\n", canProcessor.getProfileName());
+        if (canProcessor.hasProfile()) {
+            Console.printf("Vehicle config loaded: %s\n", canProcessor.getProfileName());
+        } else {
+            Console.println("CONFIG ERROR: raw CAN/USB available; radio output disabled");
+        }
 
         // H. CAN Bus Initialization - TWAI controller setup (only in real mode)
         ESP32Can.setPins(CAN_TX, CAN_RX);
@@ -250,6 +254,6 @@ void loop() {
     // RADIO TRANSMISSION (both modes)
     // ==========================================================================
     canProcessor.updateFuelConsumption(millis());
-    processRadioUpdates();
+    if (canProcessor.hasProfile()) processRadioUpdates();
     Console.drain();
 }

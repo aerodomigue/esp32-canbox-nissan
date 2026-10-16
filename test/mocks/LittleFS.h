@@ -56,8 +56,9 @@ private:
 // Fixture JSON files live in test/fixtures/ and are accessed by name (no leading /).
 class FS {
 public:
-    bool begin(bool) { return true; }
-    bool begin() { return true; }
+    bool mountSucceeds = true;
+    bool formatRequested = false;
+    bool begin(bool format = false) { formatRequested = format; return mountSucceeds; }
 
     // Base path used by tests — set before calling loadFromJson()
     const char* basePath = "test/fixtures";

@@ -105,6 +105,11 @@ defaults. The JSON loader rejects invalid parameter types/ranges without
 changing the current profile or calibration. `CAN GET` shows the file,
 whereas `CFG LIST` shows the running settings.
 
+On a same-file reload, only explicit JSON keys are saved. Unsaved local
+changes to null/absent keys remain in RAM and disappear on reboot unless
+`CFG SAVE` was issued. Integral numeric forms such as `500.0` are accepted;
+fractional values such as `500.5` are rejected.
+
 #### CFG GET `<param>`
 Read a calibration parameter value.
 
@@ -254,9 +259,22 @@ Deleted: /OldConfig.json
 ```
 
 #### CAN RELOAD
-Reload the saved vehicle file, with fallback to `/vehicle.json`,
-`/MockDemo.json`, then `/NissanJukeF15.json`. Reapply its explicit
-`vehicleParams` over local calibration.
+Reload only the saved vehicle file and reapply its explicit `vehicleParams`.
+There is no fallback selection. If no file is selected, or it is missing or
+invalid, the response is `ERROR` and the active profile/data/calibration remain
+unchanged:
+
+```text
+ERROR: Failed to reload selected profile; active configuration unchanged
+```
+
+If a selected file fails at boot, `CAN STATUS` reports
+`Mode: ERROR (no valid profile)` and `SYS DATA` reports `Mode: ERROR (None)`.
+Raw CAN/OBD logging and USB recovery remain available; the radio receives no
+vehicle packets until a valid profile loads. The device does not enter demo mode.
+Upload a corrected file and retry `CAN RELOAD`, or use `CAN LOAD <filename>`.
+
+Successful response:
 
 ```
 > CAN RELOAD

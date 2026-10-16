@@ -18,6 +18,7 @@ struct MockConfigState {
 
     int resetCount = 0;
     int saveCount  = 0;
+    uint8_t lastSavedFields = 0;
 
     char vehicleFile[64] = "";
 
