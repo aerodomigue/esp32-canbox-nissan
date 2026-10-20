@@ -55,6 +55,7 @@ or unavailable, requiring further captures, calibration or decoding work.
 | Lights | ✅ Operation confirmed on the CANBox side | Parking lights, low beam and high beam; the Manager parking-light display check is [documented](docs/protocols/USB_SERIAL_PROTOCOL.md#lights-dashboard-field) |
 | Battery Voltage | ✅ Operation confirmed | Also consistent with OBD: mean absolute difference 0.139 V, potentially different measurement points |
 | Engine Coolant Temperature | ✅ Operation confirmed | Owner confirmation and `0x551[0]−40` extraction corroborated by OBD; distinct from outside temperature |
+| Engine Oil Temperature | Not available | Candidate `0x580[4]−40` still unvalidated on F15; no oil output established in the audited Toyota APK |
 | Fuel Tank Level | Unavailable in the Juke preset | False `0x5C5[0]` gauge removed; `FuelValid: 0` distinguishes the compatibility value `0 L` from a measurement |
 | Brake pedal | Unvalidated | `0x180[7] & 0x01`; action and polarity still need a separate vehicle check |
 | External Temperature | Unvalidated, incorrect value reported | `0x540[0]−40` gives 28 °C in captures; the owner reports approximately 20 °C |
@@ -365,7 +366,7 @@ Consumption settings remain in `fuelConsumption`. See the [preset guide](docs/VE
 | Fuel Level | — | — | No Juke source; compatibility `Fuel: 0 L` with `FuelValid: 0` |
 | Battery Voltage | 0x6F6 | — | Alternator output |
 | External Temperature | 0x540 | 5000ms | Legacy byte 0 − 40; physical reference pending |
-| Coolant Temperature | 0x551 | 5000ms | Confirmed `0x551[0]−40` measurement; current UART placement in CMD 0x28 B0 is not established by a specification |
+| Coolant Temperature | 0x551 | 5000ms | `0x551[0]−40` → UART `0x7D/0x09`, `09 00 (°C+40)`; fresh source required; [APK verification and display setting](docs/technical/RADIO_SEND.md#4b-engine-coolant-temperature-command-0x7d-sub-command-0x09) |
 | Door Status | 0x60D | 250ms | All doors + trunk (or on change) |
 | Indicators / Lights | 0x60D | 200ms or on change | Operation confirmed; UART `0x7D/01` and the `SYS DATA` `Lights:` line |
 | Distance to Empty | 0x54C | 5000ms | Initial bytes 6–7, big endian, raw * 100 / 338; calibration pending |

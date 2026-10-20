@@ -210,23 +210,30 @@ void sendOdometerMessage(uint32_t odo) {
 }
 
 /**
- * @brief Send outside and coolant temperatures
+ * @brief Send outside temperature in the Toyota climate packet
  * @param tempExternal Ambient air temperature in °C
- * @param tempCoolant  Engine coolant temperature in °C
  *
  * Encoding: (temp + 40) × 2
- * Per RAV4 spec (PDF chinois + anglais): seul byte[5] = temp extérieure est défini.
- * Les autres bytes doivent être 0x00 selon le spec.
- * INCONNU: aucune source ne confirme quel byte utiliser pour la temp moteur
- * dans ce protocole — payload[0] est une hypothèse non vérifiée.
+ * D5 carries ambient temperature. D0 is an A/C status mask in FYT j0/c3,
+ * not an engine temperature; leave the unimplemented climate fields zero.
  */
-void sendOutsideTempMessage(int8_t tempExternal, int8_t tempCoolant) {
+void sendOutsideTempMessage(int8_t tempExternal) {
     uint8_t payload[12] = {0};
-    // TODO: byte position pour coolant temp non documentée dans le protocole RAV4
-    // payload[0] = hypothèse — à confirmer par capture UART d'une vraie RAV4
-    payload[0] = (uint8_t)((tempCoolant + 40) * 2);
-    payload[5] = (uint8_t)((tempExternal + 40) * 2);  // seul byte documenté
+    payload[5] = (uint8_t)((tempExternal + 40) * 2);
     sendCanboxMessage(CMD_OUTSIDE_TEMP, payload, 12);
+}
+
+/**
+ * @brief Send engine coolant in the FYT Toyota 0x7D/0x09 message.
+ *
+ * com.syu.ms 26.0507 j0/c3 reads payload D2 unsigned, subtracts 40,
+ * and emits callback 1049 [2, degrees C]. D1 is unused by that decoder.
+ * No oil-temperature byte or unavailable sentinel is verified in this build.
+ */
+void sendCoolantTempMessage(int16_t temperature) {
+    if (temperature < -40 || temperature > 215) return;
+    const uint8_t payload[3] = {0x09, 0x00, static_cast<uint8_t>(temperature + 40)};
+    sendCanboxMessage(CMD_MULTI_FUNCTION, payload, sizeof(payload));
 }
 
 /**
@@ -454,11 +461,15 @@ void processRadioUpdates() {
     }
 
     // =========================================================================
-    // 7. OUTSIDE TEMPERATURE (CMD 0x28) - 5s interval
+    // 7. TEMPERATURES (CMD 0x28 and 0x7D/0x09) - 5s interval
     // =========================================================================
-    // byte[5] = ambient air temp (0x540), byte[0] = coolant temp (0x551, hypothesis)
+    // Outside temperature remains in 0x28 D5; coolant uses 0x7D/0x09 D2.
     if (now - lastTempTime >= TEMP_INTERVAL_MS) {
-        sendOutsideTempMessage(tempExt, coolantTemp);
+        sendOutsideTempMessage(tempExt);
+        if (canAuxData.coolantValid &&
+            uint32_t(now - canAuxData.coolantReceivedAt) < CanAuxData::COOLANT_TIMEOUT_MS) {
+            sendCoolantTempMessage(coolantTemp);
+        }
         lastTempTime = now;
     }
 

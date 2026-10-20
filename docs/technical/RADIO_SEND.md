@@ -17,6 +17,7 @@ values sent over UART.
 | 0x23 | Current Trip / Historical Fuel Consumption | 13 | 5000ms |
 | 0x24 | Door Status + IG Proxy | 2 | 250ms |
 | 0x28 | Outside Temperature | 12 | 5000ms |
+| 0x7D / 0x09 | Engine coolant temperature | 3 | 5000ms, fresh source only |
 | 0x29 | Steering Wheel Angle | 2 | 200ms |
 | 0x7D/01 | Lights & Indicators | 2 | 200ms |
 | 0x7D/03 | Vehicle Speed | 5 | 500ms |
@@ -243,22 +244,48 @@ Bytes 9-11: Trip 2, currently 0x00 (unavailable)
 
 **Payload Structure:**
 ```
-Byte 0: Encoded coolant temperature = (coolant + 40) × 2, unverified hypothesis
-Bytes 1-4: 0x00
+Bytes 0-4: 0x00 (unimplemented climate fields)
 Byte 5: Encoded temperature = (temp + 40) × 2
 Bytes 6-11: 0x00 (reserved)
 ```
 
 **Example:** 20°C → (20 + 40) × 2 = 120 → 0x78
 
-Coolant at byte 0 is an existing implementation hypothesis, not a confirmed
-Raise field. Its presence does not establish that the head unit displays
-coolant temperature.
+The previous coolant write in D0 has been removed: FYT `j0/c3` interprets
+that byte as climate status bits. It never represented engine temperature.
+The existing ambient conversion remains unchanged; values outside its
+one-byte range still wrap. Its F15 CAN source is not validated.
 
-Both encoded temperatures are cast to `uint8_t` without clamping. Values
-outside 0–255 wrap on the wire; for example, coolant at 100°C encodes as
-`280 mod 256 = 24`. This limits the current temperature packet independently
-of the OBD reference, which retains the decoded Celsius value.
+### 4b. Engine Coolant Temperature (Command 0x7D, Sub-command 0x09)
+
+Payload: **`09 00 TT`**, with `TT = coolant_C + 40` (unsigned byte).
+For **85°C**, the complete frame is **`2E 7D 03 09 00 7D F9`**.
+Byte positions here are zero based: D0 = subcommand, D1 = unused by the
+audited decoder, D2 = temperature. This is a three-byte payload, not a
+copy of the ambiguously numbered four/five-byte examples on the forum.
+
+Verified by executing the arithmetic/control flow of `j0/c3.V2` from
+[`com.syu.ms` 26.0507](https://github.com/PimpinPumpkin/fyt7862-mods/blob/4c545e945a1ef6e2faadae29d9a95e9c714822ca/artifacts/apps/com.syu.ms.apk)
+(APK SHA256 `6892e90067437c2a97cfb8e75396edade5d2a1772fd0ef7681d81c28f64fdbdc`).
+It reads `B[start+4]`, masks to 255, subtracts 40 and emits callback
+`1049 [2, temperature_C]` (bytecode offsets `0x2c08`–`0x2c38`).
+All 256 possible values round-trip, including values above 127°C; firmware
+storage is now `int16_t`. This verifies decoder behavior, not a hardware
+test of the owner's installed DUDU build.
+
+F15 input remains `0x551 B0−40`. A received, in-range sample is required;
+the firmware sends every five seconds only while the latest sample is
+less than two seconds old. Availability clears on a successful profile
+load/reset. Invalid or missing input is not replaced by 0°C. No unavailable
+sentinel is established; when transmission stops, the head unit may retain
+its last displayed value.
+
+The [DUDU discussion](https://forum.dudu-auto.com/d/1751-status-bar-from-canbus-please?page=2)
+confirms Toyota coolant integration and describes selecting
+**Peripherals → OBD → system integration** on compatible builds.
+The same discussion mentions oil temperature, but this audited decoder
+does **not** read or publish an oil field in `0x7D/0x09`. No oil value is
+sent. See the [F15 research and capture evidence](../JUKE_F15_CAN_MAPPING.md#engine-temperatures-to-the-head-unit).
 
 ---
 

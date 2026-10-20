@@ -47,8 +47,8 @@ extern float fuelConsoMoy;
 /** External/ambient temperature in °C (legacy Juke candidate: 0x540). */
 extern int8_t tempExt;
 
-/** Engine coolant temperature in °C (from 0x551) */
-extern int8_t coolantTemp;
+/** Engine coolant °C; check canAuxData validity/freshness before transmission. */
+extern int16_t coolantTemp;
 
 /** Odometer (Total Mileage) in km - 0 = unknown */
 extern uint32_t currentOdo;

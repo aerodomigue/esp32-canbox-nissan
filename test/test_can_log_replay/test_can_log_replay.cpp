@@ -192,7 +192,7 @@ void test_current_can_obd_excerpt_decodes_verified_fields() {
     // integer /8. Speed reference 16 at t=50984 matches CAN t=50976 exactly.
     TEST_ASSERT_EQUAL_UINT16(903, engineRPM);
     TEST_ASSERT_EQUAL_UINT8(16, vehicleSpeed);
-    TEST_ASSERT_EQUAL_INT8(63, coolantTemp);
+    TEST_ASSERT_EQUAL_INT16(63, coolantTemp);
     TEST_ASSERT_EQUAL_UINT32(246945, currentOdo);
     TEST_ASSERT_TRUE(canAuxData.handbrakeValid);
     TEST_ASSERT_TRUE(canAuxData.handbrake);

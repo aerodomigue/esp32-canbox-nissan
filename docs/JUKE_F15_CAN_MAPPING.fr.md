@@ -39,6 +39,46 @@ niveau de carburant et marche arrière/rapport à identifier. Les données
 brutes ou corrélations disponibles ne suffisent pas à valider ces fonctions ;
 des captures supplémentaires ou du travail de décodage restent nécessaires.
 
+## Températures moteur vers le poste
+
+Mise à jour du **20 octobre 2026**. La source d'eau moteur reste
+`0x551 B0−40`. L'envoi UART utilise maintenant `0x7D/0x09`, avec le
+payload `09 00 (température+40)` ; l'ancienne écriture dans l'octet de
+climatisation `0x28 D0` est supprimée. La plage -40..215°C est traitée
+sans débordement d'un entier signé sur huit bits.
+L'envoi exige une mesure de moins de deux secondes ; le rechargement du
+profil le suspend jusqu'à la prochaine mesure. Le poste peut conserver
+son dernier affichage après perte de la source : aucun code « indisponible »
+n'est établi. Voir les [preuves APK et le réglage DUDU](technical/RADIO_SEND.md#4b-engine-coolant-temperature-command-0x7d-sub-command-0x09).
+
+Le [rejeu de la capture du 17 octobre](vehicle/nissan-juke-f15/evidence/20261020-engine-temperatures.json)
+traite **1 235 533 trames RX** avec le décodeur et l'encodeur de production,
+sous ASan/UBSan : **191 messages d'eau moteur** sont décodés à **78–86°C**
+par l'APK, exactement comme la dernière mesure CAN. Son âge ne dépasse
+pas 103 ms. Les **19 644 autres messages UART** restent identiques ;
+192 messages de climatisation perdent uniquement l'écriture erronée en D0.
+
+**L'huile moteur n'est ni activée ni validée.** Le manuel Nissan MR16DDT,
+[EC-32 et moniteur de données CONSULT](vehicle/nissan-juke-f15/EC.pdf),
+décrit une sonde d'huile moteur et `ENG OIL TEMP`, mais sans donner son
+identifiant CAN ou sa commande de diagnostic. Le masque de support OBD
+capturé pour la page 0x40 du service 01 (`FADC8001`) n'annonce pas le PID
+d'huile moteur `0x5C`. Le poller OBD de référence reste inchangé et en lecture.
+
+Une piste issue du
+[DBC Xterra 2011 public](https://github.com/commaai/opendbc/blob/156c2c08ee6e07b6c2d0f3700c81c3ba85f4f14e/opendbc/dbc/nissan_xterra_2011.dbc)
+est **`0x580 B4−40`**. Dans la capture Juke du 17 octobre, elle donne
+**88–98°C**, de **89°C** au début à **97°C** à la fin, sur
+**9 349 trames**. C'est plausible, mais ce n'est ni une validation Juke
+ni une mesure d'huile OBD. Ne pas confondre l'huile moteur avec le signal
+VBOX `0x560` de température d'huile de **transmission**.
+
+Le décodeur FYT Toyota examiné publie uniquement l'eau moteur dans
+`0x7D/0x09` ; modifier ou ajouter les octets supposés d'huile ne produit
+aucun événement d'huile. Il faut confirmer la source F15 et un décodeur
+de destination compatible avant activation. Aucun mapping expérimental
+d'huile n'est ajouté au JSON actif.
+
 ## Application dans le firmware et le preset actuels
 
 Le [preset Juke du dépôt](../data/NissanJukeF15.json) applique les corrections

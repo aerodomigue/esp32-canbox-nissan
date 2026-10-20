@@ -1,0 +1,33 @@
+{
+  "apk_exhaustive_coolant_values": 256,
+  "apk_ignored_oil_and_reserved_variants": 768,
+  "raw_frames_replayed": 1235533,
+  "uart_coolant_messages": 191,
+  "uart_coolant_min_c": 78,
+  "uart_coolant_max_c": 86,
+  "max_source_age_ms": 103,
+  "climate_messages_corrected": 192,
+  "other_uart_messages_identical": 19644,
+  "obd_oil_reference_available": false,
+  "date": "2026-10-20",
+  "apk_package": "com.syu.ms",
+  "apk_version": "26.0507",
+  "apk_sha256": "6892e90067437c2a97cfb8e75396edade5d2a1772fd0ef7681d81c28f64fdbdc",
+  "apk_decoder": "j0/c3.V2([B,I,I)",
+  "capture_sha256": "a466358af5116da3797bf6d62da7548a9bdd3c3961b49a3d6466a4cfa1183cd2",
+  "firmware_baseline": "db592ffbaca4f8c79b9afca46a1af28073b01a6e",
+  "validation": "Native replay using production decoder and UART encoder; ASan/UBSan. No physical head-unit test.",
+  "oil_candidate": {
+    "can_id": "0x580",
+    "start_byte": 4,
+    "formula": "raw-40",
+    "samples": 9349,
+    "min": 88,
+    "max": 98,
+    "first": 89,
+    "last": 97,
+    "unit": "degC",
+    "validated_on_f15": false,
+    "enabled": false
+  }
+}

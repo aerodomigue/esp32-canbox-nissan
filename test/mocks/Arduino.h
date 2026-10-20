@@ -88,7 +88,8 @@ using std::max;
 #endif
 
 // millis() / delay() stubs
-inline unsigned long millis() { return 0; }
+inline uint32_t mockMillis = 0;
+inline unsigned long millis() { return mockMillis; }
 inline void delay(unsigned long) {}
 
 // ESP object stub

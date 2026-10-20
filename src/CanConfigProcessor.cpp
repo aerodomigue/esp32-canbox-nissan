@@ -272,8 +272,9 @@ bool CanConfigProcessor::loadFromJson(const char* path) {
         _profile = std::move(nextProfile);
         _mockMode = _profile.isMock;
         _hasProfile = true;
-        // Never retain a previous profile's fuel values or observed flags.
+        // Never retain a previous profile's fuel/temperature availability.
         canAuxData = {};
+        coolantTemp = 0;
         _fuelEstimator.configure(_profile.fuelConsumption);
         canAuxData.fuelConsumptionDerived = _profile.fuelConsumption.enabled;
         canAuxData.fuelConsumptionEstimated = _profile.fuelConsumption.enabled &&
@@ -388,6 +389,9 @@ bool CanConfigProcessor::processFrame(const CanFrame& frame, uint32_t receivedAt
 
         // Step 3: Write to appropriate GlobalData variable
         writeToGlobalData(field.target, convertedValue);
+        if (field.target == OutputField::COOLANT_TEMP) {
+            canAuxData.coolantReceivedAt = receivedAt;
+        }
 
         if (_profile.fuelConsumption.enabled) {
             if (field.target == OutputField::VEHICLE_SPEED) {
@@ -619,7 +623,9 @@ void CanConfigProcessor::writeToGlobalData(OutputField target, int32_t value) {
             parkingLightsOn = (value != 0);
             break;
         case OutputField::COOLANT_TEMP:
-            coolantTemp = (int8_t)value;
+            // Keep the complete unsigned-byte-minus-40 range without int8 wrap.
+            canAuxData.coolantValid = value >= -40 && value <= 215;
+            if (canAuxData.coolantValid) coolantTemp = static_cast<int16_t>(value);
             break;
 
         default:

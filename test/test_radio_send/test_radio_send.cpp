@@ -17,6 +17,7 @@
 #include <vector>
 #include "Arduino.h"
 #include "RadioSend.h"
+#include "GlobalData.h"
 
 // Forward declarations — functions defined in RadioSend.cpp but not exported in header
 void sendDoorCommand(uint8_t doorMask, bool igOn);
@@ -24,7 +25,8 @@ void sendSteeringAngleMessage(int32_t angle);
 void sendRpmMessage(uint16_t rpm);
 void sendSpeedMessage(uint16_t speed);
 void sendOdometerMessage(uint32_t odo);
-void sendOutsideTempMessage(int8_t tempExternal, int8_t tempCoolant);
+void sendOutsideTempMessage(int8_t tempExternal);
+void sendCoolantTempMessage(int16_t temperature);
 void sendTripInfoMessage(uint16_t range_km, uint16_t avg_speed_01, uint16_t elapsed_sec);
 void sendFuelConsumptionMessage(uint16_t consumption_01);
 void sendFuelConsumptionAvgMessage(uint16_t consumption_01);
@@ -182,34 +184,111 @@ void test_odometer_zero() {
 }
 
 // =============================================================================
-// CMD 0x28 — Outside temp (byte[5]) + coolant hypothesis (byte[0])
+// CMD 0x28 — Outside temp only (byte[5]); byte[0] is climate status
 // Encoding: (temp+40)×2
 // =============================================================================
 
-void test_temp_28c_coolant_50c() {
+void test_temp_28c_without_false_climate_status() {
     // ext=28: (28+40)×2=136=0x88 at byte[5]
-    // coolant=50: (50+40)×2=180=0xB4 at byte[0]
-    sendOutsideTempMessage(28, 50);
-    // 2E 28 0C B4 00 00 00 00 88 00 00 00 00 00 00 8F
+    sendOutsideTempMessage(28);
     uint8_t exp[] = {0x2E, 0x28, 0x0C,
-                     0xB4,                              // byte[0] coolant
+                     0x00,                              // no invented A/C status
                      0x00, 0x00, 0x00, 0x00,
                      0x88,                              // byte[5] ext temp
+                     0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                     0x43};
+    assertFrame(exp, sizeof(exp));
+}
+
+void test_temp_minus10c() {
+    sendOutsideTempMessage(-10);
+    uint8_t exp[] = {0x2E, 0x28, 0x0C,
+                     0x00, 0x00, 0x00, 0x00, 0x00,
+                     0x3C,
                      0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
                      0x8F};
     assertFrame(exp, sizeof(exp));
 }
 
-void test_temp_minus10c_coolant_0c() {
-    // ext=-10: (-10+40)×2=60=0x3C; coolant=0: (0+40)×2=80=0x50
-    sendOutsideTempMessage(-10, 0);
-    // 2E 28 0C 50 00 00 00 00 3C 00 00 00 00 00 00 3F
-    uint8_t exp[] = {0x2E, 0x28, 0x0C,
-                     0x50, 0x00, 0x00, 0x00, 0x00,
-                     0x3C,
-                     0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-                     0x3F};
-    assertFrame(exp, sizeof(exp));
+void test_coolant_wire_85c() {
+    sendCoolantTempMessage(85);
+    const uint8_t expected[] = {0x2E, 0x7D, 0x03, 0x09, 0x00, 0x7D, 0xF9};
+    assertFrame(expected, sizeof(expected));
+}
+
+void test_coolant_wire_complete_range_without_wrapping() {
+    // Independently decode the exact unsigned-byte-minus-40 format read by c3.
+    for (int temp = -40; temp <= 215; ++temp) {
+        RadioSerial.clear();
+        sendCoolantTempMessage(temp);
+        const auto& b = RadioSerial.captured;
+        TEST_ASSERT_EQUAL(7, b.size());
+        TEST_ASSERT_EQUAL_HEX8(0x7D, b[1]);
+        TEST_ASSERT_EQUAL_HEX8(3, b[2]);
+        TEST_ASSERT_EQUAL_HEX8(9, b[3]);
+        TEST_ASSERT_EQUAL_HEX8(0, b[4]);
+        TEST_ASSERT_EQUAL_INT(temp, int(b[5]) - 40);
+        TEST_ASSERT_EQUAL_HEX8(0xFF, uint8_t(b[1]+b[2]+b[3]+b[4]+b[5]+b[6]));
+    }
+}
+
+void test_coolant_wire_rejects_unrepresentable_values() {
+    for (int16_t temp : {-32768, -41, 216, 32767}) sendCoolantTempMessage(temp);
+    TEST_ASSERT_EQUAL(0, RadioSerial.captured.size());
+}
+
+static unsigned coolantFrames() {
+    const auto& b = RadioSerial.captured;
+    unsigned count = 0;
+    for (size_t i = 0; i < b.size();) {
+        TEST_ASSERT_TRUE(i + 4 <= b.size());
+        TEST_ASSERT_EQUAL_HEX8(0x2E, b[i]);
+        const size_t next = i + 4 + b[i+2];
+        TEST_ASSERT_TRUE(next <= b.size());
+        if (b[i+1] == 0x7D && b[i+2] && b[i+3] == 0x09) ++count;
+        if (b[i+1] == 0x28) TEST_ASSERT_EQUAL_HEX8(0, b[i+3]);
+        i = next;
+    }
+    return count;
+}
+
+void test_coolant_scheduler_requires_received_fresh_source() {
+    canAuxData = {};
+    coolantTemp = 85;
+    mockMillis = 5000;
+    processRadioUpdates();
+    TEST_ASSERT_EQUAL(0, coolantFrames()); // not received, despite stored value
+
+    RadioSerial.clear();
+    mockMillis = 10000;
+    canAuxData.coolantValid = true;
+    canAuxData.coolantReceivedAt = 8001;
+    coolantTemp = 0; // 0°C is a measurement, not an unknown sentinel
+    processRadioUpdates();
+    TEST_ASSERT_EQUAL(1, coolantFrames());
+
+    RadioSerial.clear();
+    mockMillis = 15000;
+    canAuxData.coolantReceivedAt = 13000;
+    processRadioUpdates();
+    TEST_ASSERT_EQUAL(0, coolantFrames()); // exactly 2 s old
+
+    RadioSerial.clear();
+    mockMillis = 20000;
+    canAuxData.coolantReceivedAt = mockMillis;
+    canAuxData.coolantValid = false;
+    processRadioUpdates();
+    TEST_ASSERT_EQUAL(0, coolantFrames()); // profile reload / invalid sample
+
+    // A fresh source across the 32-bit millis wrap must still be transmitted.
+    RadioSerial.clear();
+    mockMillis = 1000;
+    canAuxData.coolantValid = true;
+    canAuxData.coolantReceivedAt = UINT32_MAX - 500;
+    processRadioUpdates();
+    TEST_ASSERT_EQUAL(1, coolantFrames());
+    canAuxData = {};
+    mockMillis = 0;
 }
 
 // =============================================================================
@@ -384,8 +463,12 @@ int main(int argc, char** argv) {
     RUN_TEST(test_odometer_zero);
 
     // Temperature
-    RUN_TEST(test_temp_28c_coolant_50c);
-    RUN_TEST(test_temp_minus10c_coolant_0c);
+    RUN_TEST(test_temp_28c_without_false_climate_status);
+    RUN_TEST(test_temp_minus10c);
+    RUN_TEST(test_coolant_wire_85c);
+    RUN_TEST(test_coolant_wire_complete_range_without_wrapping);
+    RUN_TEST(test_coolant_wire_rejects_unrepresentable_values);
+    RUN_TEST(test_coolant_scheduler_requires_received_fresh_source);
 
     // Trip info
     RUN_TEST(test_trip_305km_range);

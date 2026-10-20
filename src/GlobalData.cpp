@@ -33,8 +33,8 @@ float fuelConsoMoy = 0.0;
 /** External/ambient temperature in °C - 0 = unknown */
 int8_t tempExt = 0;
 
-/** Engine coolant temperature in °C - 0 = unknown */
-int8_t coolantTemp = 0;
+/** Engine coolant °C (-40..215); availability is separate, 0°C is valid. */
+int16_t coolantTemp = 0;
 
 /** Odometer (Total Mileage) in km - 0 = unknown */
 uint32_t currentOdo = 0;

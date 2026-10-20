@@ -28,7 +28,7 @@ extern uint8_t  fuelLevel;
 extern float    voltBat;
 extern int16_t  dteValue;
 extern int8_t   tempExt;
-extern int8_t   coolantTemp;
+extern int16_t   coolantTemp;
 extern uint32_t currentOdo;
 extern bool     headlightsOn;
 extern bool     highBeamOn;
@@ -103,14 +103,39 @@ void test_coolant_50c() {
     uint8_t d[] = {0x5A, 0xC0, 0x00, 0x80, 0xFF, 0x02, 0x80, 0xFF};
     CanFrame f = makeFrame(0x551, d, 8);
     proc.processFrame(f);
-    TEST_ASSERT_EQUAL_INT8(50, coolantTemp);
+    TEST_ASSERT_EQUAL_INT16(50, coolantTemp);
 }
 
 void test_coolant_operating_temp() {
     uint8_t d[] = {0x82, 0xC0, 0x00, 0x80, 0xFF, 0x02, 0x80, 0xFF};
     CanFrame f = makeFrame(0x551, d, 8);
     proc.processFrame(f);
-    TEST_ASSERT_EQUAL_INT8(90, coolantTemp);  // 0x82=130, 130-40=90°C (operating)
+    TEST_ASSERT_EQUAL_INT16(90, coolantTemp);  // 0x82=130, 130-40=90°C (operating)
+}
+
+void test_coolant_complete_byte_range_and_reception_time() {
+    TEST_ASSERT_FALSE(canAuxData.coolantValid);
+    uint8_t data[8] = {};
+    for (unsigned raw = 0; raw <= 255; ++raw) {
+        data[0] = raw;
+        TEST_ASSERT_TRUE(proc.processFrame(makeFrame(0x551, data, 8), 1000 + raw));
+        TEST_ASSERT_EQUAL_INT16(int(raw) - 40, coolantTemp);
+        TEST_ASSERT_TRUE(canAuxData.coolantValid);
+        TEST_ASSERT_EQUAL_UINT32(1000 + raw, canAuxData.coolantReceivedAt);
+    }
+    // An incomplete frame must not refresh a previous valid observation.
+    TEST_ASSERT_FALSE(proc.processFrame(makeFrame(0x551, data, 0), 2000));
+    TEST_ASSERT_EQUAL_INT16(215, coolantTemp);
+    TEST_ASSERT_EQUAL_UINT32(1255, canAuxData.coolantReceivedAt);
+}
+
+void test_coolant_profile_reload_clears_availability() {
+    uint8_t data[8] = {125};
+    TEST_ASSERT_TRUE(proc.processFrame(makeFrame(0x551, data, 8), 5000));
+    TEST_ASSERT_TRUE(canAuxData.coolantValid);
+    TEST_ASSERT_TRUE(proc.loadFromJson("/NissanJukeF15.json"));
+    TEST_ASSERT_FALSE(canAuxData.coolantValid);
+    TEST_ASSERT_EQUAL_INT16(0, coolantTemp);
 }
 
 // =============================================================================
@@ -322,7 +347,7 @@ void test_fuel_counter_wrap_preserves_raw_units() {
         TEST_ASSERT_TRUE(proc.processFrame(makeFrame(0x551, data, 8)));
         TEST_ASSERT_TRUE(canAuxData.fuelCounterValid);
         TEST_ASSERT_EQUAL_UINT8(raw, canAuxData.fuelCounterRaw);
-        TEST_ASSERT_EQUAL_INT8(63, coolantTemp);
+        TEST_ASSERT_EQUAL_INT16(63, coolantTemp);
         TEST_ASSERT_EQUAL_UINT16(0, fuelConsumptionInst);
         TEST_ASSERT_EQUAL_UINT16(0, fuelConsumptionAvg);
         TEST_ASSERT_FALSE(canAuxData.fuelConsumptionInstValid);
@@ -472,13 +497,13 @@ void test_coolant_missing_counter_byte_rejected_atomically() {
     const uint32_t processedBefore = proc.getFramesProcessed();
     uint8_t truncated[] = {0x82};
     TEST_ASSERT_FALSE(proc.processFrame(makeFrame(0x551, truncated, 1)));
-    TEST_ASSERT_EQUAL_INT8(50, coolantTemp);
+    TEST_ASSERT_EQUAL_INT16(50, coolantTemp);
     TEST_ASSERT_FALSE(canAuxData.fuelCounterValid);
     TEST_ASSERT_EQUAL_UINT32(processedBefore, proc.getFramesProcessed());
 
     uint8_t complete[] = {0x82, 0x00};
     TEST_ASSERT_TRUE(proc.processFrame(makeFrame(0x551, complete, 2)));
-    TEST_ASSERT_EQUAL_INT8(90, coolantTemp);
+    TEST_ASSERT_EQUAL_INT16(90, coolantTemp);
     TEST_ASSERT_TRUE(canAuxData.fuelCounterValid);  // Zero is a valid raw counter.
     TEST_ASSERT_EQUAL_UINT8(0, canAuxData.fuelCounterRaw);
 }
@@ -698,7 +723,7 @@ static void assertUnsupportedFramePreservesState(const CanFrame& frame) {
     TEST_ASSERT_EQUAL_FLOAT(14.1f, voltBat);
     TEST_ASSERT_EQUAL_INT16(305, dteValue);
     TEST_ASSERT_EQUAL_INT8(28, tempExt);
-    TEST_ASSERT_EQUAL_INT8(50, coolantTemp);
+    TEST_ASSERT_EQUAL_INT16(50, coolantTemp);
     TEST_ASSERT_EQUAL_UINT32(239944, currentOdo);
     TEST_ASSERT_TRUE(headlightsOn);
     TEST_ASSERT_TRUE(highBeamOn);
@@ -771,6 +796,8 @@ int main(int argc, char** argv) {
     // Coolant temperature
     RUN_TEST(test_coolant_50c);
     RUN_TEST(test_coolant_operating_temp);
+    RUN_TEST(test_coolant_complete_byte_range_and_reception_time);
+    RUN_TEST(test_coolant_profile_reload_clears_availability);
 
     // Distance to empty
     RUN_TEST(test_dte_305km);

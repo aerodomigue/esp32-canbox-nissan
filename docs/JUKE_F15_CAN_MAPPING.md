@@ -38,6 +38,45 @@ fuel level and reverse/gear need identification. Available raw values or
 correlations do not establish these functions; additional captures or
 decoding work are still needed.
 
+## Engine temperatures to the head unit
+
+Updated **20 October 2026**. Coolant reception remains `0x551 B0−40`.
+Its UART output is now `0x7D/0x09`, payload `09 00 (temperature+40)`;
+the old write into climate-status byte `0x28 D0` has been removed.
+The full -40..215°C encoding is covered without signed-byte overflow.
+Transmission requires a sample less than two seconds old and stops on
+profile reload until a new sample arrives. The radio may keep its last
+display after source loss; no unavailable encoding is established.
+See the [decoder evidence and DUDU setting](technical/RADIO_SEND.md#4b-engine-coolant-temperature-command-0x7d-sub-command-0x09).
+
+The [17 October capture replay](vehicle/nissan-juke-f15/evidence/20261020-engine-temperatures.json)
+processes **1,235,533 RX frames** with the production decoder/serializer
+and ASan/UBSan: **191 coolant messages** decode to **78–86°C** in the APK,
+matching the latest CAN sample exactly. Source age is at most 103 ms.
+The **19,644 unrelated UART messages** are identical to the baseline;
+192 climate packets only lose the erroneous coolant write in D0.
+
+**Engine oil is not enabled or validated.** The Nissan MR16DDT manual
+[EC-32 and CONSULT data monitor](vehicle/nissan-juke-f15/EC.pdf) documents
+an engine-oil temperature sensor and `ENG OIL TEMP`, without a CAN ID or
+diagnostic request for it. The captured ECU support bitmap for service 01
+page 0x40 (`FADC8001`) does not advertise engine-oil PID `0x5C`.
+The existing OBD reference poller remains read-only and unchanged.
+
+A candidate from the public
+[2011 Xterra DBC](https://github.com/commaai/opendbc/blob/156c2c08ee6e07b6c2d0f3700c81c3ba85f4f14e/opendbc/dbc/nissan_xterra_2011.dbc)
+is **`0x580 B4−40`**. On the 17 October Juke capture it gives
+**88–98°C**, from **89°C** initially to **97°C** at the end across
+**9,349 frames**. This is plausible but is neither Juke validation nor an
+OBD oil measurement. The manual gearbox's engine oil must not be confused
+with the VBOX `0x560` **transmission** oil signal.
+
+The audited FYT Toyota decoder publishes only coolant from `0x7D/0x09`;
+changing or appending the supposed oil bytes produces no oil callback.
+Both the F15 oil source and a compatible destination decoder must be
+confirmed before enabling it. No experimental oil mapping is added to
+the active JSON.
+
 ## Application in the current firmware and preset
 
 The repository's [Juke preset](../data/NissanJukeF15.json) applies the

@@ -56,6 +56,7 @@ captures, une calibration ou du travail de décodage.
 | Feux | ✅ Fonctionnement confirmé côté boîtier | Position, croisement et pleins phares ; le contrôle de l'affichage des positions dans Manager est [documenté](docs/protocols/USB_SERIAL_PROTOCOL.md#lights-dashboard-field) |
 | Tension Batterie | ✅ Fonctionnement confirmé | Également cohérente avec l'OBD : écart moyen 0,139 V, points de mesure potentiellement différents |
 | Température Eau Moteur | ✅ Fonctionnement confirmé | Confirmation utilisateur et décodage `0x551[0]−40` corroboré par OBD ; distincte de la température extérieure |
+| Température Huile Moteur | Indisponible | Piste `0x580[4]−40` non validée sur F15 ; aucun champ d'huile établi dans l'APK Toyota examinée |
 | Niveau Essence | Indisponible dans le preset Juke | Fausse jauge `0x5C5[0]` retirée ; `FuelValid: 0` distingue la valeur de compatibilité `0 L` d'une mesure |
 | Pédale de frein | Non validée | `0x180[7] & 0x01` ; geste et polarité à vérifier séparément sur le véhicule |
 | Température Extérieure | Non validée, valeur incorrecte signalée | Le mapping `0x540[0]−40` donne 28 °C dans les captures ; le propriétaire indique environ 20 °C |
@@ -369,7 +370,7 @@ consommation restent dans `fuelConsumption`. Voir le [guide des presets](docs/VE
 | Niveau Essence | — | — | Aucune source Juke ; compatibilité `Fuel: 0 L` avec `FuelValid: 0` |
 | Tension Batterie | 0x6F6 | — | Sortie alternateur |
 | Température Extérieure | 0x540 | 5000ms | Octet historique 0 − 40 ; référence physique à vérifier |
-| Température Eau Moteur | 0x551 | 5000ms | Mesure `0x551[0]−40` confirmée ; placement UART actuel dans CMD 0x28 B0 non établi par une spécification |
+| Température Eau Moteur | 0x551 | 5000ms | `0x551[0]−40` → UART `0x7D/0x09`, `09 00 (°C+40)` ; source fraîche obligatoire ; [preuve APK et réglage d'affichage](docs/technical/RADIO_SEND.md#4b-engine-coolant-temperature-command-0x7d-sub-command-0x09) |
 | État Portes | 0x60D | 250ms | Toutes portes + coffre (ou sur changement) |
 | Clignotants / Feux | 0x60D | 200ms ou sur changement | Fonctionnement confirmé ; UART `0x7D/01` et ligne `Lights:` de `SYS DATA` |
 | Autonomie | 0x54C | 5000ms | Octets initiaux 6–7, big endian, brut × 100 / 338 ; calibration à vérifier |
