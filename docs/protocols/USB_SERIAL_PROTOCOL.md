@@ -53,6 +53,7 @@ The firmware does not emit an `OBD ` family, a `DASH ` family or standalone
 | `ODB RAW_RX 0x` | Received raw standard frame on `0x7DF`–`0x7EF` | Diagnostic capture |
 | `ODB TX ` | OBD request bytes and driver queue status | Diagnostic capture |
 | `ODB RX ` | Decoded OBD reference, never a dashboard update | Diagnostic capture |
+| `ODB PROBE_RX ` | Candidate Nissan read result; raw byte and provisional interpretation | Diagnostic capture |
 | `ODB ` (other subtypes) | Capabilities, timeouts, negative responses, state, driver/buffer counters | Diagnostic capture |
 | `=== Live Vehicle Data ===` (exact) | Start of the response to `SYS DATA` | Dashboard response |
 | `=========================` (exact) | End of that dashboard response | Finish dashboard response |
@@ -461,7 +462,8 @@ Unchanged from v1. See [`docs/protocols/OTA_PROTOCOL.md`](OTA_PROTOCOL.md) for f
 ### LOG - Raw CAN Capture and OBD Reference Polling
 
 In real vehicle mode, `LOG ON` enables raw CAN capture and read-only OBD-II
-service 01 polling for calibration. Reference measurements remain separate
+service 01 polling for calibration, plus bounded read-only service22 probes
+for the profile named exactly `Nissan Juke F15`. Reference measurements remain separate
 from the active preset and the values sent to the head unit.
 
 #### LOG ON
@@ -472,7 +474,8 @@ CAN logging enabled
 ```
 
 The following firmware output is **synthetic**, showing a vehicle that
-advertises RPM only. It illustrates discovery, a physical request and its
+advertises RPM only, with Nissan probes disabled (a different profile name).
+It illustrates discovery, a physical request and its
 response; it is not a captured or calibrated Juke measurement.
 
 ```text
@@ -487,7 +490,7 @@ ODB RX t_ms=1508 seq=2 request_id=0x7E0 ecu=0x7E8 pid=0x0C name=rpm value=643.00
 ```
 
 All OBD diagnostic records start with the exact prefix **`ODB`**, including
-`ODB TX`, `ODB RAW_RX`, `ODB SUPPORTED`, `ODB RX`, `ODB NEGATIVE`,
+`ODB TX`, `ODB RAW_RX`, `ODB SUPPORTED`, `ODB RX`, `ODB PROBE_RX`, `ODB NEGATIVE`,
 `ODB TIMEOUT`, `ODB STATE`, `ODB DRIVER` and `ODB BUFFER`. Standard raw frames outside
 IDs `0x7DF`–`0x7EF` start with `RX`;
 extended frames also keep that prefix. Command acknowledgments retain their
@@ -505,7 +508,12 @@ printed as declared, but the logger reads at most eight bytes.
 The client discovers supported PIDs with `00`, then `20` and `40` only when
 the preceding page announces them. It queries supported RPM (`0C`), speed
 (`0D`), coolant (`05`), fuel level (`2F`), module voltage (`42`), ambient
-temperature (`46`), manifold absolute pressure (`0B`) and fuel rate (`5E`).
+temperature (`46`), manifold absolute pressure (`0B`) and fuel rate (`5E`),
+plus fuel-system status (`03`), load (`04`), bank1 trims (`06/07`), intake
+temperature (`0F`), MAF (`10`), throttle (`11`), oxygen-sensor presence (`13`),
+wideband ratio/voltage (`24`), commanded ratio (`44`), fuel type (`51`) and
+oil temperature (`5C`). PIDs03 and24 each produce two `ODB RX` lines: use
+`name` as well as PID/ECU/unit to distinguish their values.
 Availability depends on the ECU. Fuel level is in percent and fuel rate in
 L/h; the firmware does not convert either into tank liters or L/100 km.
 
@@ -518,6 +526,18 @@ Unsupported parameters are skipped; missing replies produce a timeout,
 not a zero measurement. After three unsuccessful discovery requests, the
 client waits five seconds before trying again. `queued` means the driver
 accepted a request for transmission, not that the ECU acknowledged it.
+
+After discovery, two fast slots (cycle10/03/10/24/10/44, skipping unsupported
+PIDs) alternate with one normal slot for the remaining advertised PIDs.
+The F15 profile can use a normal slot for a Nissan probe at most once per10s
+if ECU7E8 replied to capability discovery and standard polling is available.
+The whitelist is `22111F`, `221114`, `221183`, `221304`, addressed to7E0.
+No session change, clearing or actuator service is sent. `ODB PROBE_RX`
+keeps the raw byte; only111F also prints the candidate conversionA−50°C.
+These results do not change dashboard/radio data. Probe TX/errors/timeouts
+use `service=0x22 did=0x....` instead of a service01 PID. Missing or terminally
+rejected DIDs stop until the next `LOG ON`. See the bilingual
+[calibration guide](../OBD_CALIBRATION.md) for exact formats and limitations.
 
 #### LOG OFF
 ```
@@ -728,7 +748,7 @@ OTA END                      Finalize and reboot
 OTA ABORT               Cancel update
 OTA STATUS              Show OTA status
 
-LOG ON|OFF            Raw CAN logging + ODB service 01 reference polling
+LOG ON|OFF            Raw CAN + ODB references and F15 candidate read probes
 
 SYS INFO              System information
 SYS DATA              Live vehicle data

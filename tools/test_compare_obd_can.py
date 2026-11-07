@@ -85,7 +85,16 @@ class ObdCanComparisonTests(unittest.TestCase):
         self.assertEqual(report["comparisons"][0]["matched"], 1)
         self.assertEqual(matches[0]["delta_ms"], -200)
         self.assertEqual(report["reference_streams_without_candidate"],
-                         [{"session": 0, "pid": "0x5E", "ecu": "0x7E8", "unit": "L/h", "samples": 1}])
+                         [{"session": 0, "pid": "0x5E", "ecu": "0x7E8", "unit": "L/h", "name": "test", "samples": 1}])
+
+    def test_two_fuel_system_statuses_with_same_pid_and_unit_remain_separate(self):
+        a = parse_reference("ODB RX t_ms=100 seq=2 request_id=0x7E0 ecu=0x7E8 pid=0x03 name=fuel_system_1 value=2.000 unit=bitmask latency_ms=1", 1)
+        b = parse_reference("ODB RX t_ms=100 seq=2 request_id=0x7E0 ecu=0x7E8 pid=0x03 name=fuel_system_2 value=0.000 unit=bitmask latency_ms=1", 2)
+        report, matches = compare([], [a, b], [])
+        self.assertEqual(len(report['reference_streams']), 2)
+        self.assertEqual({r['name'] for r in report['reference_streams']}, {'fuel_system_1', 'fuel_system_2'})
+        self.assertTrue(all(r['samples'] == 1 for r in report['reference_streams']))
+        self.assertEqual(matches, [])
 
     def test_remote_extended_and_untimestamped_frames_cannot_match(self):
         frames = [parse_line("RX 0x180 [8]: | t_ms=100 ext=0 rtr=1", 1),

@@ -13,6 +13,7 @@
 
 #include "UsbConsole.h"
 #include <Arduino.h>
+#include <string.h>
 #include <ESP32-TWAI-CAN.hpp>
 #include <esp_task_wdt.h>
 #include <freertos/task.h>
@@ -183,6 +184,8 @@ void loop() {
             lastMockBlink = now;
         }
     } else {
+        // Manufacturer DIDs must stay opt-in to this known profile, not every vehicle.
+        obdCalibration.setNissanProbesEnabled(strcmp(canProcessor.getProfileName(), "Nissan Juke F15") == 0);
         obdCalibration.setEnabled(isCanLogEnabled(), millis());
         // REAL MODE: Read from CAN bus
         CanFrame rxFrame = {};

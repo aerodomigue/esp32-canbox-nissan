@@ -19,8 +19,37 @@ constexpr Parameter PARAMETERS[] = {
     {0x46, 1, "ambient", "degC"},
     {0x0B, 1, "manifold_absolute_pressure", "kPa"},
     {0x5E, 2, "fuel_rate", "L/h"},
+    {0x03, 2, "fuel_system_1", "bitmask"},
+    {0x04, 1, "engine_load", "%"},
+    {0x06, 1, "short_fuel_trim_b1", "%"},
+    {0x07, 1, "long_fuel_trim_b1", "%"},
+    {0x0F, 1, "intake_air_temperature", "degC"},
+    {0x10, 2, "mass_air_flow", "g/s"},
+    {0x11, 1, "throttle_position", "%"},
+    {0x13, 1, "oxygen_sensors_present", "bitmask"},
+    {0x24, 4, "wideband_equivalence_ratio_1", "ratio"},
+    {0x44, 2, "commanded_equivalence_ratio", "ratio"},
+    {0x51, 1, "fuel_type", "enum"},
+    {0x5C, 1, "engine_oil_temperature", "degC"},
 };
 constexpr uint8_t PARAMETER_COUNT = sizeof(PARAMETERS) / sizeof(PARAMETERS[0]);
+// Two fast slots, then one ordinary slot. Repeated MAF entries provide the
+// independent fuel estimate with more samples, without starving slow readings.
+constexpr uint8_t FAST_PIDS[] = {0x10, 0x03, 0x10, 0x24, 0x10, 0x44};
+constexpr uint8_t FAST_COUNT = sizeof(FAST_PIDS) / sizeof(FAST_PIDS[0]);
+bool isFast(uint8_t pid) {
+    for (const auto fast : FAST_PIDS) if (pid == fast) return true;
+    return false;
+}
+struct NissanProbe { uint16_t did; const char* name; };
+constexpr NissanProbe NISSAN_PROBES[] = {
+    {0x111F, "nissan_oil_temperature_candidate"},
+    {0x1114, "nissan_fuel_level_raw"},
+    {0x1183, "nissan_gear_position_raw"},
+    {0x1304, "nissan_clutch_switch_raw"},
+};
+constexpr uint8_t PROBE_COUNT = sizeof(NISSAN_PROBES) / sizeof(NISSAN_PROBES[0]);
+constexpr uint32_t PROBE_INTERVAL_MS = 10000;
 const Parameter* parameter(uint8_t pid) {
     for (const auto& entry : PARAMETERS) if (entry.pid == pid) return &entry;
     return nullptr;
@@ -45,11 +74,21 @@ void ObdCalibration::setEnabled(bool enabled, uint32_t now) {
     _enabled = enabled;
     _pending = false;
     _stage = Stage::Page00;
-    _attempts = _pollIndex = 0;
+    _attempts = _pollIndex = _fastIndex = _scheduleSlot = 0;
+    _probeIndex = _disabledProbes = 0;
+    _probeAttempted = _isProbe = false;
     _lastAttempt = now - REQUEST_INTERVAL_MS;
     for (auto& ecu : _ecus) ecu = Ecu{};
     log("ODB STATE t_ms=%lu enabled=%u status=%s", static_cast<unsigned long>(now),
         enabled ? 1U : 0U, enabled ? "discovery" : "stopped");
+}
+
+void ObdCalibration::setNissanProbesEnabled(bool enabled) {
+    if (_nissanProbesEnabled == enabled) return;
+    _nissanProbesEnabled = enabled;
+    if (_isProbe) _pending = false;
+    _isProbe = _probeAttempted = false;
+    _probeIndex = _disabledProbes = 0;
 }
 
 bool ObdCalibration::supports(uint8_t ecu, uint8_t pid) const {
@@ -78,6 +117,7 @@ void ObdCalibration::request(uint8_t pid, uint16_t id, uint32_t now) {
         static_cast<unsigned long>(now), static_cast<unsigned long>(_sequence), id, pid,
         queued ? "queued" : "failed", pid);
     if (!queued) return;
+    _isProbe = false;
     _pid = pid;
     _requestId = id;
     _sentAt = now;
@@ -86,12 +126,21 @@ void ObdCalibration::request(uint8_t pid, uint16_t id, uint32_t now) {
 }
 
 void ObdCalibration::finish(uint32_t now) {
-    if (!_responses) {
-        log("ODB TIMEOUT t_ms=%lu seq=%lu request_id=0x%03X pid=0x%02X elapsed_ms=%lu",
+    if (!_responses || (_isProbe && !_positives && !_probeTerminalNegative)) {
+        if (_isProbe) {
+            log("ODB TIMEOUT t_ms=%lu seq=%lu request_id=0x%03X service=0x22 did=0x%04X elapsed_ms=%lu",
+                static_cast<unsigned long>(now), static_cast<unsigned long>(_sequence),
+                _requestId, NISSAN_PROBES[_activeProbe].did,
+                static_cast<unsigned long>(uint32_t(now - _sentAt)));
+        } else log("ODB TIMEOUT t_ms=%lu seq=%lu request_id=0x%03X pid=0x%02X elapsed_ms=%lu",
             static_cast<unsigned long>(now), static_cast<unsigned long>(_sequence),
             _requestId, _pid, static_cast<unsigned long>(uint32_t(now - _sentAt)));
     }
     _pending = false;
+    if (_isProbe) {
+        if (!_positives || _probeTerminalNegative) _disabledProbes |= uint8_t(1) << _activeProbe;
+        return;
+    }
     if (_stage == Stage::Page00) {
         if (!_positives) {
             if (++_attempts >= 3) {
@@ -139,16 +188,71 @@ void ObdCalibration::tick(uint32_t now) {
         case Stage::Page40: request(0x40, 0x7DF, now); return;
         default: break;
     }
-    for (uint8_t n = 0; n < PARAMETER_COUNT; ++n) {
-        const uint8_t pid = PARAMETERS[_pollIndex].pid;
-        _pollIndex = (_pollIndex + 1) % PARAMETER_COUNT;
+    bool fastAvailable = false;
+    for (const auto pid : FAST_PIDS) fastAvailable |= anySupports(pid);
+    if (!fastAvailable || _scheduleSlot == 2) {
+        _scheduleSlot = 0;
+        if (pollProbe(now) || poll(false, fastAvailable, now)) return;
+    } else {
+        ++_scheduleSlot;
+        if (poll(true, false, now)) return;
+    }
+    // A vehicle with only fast PIDs, or no fast PIDs, still keeps polling.
+    if (!poll(true, false, now)) poll(false, false, now);
+}
+
+bool ObdCalibration::poll(bool fast, bool skipFast, uint32_t now) {
+    const uint8_t count = fast ? FAST_COUNT : PARAMETER_COUNT;
+    for (uint8_t n = 0; n < count; ++n) {
+        const uint8_t pid = fast ? FAST_PIDS[_fastIndex] : PARAMETERS[_pollIndex].pid;
+        if (fast) _fastIndex = (_fastIndex + 1) % FAST_COUNT;
+        else _pollIndex = (_pollIndex + 1) % PARAMETER_COUNT;
+        if (skipFast && isFast(pid)) continue;
         for (uint8_t ecu = 0; ecu < 8; ++ecu) {
             if (supports(ecu, pid)) {
                 request(pid, 0x7E0 + ecu, now);
-                return;
+                return true;
             }
         }
     }
+    return false;
+}
+
+bool ObdCalibration::pollProbe(uint32_t now) {
+    if (!_nissanProbesEnabled || !_ecus[0].valid[0] ||
+        (_probeAttempted && uint32_t(now - _lastProbeAttempt) < PROBE_INTERVAL_MS)) return false;
+    for (uint8_t n = 0; n < PROBE_COUNT; ++n) {
+        const uint8_t index = _probeIndex;
+        _probeIndex = (_probeIndex + 1) % PROBE_COUNT;
+        if (_disabledProbes & (uint8_t(1) << index)) continue;
+        const auto& probe = NISSAN_PROBES[index];
+        CanFrame frame = {};
+        frame.identifier = 0x7E0;
+        frame.data_length_code = 8;
+        frame.data[0] = 3;
+        frame.data[1] = 0x22;
+        frame.data[2] = probe.did >> 8;
+        frame.data[3] = probe.did & 0xFF;
+        _lastAttempt = _lastProbeAttempt = now;
+        _probeAttempted = true;
+        ++_sequence;
+        const bool queued = _send && _send(frame, _context);
+        log("ODB TX t_ms=%lu seq=%lu can_id=0x7E0 service=0x22 did=0x%04X status=%s data=03 22 %02X %02X 00 00 00 00",
+            static_cast<unsigned long>(now), static_cast<unsigned long>(_sequence),
+            probe.did, queued ? "queued" : "failed", frame.data[2], frame.data[3]);
+        if (queued) {
+            _isProbe = true;
+            _activeProbe = index;
+            _requestId = 0x7E0;
+            _sentAt = now;
+            _responses = _positives = _negatives = 0;
+            _probeTerminalNegative = false;
+            _probeLastNrc = 0;
+            _pending = true;
+        }
+        return true;
+    }
+    return false;
 }
 
 void ObdCalibration::receive(const CanFrame& frame, uint32_t now) {
@@ -160,13 +264,38 @@ void ObdCalibration::receive(const CanFrame& frame, uint32_t now) {
     const uint8_t length = frame.data[0] & 0x0F;
     const uint8_t ecu = frame.identifier - 0x7E8;
     const uint8_t mask = uint8_t(1) << ecu;
-    if (length == 3 && frame.data[1] == 0x7F && frame.data[2] == 0x01) {
-        if (_negatives & mask) return;
+    if (length == 3 && frame.data[1] == 0x7F && frame.data[2] == (_isProbe ? 0x22 : 0x01)) {
+        if (_negatives & mask) {
+            if (!_isProbe || _probeLastNrc == frame.data[3]) return;
+        }
         _negatives |= mask;
         _responses |= mask;
-        log("ODB NEGATIVE t_ms=%lu seq=%lu request_id=0x%03X ecu=0x%03lX pid=0x%02X nrc=0x%02X",
+        if (_isProbe) {
+            _probeLastNrc = frame.data[3];
+            if (frame.data[3] != 0x78) _probeTerminalNegative = true;
+            log("ODB NEGATIVE t_ms=%lu seq=%lu request_id=0x%03X ecu=0x%03lX service=0x22 did=0x%04X nrc=0x%02X",
+                static_cast<unsigned long>(now), static_cast<unsigned long>(_sequence),
+                _requestId, static_cast<unsigned long>(frame.identifier), NISSAN_PROBES[_activeProbe].did,
+                frame.data[3]);
+        } else log("ODB NEGATIVE t_ms=%lu seq=%lu request_id=0x%03X ecu=0x%03lX pid=0x%02X nrc=0x%02X",
             static_cast<unsigned long>(now), static_cast<unsigned long>(_sequence),
             _requestId, static_cast<unsigned long>(frame.identifier), _pid, frame.data[3]);
+        return;
+    }
+    if (_isProbe) {
+        const auto& probe = NISSAN_PROBES[_activeProbe];
+        if (_probeTerminalNegative || length != 4 || frame.data[1] != 0x62 ||
+            frame.data[2] != (probe.did >> 8) || frame.data[3] != (probe.did & 0xFF) ||
+            (_positives & mask)) return;
+        const uint8_t raw = frame.data[4];
+        const bool oil = probe.did == 0x111F;
+        log("ODB PROBE_RX t_ms=%lu seq=%lu request_id=0x%03X ecu=0x%03lX service=0x22 did=0x%04X name=%s raw=0x%02X value=%.3f unit=%s latency_ms=%lu",
+            static_cast<unsigned long>(now), static_cast<unsigned long>(_sequence),
+            _requestId, static_cast<unsigned long>(frame.identifier), probe.did, probe.name,
+            raw, oil ? double(int(raw) - 50) : double(raw), oil ? "degC" : "raw",
+            static_cast<unsigned long>(uint32_t(now - _sentAt)));
+        _positives |= mask;
+        _responses |= mask;
         return;
     }
     if (frame.data[1] != 0x41 || frame.data[2] != _pid || (_positives & mask)) return;
@@ -185,13 +314,17 @@ void ObdCalibration::receive(const CanFrame& frame, uint32_t now) {
             _requestId, static_cast<unsigned long>(frame.identifier), _pid,
             static_cast<unsigned long>(bitmap));
     } else if (entry) {
-        const uint16_t raw = entry->bytes == 2 ? uint16_t(frame.data[3]) * 256 + frame.data[4]
+        const uint16_t raw = entry->bytes >= 2 ? uint16_t(frame.data[3]) * 256 + frame.data[4]
                                                : frame.data[3];
         double value = raw;
         switch (_pid) {
             case 0x0C: value = raw / 4.0; break;
-            case 0x05: case 0x46: value = int(raw) - 40; break;
-            case 0x2F: value = raw * 100.0 / 255; break;
+            case 0x05: case 0x46: case 0x0F: case 0x5C: value = int(raw) - 40; break;
+            case 0x2F: case 0x04: case 0x11: value = raw * 100.0 / 255; break;
+            case 0x06: case 0x07: value = (int(raw) - 128) * 100.0 / 128; break;
+            case 0x03: value = frame.data[3]; break;
+            case 0x10: value = raw / 100.0; break;
+            case 0x24: case 0x44: value = raw / 32768.0; break;
             case 0x42: value = raw / 1000.0; break;
             case 0x5E: value = raw / 20.0; break;
             default: break;
@@ -200,6 +333,16 @@ void ObdCalibration::receive(const CanFrame& frame, uint32_t now) {
             static_cast<unsigned long>(now), static_cast<unsigned long>(_sequence),
             _requestId, static_cast<unsigned long>(frame.identifier), _pid,
             entry->name, value, entry->unit, static_cast<unsigned long>(uint32_t(now - _sentAt)));
+        if (_pid == 0x03 || _pid == 0x24) {
+            const bool status = _pid == 0x03;
+            const double extra = status ? double(frame.data[4]) :
+                (uint16_t(frame.data[5]) * 256 + frame.data[6]) / 8192.0;
+            log("ODB RX t_ms=%lu seq=%lu request_id=0x%03X ecu=0x%03lX pid=0x%02X name=%s value=%.3f unit=%s latency_ms=%lu",
+                static_cast<unsigned long>(now), static_cast<unsigned long>(_sequence),
+                _requestId, static_cast<unsigned long>(frame.identifier), _pid,
+                status ? "fuel_system_2" : "wideband_o2_voltage_1", extra,
+                status ? "bitmask" : "V", static_cast<unsigned long>(uint32_t(now - _sentAt)));
+        }
     } else return;
     _positives |= mask;
     _responses |= mask;

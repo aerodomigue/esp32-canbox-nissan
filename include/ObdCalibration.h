@@ -3,7 +3,8 @@
 #include <ESP32-TWAI-CAN.hpp>
 #include <stdint.h>
 
-// Read-only service 01 reference measurements. They never update vehicle data.
+// Read-only service 01 measurements and optional, bounded Nissan service22 probes.
+// They never update vehicle data or open a manufacturer diagnostic session.
 // Wire transmission and log output are injected for native tests.
 class ObdCalibration {
 public:
@@ -15,6 +16,7 @@ public:
 
     ObdCalibration(Send send, Emit emit, void* context = nullptr);
     void setEnabled(bool enabled, uint32_t now);
+    void setNissanProbesEnabled(bool enabled);
     void tick(uint32_t now);
     void receive(const CanFrame& frame, uint32_t now);
     bool enabled() const { return _enabled; }
@@ -32,6 +34,11 @@ private:
     Ecu _ecus[8] = {};
     bool _enabled = false;
     bool _pending = false;
+    bool _nissanProbesEnabled = false;
+    bool _isProbe = false;
+    bool _probeAttempted = false;
+    bool _probeTerminalNegative = false;
+    uint8_t _probeLastNrc = 0;
     Stage _stage = Stage::Page00;
     uint8_t _pid = 0;
     uint8_t _responses = 0;
@@ -39,15 +46,23 @@ private:
     uint8_t _negatives = 0;
     uint8_t _attempts = 0;
     uint8_t _pollIndex = 0;
+    uint8_t _fastIndex = 0;
+    uint8_t _scheduleSlot = 0;
+    uint8_t _probeIndex = 0;
+    uint8_t _activeProbe = 0;
+    uint8_t _disabledProbes = 0;
     uint16_t _requestId = 0x7DF;
     uint32_t _sequence = 0;
     uint32_t _sentAt = 0;
     uint32_t _lastAttempt = 0;
     uint32_t _retryAt = 0;
+    uint32_t _lastProbeAttempt = 0;
 
     void log(const char* format, ...);
     bool supports(uint8_t ecu, uint8_t pid) const;
     bool anySupports(uint8_t pid) const;
     void finish(uint32_t now);
     void request(uint8_t pid, uint16_t id, uint32_t now);
+    bool poll(bool fast, bool skipFast, uint32_t now);
+    bool pollProbe(uint32_t now);
 };

@@ -5,7 +5,24 @@
 Recherche effectuée le **14 octobre 2026** pour compléter les références
 `ODB` de calibration. Véhicule cible : moteur **MR16DDT**, boîte manuelle.
 
-## Résultat pour le firmware
+> **Mise à jour du 7 novembre 2026 :** le bilan ci-dessous conserve l'état
+> historique du 14 octobre. Pour la prochaine capture du propriétaire, le
+> firmware interroge maintenant 20 PIDs service01 annoncés et, avec le profil
+> F15 exact, quatre candidates service22 bornées : `111F` (huile candidate,
+> octet brut et A−50), `1114` (jauge brute), `1183` (rapport brut), `1304`
+> (embrayage brut). Aucun changement de session ou ordre de commande n'est
+> envoyé. Ces sondes ne sont pas physiquement validées ; un refus peut dépendre
+> de la session diagnostique. Voir le [guide actuel](OBD_CALIBRATION.fr.md)
+> pour la cadence et les formats de logs.
+>
+> La recherche ultérieure corrobore `22111F` avec des
+> [réponses publiées d'un Juke2012](https://github.com/OBDb/Nissan-Juke/blob/fd79334930e523ed399194ac043ede9080dd8cf5/tests/test_cases/2012/commands/7E0.7E8.22111F%7Cdin%3DC0%2Cdout%3D81.yaml)
+> et les déclarations Nissan génériques de
+> [l'application officielle Car Scanner](https://www.carscanner.info/beta/).
+> Disponibilité, unités et échelles sur notre MR16DDT manuel restent à
+> vérifier. `1114` reste brut car les coefficients publiés divergent.
+
+## Résultat historique pour le firmware (14 octobre)
 
 **Aucune nouvelle commande constructeur retenue.** Les sources publiques
 consultées donnent des pistes précises, mais aucune ne fournit une preuve

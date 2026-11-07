@@ -266,9 +266,9 @@ def compare(frames: list[Frame], references: list[Reference], candidates: list[C
         previous, previous_session = stamp, session
     streams = defaultdict(list)
     for ref in references:
-        streams[(sessions[ref.line], ref.pid, ref.ecu, ref.unit)].append(ref)
+        streams[(sessions[ref.line], ref.pid, ref.ecu, ref.unit, ref.name)].append(ref)
     summaries, matches = [], []
-    for (session, pid, ecu, unit), refs in sorted(streams.items()):
+    for (session, pid, ecu, unit, name), refs in sorted(streams.items()):
         for candidate in candidates:
             if candidate.pid != pid:
                 continue
@@ -293,7 +293,7 @@ def compare(frames: list[Frame], references: list[Reference], candidates: list[C
                 pair = {"candidate": candidate.name, "origin": candidate.origin,
                         "session": session,
                         "pid": f"0x{pid:02X}", "ecu": f"0x{ecu:03X}",
-                        "reference_line": ref.line, "can_line": frame.line,
+                        "reference_line": ref.line, "reference_name": name, "can_line": frame.line,
                         "reference_t_ms": ref.timestamp_ms, "can_t_ms": int(frame.timestamp_ms),
                         "seq": ref.seq, "request_id": f"0x{ref.request_id:03X}",
                         "delta_ms": delay, "can_value": value, "can_unit": candidate.unit,
@@ -306,6 +306,7 @@ def compare(frames: list[Frame], references: list[Reference], candidates: list[C
             matches.extend(paired)
             summaries.append({"candidate": candidate.name, "origin": candidate.origin,
                               "session": session,
+                              "reference_name": name,
                               "pid": f"0x{pid:02X}", "ecu": f"0x{ecu:03X}",
                               "can_unit": candidate.unit, "reference_unit": unit,
                               "unit_match": unit_match, "reference_samples": len(refs),
@@ -319,10 +320,10 @@ def compare(frames: list[Frame], references: list[Reference], candidates: list[C
                               "max_absolute_error": max(map(abs, errors)) if errors else None,
                               "rmse": math.sqrt(statistics.mean(e * e for e in errors)) if errors else None})
     return {"reference_streams": [{"session": s, "pid": f"0x{p:02X}", "ecu": f"0x{e:03X}", "unit": u,
-                                   "samples": len(rs)} for (s, p, e, u), rs in sorted(streams.items())],
+                                   "name": n, "samples": len(rs)} for (s, p, e, u, n), rs in sorted(streams.items())],
             "reference_streams_without_candidate": [
-                {"session": s, "pid": f"0x{p:02X}", "ecu": f"0x{e:03X}", "unit": u, "samples": len(rs)}
-                for (s, p, e, u), rs in sorted(streams.items())
+                {"session": s, "pid": f"0x{p:02X}", "ecu": f"0x{e:03X}", "unit": u, "name": n, "samples": len(rs)}
+                for (s, p, e, u, n), rs in sorted(streams.items())
                 if not any(candidate.pid == p for candidate in candidates)
             ],
             "max_delay_ms": max_delay_ms, "comparisons": summaries,
@@ -355,7 +356,7 @@ def write_comparison(capture: Path, preset: Path, destination: Path,
     destination.mkdir(parents=True, exist_ok=True)
     outputs[0].write_text(json.dumps(report, indent=2) + "\n")
     with outputs[1].open("w", newline="") as stream:
-        columns = ["candidate", "origin", "session", "pid", "ecu", "reference_line", "can_line",
+        columns = ["candidate", "origin", "session", "pid", "ecu", "reference_line", "reference_name", "can_line",
                    "reference_t_ms", "can_t_ms", "seq", "request_id", "delta_ms",
                    "can_value", "can_unit", "reference_value", "reference_unit", "error"]
         writer = csv.DictWriter(stream, fieldnames=columns)

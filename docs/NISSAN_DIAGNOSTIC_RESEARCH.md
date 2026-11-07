@@ -5,7 +5,23 @@
 Research conducted on **14 October 2026** to extend the `ODB` calibration
 references. Target vehicle: **MR16DDT** engine, manual transmission.
 
-## Outcome for the firmware
+> **7 November 2026 update:** the assessment below is the historical
+> 14 October snapshot. For the owner's next capture, the firmware now queries
+> 20 supported service01 PIDs and, with the exact F15 profile, four bounded
+> service22 candidates: `111F` (oil candidate, raw byte and A−50), `1114`
+> (fuel-level raw), `1183` (gear raw), `1304` (clutch raw). No session change
+> or control command is sent. These probes are not physically validated
+> measurements; a refusal may depend on the diagnostic session. See the
+> [current capture guide](OBD_CALIBRATION.md) for scheduling and log formats.
+>
+> The later research corroborates `22111F` through
+> [published Juke2012 responses](https://github.com/OBDb/Nissan-Juke/blob/fd79334930e523ed399194ac043ede9080dd8cf5/tests/test_cases/2012/commands/7E0.7E8.22111F%7Cdin%3DC0%2Cdout%3D81.yaml)
+> and the generic Nissan definitions in the
+> [official Car Scanner application](https://www.carscanner.info/beta/).
+> Availability, units and scales on this exact manual MR16DDT still require
+> the new capture. `1114` remains raw because published coefficients disagree.
+
+## Historical outcome for the firmware (14 October)
 
 **No additional manufacturer-specific command was selected.** The public
 sources examined provide specific leads, but none offers sufficient evidence

@@ -567,6 +567,198 @@ void test_raw_formatter_rejects_null_or_small_buffer_before_writing() {
     TEST_ASSERT_TRUE(formatCanFrameLog(frame, 0, line, sizeof(line)));
 }
 
+void test_additional_service01_conversions_and_multi_value_responses() {
+    struct Case { uint8_t pid; std::vector<uint8_t> bytes; const char* name; const char* number; const char* unit; };
+    const Case cases[] = {
+        {0x03, {2, 8}, "fuel_system_1", "2.000", "bitmask"},
+        {0x04, {153}, "engine_load", "60.000", "%"},
+        {0x06, {160}, "short_fuel_trim_b1", "25.000", "%"},
+        {0x07, {96}, "long_fuel_trim_b1", "-25.000", "%"},
+        {0x0F, {60}, "intake_air_temperature", "20.000", "degC"},
+        {0x10, {0x12, 0x34}, "mass_air_flow", "46.600", "g/s"},
+        {0x11, {102}, "throttle_position", "40.000", "%"},
+        {0x13, {5}, "oxygen_sensors_present", "5.000", "bitmask"},
+        {0x24, {0xC0, 0, 0x60, 0}, "wideband_equivalence_ratio_1", "1.500", "ratio"},
+        {0x44, {0x80, 0}, "commanded_equivalence_ratio", "1.000", "ratio"},
+        {0x51, {1}, "fuel_type", "1.000", "enum"},
+        {0x5C, {130}, "engine_oil_temperature", "90.000", "degC"},
+    };
+    for (const auto& entry : cases) {
+        Harness h;
+        ObdCalibration obd(Harness::send, Harness::emit, &h);
+        const auto now = beginSingle(obd, h, entry.pid);
+        CanFrame response = {};
+        response.identifier = 0x7E8;
+        response.data_length_code = 8;
+        response.data[0] = 2 + entry.bytes.size();
+        response.data[1] = 0x41;
+        response.data[2] = entry.pid;
+        std::copy(entry.bytes.begin(), entry.bytes.end(), response.data + 3);
+        // An incomplete ISO-TP payload must not turn padding into a measurement.
+        --response.data[0];
+        obd.receive(response, now + 1);
+        TEST_ASSERT_EQUAL_UINT(0, h.count("ODB RX "));
+        ++response.data[0];
+        obd.receive(response, now + 2);
+        const std::string wanted = std::string("name=") + entry.name + " value=" + entry.number + " unit=" + entry.unit;
+        bool found = false;
+        for (const auto& line : h.lines) if (line.find(wanted) != std::string::npos) found = true;
+        TEST_ASSERT_TRUE_MESSAGE(found, wanted.c_str());
+        const bool multi = entry.pid == 0x03 || entry.pid == 0x24;
+        TEST_ASSERT_EQUAL_UINT(multi ? 2 : 1, h.count("ODB RX "));
+        if (entry.pid == 0x03) contains(h.last("ODB RX "), "name=fuel_system_2 value=8.000 unit=bitmask");
+        if (entry.pid == 0x24) contains(h.last("ODB RX "), "name=wideband_o2_voltage_1 value=3.000 unit=V");
+        obd.receive(response, now + 3);
+        TEST_ASSERT_EQUAL_UINT(multi ? 2 : 1, h.count("ODB RX "));
+    }
+}
+
+void test_fast_references_get_priority_without_starving_slow_parameters() {
+    Harness h;
+    ObdCalibration obd(Harness::send, Harness::emit, &h);
+    obd.setEnabled(true, 0); obd.tick(0);
+    obd.receive(supported(0x7E8, 0, supportBit(0, 0x03) | supportBit(0, 0x05) |
+        supportBit(0, 0x0C) | supportBit(0, 0x0D) | supportBit(0, 0x10) | 1), 1);
+    obd.tick(250); obd.tick(500);
+    obd.receive(supported(0x7E8, 0x20, supportBit(0x20, 0x24) | 1), 501);
+    obd.tick(750); obd.tick(1000);
+    obd.receive(supported(0x7E8, 0x40, supportBit(0x40, 0x44)), 1001);
+    obd.tick(1250);
+    uint32_t now = 1500;
+    const uint8_t expected[] = {0x10, 0x03, 0x0C, 0x10, 0x24, 0x0D, 0x10, 0x44, 0x05, 0x10, 0x03, 0x0C};
+    for (const auto pid : expected) {
+        const auto attempts = h.attempts.size();
+        obd.tick(now); assertRequest(h, 0x7E0, pid);
+        obd.tick(now + 250); obd.tick(now + 499);
+        TEST_ASSERT_EQUAL_UINT(attempts + 1, h.attempts.size());
+        now += 500;
+    }
+}
+
+namespace {
+void assertProbe(const Harness& h, uint16_t did) {
+    TEST_ASSERT_FALSE(h.attempts.empty());
+    const auto& f = h.attempts.back();
+    const uint8_t bytes[] = {3, 0x22, uint8_t(did >> 8), uint8_t(did), 0, 0, 0, 0};
+    TEST_ASSERT_EQUAL_HEX32(0x7E0, f.identifier);
+    TEST_ASSERT_EQUAL_UINT8(8, f.data_length_code);
+    TEST_ASSERT_FALSE(f.extd); TEST_ASSERT_FALSE(f.rtr);
+    TEST_ASSERT_EQUAL_HEX8_ARRAY(bytes, f.data, 8);
+}
+uint32_t beginProbe(ObdCalibration& obd, Harness& h, uint32_t start = 0) {
+    obd.setNissanProbesEnabled(true);
+    obd.setEnabled(true, start); obd.tick(start);
+    obd.receive(supported(0x7E8, 0, supportBit(0, 0x0C)), start + 1);
+    obd.tick(start + 250); obd.tick(start + 500);
+    assertProbe(h, 0x111F);
+    return start + 500;
+}
+CanFrame probeValue(uint16_t did, uint8_t raw) {
+    CanFrame f = {};
+    f.identifier = 0x7E8; f.data_length_code = 8;
+    f.data[0] = 4; f.data[1] = 0x62;
+    f.data[2] = did >> 8; f.data[3] = did; f.data[4] = raw;
+    return f;
+}
+CanFrame probeNegative(uint8_t nrc) {
+    auto f = negative(0x7E8, nrc); f.data[2] = 0x22; return f;
+}
+uint16_t nextProbe(ObdCalibration& obd, Harness& h, uint32_t& now) {
+    for (unsigned i = 0; i < 100; ++i) {
+        now += 500;
+        const auto attempts = h.attempts.size();
+        obd.tick(now);
+        if (h.attempts.size() == attempts) continue;
+        const auto& f = h.attempts.back();
+        if (f.data[1] == 0x22) return uint16_t(f.data[2]) * 256 + f.data[3];
+    }
+    TEST_FAIL_MESSAGE("No probe within 50 seconds");
+    return 0;
+}
+}
+
+void test_nissan_probes_validate_ecu_did_lengths_and_preserve_candidate_status() {
+    Harness h;
+    ObdCalibration obd(Harness::send, Harness::emit, &h);
+    auto now = beginProbe(obd, h);
+    for (const auto did : {0x1114, 0x1183, 0x1304}) obd.receive(probeValue(did, 100), now + 1);
+    auto bad = probeValue(0x111F, 100); bad.identifier = 0x7E9; obd.receive(bad, now + 1);
+    bad = probeValue(0x111F, 100); bad.extd = true; obd.receive(bad, now + 1);
+    bad = probeValue(0x111F, 100); bad.rtr = true; obd.receive(bad, now + 1);
+    for (const auto size : {0, 3, 5, 0x14}) { bad = probeValue(0x111F, 100); bad.data[0] = size; obd.receive(bad, now + 1); }
+    TEST_ASSERT_EQUAL_UINT(0, h.count("ODB PROBE_RX "));
+    obd.receive(probeValue(0x111F, 100), now + 2);
+    contains(h.last("ODB PROBE_RX "), "service=0x22 did=0x111F name=nissan_oil_temperature_candidate raw=0x64 value=50.000 unit=degC latency_ms=2");
+    obd.receive(probeValue(0x111F, 200), now + 3);
+    TEST_ASSERT_EQUAL_UINT(1, h.count("ODB PROBE_RX "));
+    TEST_ASSERT_EQUAL_UINT(0, h.count("ODB RX "));
+    const uint16_t remaining[] = {0x1114, 0x1183, 0x1304};
+    uint32_t previous = now;
+    for (const auto did : remaining) {
+        TEST_ASSERT_EQUAL_HEX16(did, nextProbe(obd, h, now));
+        TEST_ASSERT_GREATER_OR_EQUAL_UINT32(10000, now - previous);
+        assertProbe(h, did);
+        obd.receive(probeValue(did, 67), now + 2);
+        contains(h.last("ODB PROBE_RX "), "raw=0x43 value=67.000 unit=raw");
+        previous = now;
+    }
+    // No control/session services are emitted anywhere in the sequence.
+    for (const auto& f : h.attempts) TEST_ASSERT_TRUE(f.data[1] == 1 || f.data[1] == 0x22);
+}
+
+void test_nissan_terminal_negatives_disable_did_in_both_response_orders() {
+    for (const bool positiveFirst : {false, true}) {
+        Harness h; ObdCalibration obd(Harness::send, Harness::emit, &h);
+        auto now = beginProbe(obd, h);
+        if (positiveFirst) obd.receive(probeValue(0x111F, 100), now + 1);
+        obd.receive(probeNegative(0x22), now + 2);
+        obd.receive(probeNegative(0x78), now + 3);
+        obd.receive(probeValue(0x111F, 100), now + 4);
+        TEST_ASSERT_EQUAL_UINT(positiveFirst ? 1 : 0, h.count("ODB PROBE_RX "));
+        for (const auto did : {0x1114, 0x1183, 0x1304, 0x1114}) {
+            TEST_ASSERT_EQUAL_HEX16(did, nextProbe(obd, h, now));
+            obd.receive(probeValue(did, 12), now + 1);
+        }
+        obd.setEnabled(false, now + 2);
+        beginProbe(obd, h, now + 3); // New LOG ON re-enables previously rejected DIDs.
+    }
+}
+
+void test_nissan_pending_response_has_bounded_window_and_off_stops_all_queries() {
+    for (const bool responds : {false, true}) {
+        Harness h; ObdCalibration obd(Harness::send, Harness::emit, &h);
+        auto now = beginProbe(obd, h);
+        obd.receive(probeNegative(0x78), now + 1);
+        if (responds) obd.receive(probeValue(0x111F, 100), now + 249);
+        obd.tick(now + 250);
+        TEST_ASSERT_FALSE(obd.waiting());
+        TEST_ASSERT_EQUAL_UINT(responds ? 0 : 1, h.count("ODB TIMEOUT "));
+        obd.receive(probeValue(0x111F, 100), now + 251);
+        TEST_ASSERT_EQUAL_UINT(responds ? 1 : 0, h.count("ODB PROBE_RX "));
+        for (const auto did : {0x1114, 0x1183, 0x1304}) {
+            TEST_ASSERT_EQUAL_HEX16(did, nextProbe(obd, h, now));
+            obd.receive(probeValue(did, 12), now + 1);
+        }
+        TEST_ASSERT_EQUAL_HEX16(responds ? 0x111F : 0x1114, nextProbe(obd, h, now));
+        const auto attempts = h.attempts.size();
+        obd.setEnabled(false, now + 1);
+        obd.receive(probeValue(responds ? 0x111F : 0x1114, 100), now + 2);
+        obd.tick(now + 100000);
+        TEST_ASSERT_EQUAL_UINT(attempts, h.attempts.size());
+    }
+}
+
+void test_nissan_probes_are_opt_in_and_require_engine_ecu_support() {
+    for (const bool enabled : {false, true}) {
+        Harness h; ObdCalibration obd(Harness::send, Harness::emit, &h);
+        obd.setNissanProbesEnabled(enabled);
+        obd.setEnabled(true, 0); obd.tick(0);
+        obd.receive(supported(enabled ? 0x7E9 : 0x7E8, 0, supportBit(0, 0x0C)), 1);
+        for (uint32_t now = 250; now < 50000; now += 250) obd.tick(now);
+        for (const auto& f : h.attempts) TEST_ASSERT_EQUAL_UINT8(1, f.data[1]);
+    }
+}
+
 int main(int, char**) {
     UNITY_BEGIN();
     RUN_TEST(test_disabled_never_transmits_or_decodes);
@@ -596,5 +788,11 @@ int main(int, char**) {
     RUN_TEST(test_raw_formatter_rtr_never_invents_payload);
     RUN_TEST(test_raw_formatter_zero_dlc_has_empty_payload);
     RUN_TEST(test_raw_formatter_rejects_null_or_small_buffer_before_writing);
+    RUN_TEST(test_additional_service01_conversions_and_multi_value_responses);
+    RUN_TEST(test_fast_references_get_priority_without_starving_slow_parameters);
+    RUN_TEST(test_nissan_probes_validate_ecu_did_lengths_and_preserve_candidate_status);
+    RUN_TEST(test_nissan_terminal_negatives_disable_did_in_both_response_orders);
+    RUN_TEST(test_nissan_pending_response_has_bounded_window_and_off_stops_all_queries);
+    RUN_TEST(test_nissan_probes_are_opt_in_and_require_engine_ecu_support);
     return UNITY_END();
 }

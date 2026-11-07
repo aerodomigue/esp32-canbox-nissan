@@ -4,8 +4,9 @@
 
 In real vehicle mode, `LOG ON` enables two functions: recording all frames
 read from CAN with their raw bytes unchanged, and querying OBD-II **service
-01** for independent references. Every diagnostic line starts with **`ODB`**,
-as requested. OBD-II is the protocol name; `ODB` is the exact log prefix.
+01** for independent references. With the exact `Nissan Juke F15` profile,
+it also attempts four candidate Nissan **service 22** reads. Every diagnostic
+line starts with **`ODB`**, as requested. OBD-II is the protocol name; `ODB` is the exact log prefix.
 `LOG OFF` stops new queries and capture; it cannot cancel a transmission
 already queued in the controller.
 
@@ -33,19 +34,21 @@ remaining range currently have no queried OBD reference.
 
 ## Usage
 
-1. Install the matching **new firmware first**, then transfer the corrected
-   `data/NissanJukeF15.json` into LittleFS and activate it with
-   `CAN LOAD NissanJukeF15.json`. An application-only OTA does not replace
-   the installed JSON. Old firmware can interpret unknown targets as
-   `STEERING`; do not load the new JSON before updating firmware.
-2. Open the USB serial output and save the lines without adding timestamps
-   or color prefixes to the file. For the PlatformIO monitor, use
+1. Install the **new application OTA** containing the extended OBD client.
+   This capture update does not require a new JSON: keep the existing F15
+   preset and select the profile named exactly `Nissan Juke F15` to enable
+   the candidate Nissan reads. Application OTA does not replace LittleFS.
+2. Open the USB serial output and save **all lines**, including `RX 0x`,
+   `ODB RAW_RX`, `ODB RX`, `ODB PROBE_RX` and diagnostic errors, without
+   adding timestamps or color prefixes. For the PlatformIO monitor, use
    `.venv/bin/pio device monitor --filter direct`.
-3. Send `LOG ON`. Wait for `ODB SUPPORTED`, then for `ODB RX` lines for the
-   available parameters.
-4. Annotate the actual conditions: ignition, engine start, cold/warm idle,
-   displayed RPM, fuel gauge, speed and instrument cluster units. Send
-   `LOG OFF` when finished.
+3. Send `LOG ON`. Wait for `ODB SUPPORTED`, then for `ODB RX` lines for
+   advertised PIDs and any candidate-probe results. The ESP32 performs the
+   reads itself; an ELM327 does not need to share the vehicle connector.
+4. Annotate actual conditions: ignition, engine start, cold/warm idle,
+   displayed RPM, fuel gauge, speed and instrument cluster units. Where
+   practical, mark clutch presses and neutral/reverse changes while stopped.
+   Send `LOG OFF` when finished.
 
 Mock mode sends no OBD requests. Polling pauses during OTA and restarts with
 a new discovery if `LOG ON` is still active.
@@ -58,16 +61,42 @@ the eight possible addresses, `0x7E8` through `0x7EF`. Measurement queries
 target the physical address `0x7E0` through `0x7E7` of the first ECU that
 advertises the requested PID. Unadvertised parameters are not queried.
 
-| PID | Reference | Conversion | Unit |
-| --- | --- | --- | --- |
-| `0C` | Engine speed | `(256×A+B)/4` | rpm |
-| `0D` | Vehicle speed | `A` | km/h |
-| `05` | Engine coolant temperature | `A−40` | °C |
-| `2F` | Fuel level | `100×A/255` | % |
-| `42` | Control module voltage | `(256×A+B)/1000` | V |
-| `46` | Ambient temperature | `A−40` | °C |
-| `0B` | Intake manifold absolute pressure | `A` | kPa |
-| `5E` | Fuel rate | `(256×A+B)/20` | L/h |
+There are **20 supported standard PID definitions**; only PIDs advertised by
+an ECU are queried. `A`, `B`, `C`, `D` below are successive measurement bytes
+following the service/PID, not ISO-TP framing bytes. `AB = 256×A+B` and
+`CD = 256×C+D`; both words are unsigned, most significant byte first.
+
+| PID | Reference | Bytes | Conversion | Unit |
+| --- | --- | --- | --- | --- |
+| `0C` | Engine speed | 2 | `AB/4` | rpm |
+| `0D` | Vehicle speed | 1 | `A` | km/h |
+| `05` | Engine coolant temperature | 1 | `A−40` | °C |
+| `2F` | Fuel level | 1 | `100×A/255` | % |
+| `42` | Control module voltage | 2 | `AB/1000` | V |
+| `46` | Ambient temperature | 1 | `A−40` | °C |
+| `0B` | Intake manifold absolute pressure | 1 | `A` | kPa |
+| `5E` | Fuel rate | 2 | `AB/20` | L/h |
+| `03` | Fuel-system status, systems 1 and 2 | 2 | separate `A`, `B` bitmasks | bitmask |
+| `04` | Calculated engine load | 1 | `100×A/255` | % |
+| `06` | Short-term fuel trim, bank 1 | 1 | `100×A/128−100` | % |
+| `07` | Long-term fuel trim, bank 1 | 1 | `100×A/128−100` | % |
+| `0F` | Intake air temperature | 1 | `A−40` | °C |
+| `10` | Mass air flow | 2 | `AB/100` | g/s |
+| `11` | Throttle position | 1 | `100×A/255` | % |
+| `13` | Oxygen-sensor presence | 1 | `A` bitmask | bitmask |
+| `24` | Wide-range oxygen sensor 1: equivalence ratio and voltage | 4 | `AB/32768`; `CD/8192` | ratio; V |
+| `44` | Commanded fuel/air equivalence ratio | 2 | `AB/32768` | ratio |
+| `51` | Fuel type | 1 | `A` enumeration | enum |
+| `5C` | Engine oil temperature | 1 | `A−40` | °C |
+
+The original eight PID definitions remain available. PIDs `03` and `24`
+each produce two `ODB RX` records for one response. Status/presence bitmasks
+and the fuel-type enumeration are recorded as raw values, not percentages.
+
+The log uses the literal labels `unit=bitmask`, `unit=enum`, `unit=ratio`;
+standard temperatures use `unit=degC`. Distinguish the two values from one
+response by `name` as well: `fuel_system_1` and `fuel_system_2` for `03`;
+`wideband_equivalence_ratio_1` and `wideband_o2_voltage_1` for `24`.
 
 These conversions are publicly documented in the
 [CSS Electronics PID table](https://www.csselectronics.com/pages/obd2-pid-table-on-board-diagnostics-j1979).
@@ -80,12 +109,61 @@ between attempts. The response window is **250 ms**; discovery collects
 responses from multiple ECUs until that window expires. After three
 discovery attempts without a usable response, the client waits five seconds
 before trying again. An advertised PID that does not respond produces a
-timeout, never an invented zero value.
+timeout, never an invented zero value. Neither interval blocks raw CAN/USB
+streaming.
+
+After discovery, the standard scheduler allocates **two fast slots for each
+normal slot**. The fast cycle is `10, 03, 10, 24, 10, 44`, skipping unsupported
+PIDs. Other advertised PIDs rotate through the normal slots. This prioritizes
+MAF and mixture information without claiming simultaneous measurements:
+timestamps and request/ECU identifiers must be retained for comparisons.
+
+### Candidate Nissan reads: exact F15 profile only
+
+These are **read-only service `22` probes**, separate from standard PID
+support discovery. They are enabled only when the active profile name is
+exactly `Nissan Juke F15` and ECU `0x7E8` answered standard Mode 01 support
+discovery. Requests then target physical address `0x7E0`; other responding
+ECUs are not used for these probes. Probing runs within the standard polling
+cycle and therefore also requires at least one of the 20 standard PIDs to
+be advertised by a responding ECU.
+
+| DID | Candidate purpose | Recorded data | Unit |
+| --- | --- | --- | --- |
+| `111F` | Oil-temperature candidate | unsigned first data byte `A`, plus candidate `A−50` | degC |
+| `1114` | Fuel-gauge candidate | unsigned first data byte `A`, no percent conversion | raw |
+| `1183` | Gear candidate | unsigned first data byte `A`, no gear enumeration | raw |
+| `1304` | Clutch candidate | unsigned first data byte `A`, no boolean/bit interpretation | raw |
+
+The first probe uses a normal slot after discovery. Further probes use at
+most one normal slot every **10 seconds**. Candidates rotate; a positive
+response remains eligible for subsequent reads. A timeout or terminal negative
+response disables that DID for the current `LOG ON` session; a later positive
+reply does not undo a terminal refusal. NRC `0x78` (response pending) may be
+followed by a positive reply within the original 250 ms response window;
+it does not extend that window. Without a positive reply, the attempt times
+out and the DID is disabled for this capture. A local TX queue failure does
+not disable the DID; it remains eligible in the 10-second rotation. Restarting
+the capture permits a new attempt. Standard polling continues independently.
+
+No `10 C0` session-opening request, `10 81` session-closing request, actuator
+command, adaptation or fault-clearing command is sent. Some published Nissan
+read definitions use a different diagnostic session: refusal or silence here
+does not prove that the vehicle has no such sensor. Even a positive reply
+does not physically validate the proposed label or oil-temperature formula
+on this MR16DDT manual; keep the exact raw bytes for later verification.
+The fuel gauge remains raw because published conversions disagree.
+
+Standard PIDs may be absent from the advertised bitmap; candidate probes
+may be refused or time out. Missing values are expected possibilities, not
+zero measurements. These reads do not change the preset, dashboard values
+or the data sent to the radio, and do not calibrate CAN mappings automatically.
 
 The client accepts only standard 11-bit, non-RTR responses with DLC 8,
-carried in an ISO-TP single frame whose length, service and PID match the
-request. Negative responses are reported separately. Multi-frame messages,
-manufacturer services and control commands are not interpreted by this client.
+carried in an ISO-TP single frame whose length, service and PID or DID match
+the pending request. Negative responses are reported separately. Multi-frame
+messages, other manufacturer identifiers and control commands are not
+interpreted by this client.
 
 ## Log format
 
@@ -98,12 +176,30 @@ ODB RAW_RX 0x7E8 [8]: 04 41 0C 0A 0C 00 00 00 | t_ms=508 ext=0 rtr=0
 ODB RX t_ms=508 seq=2 request_id=0x7E0 ecu=0x7E8 pid=0x0C name=rpm value=643.000 unit=rpm latency_ms=8
 ```
 
+Another **synthetic** example shows the separate candidate read:
+
+```text
+ODB TX t_ms=2000 seq=5 can_id=0x7E0 service=0x22 did=0x111F status=queued data=03 22 11 1F 00 00 00 00
+ODB RAW_RX 0x7E8 [8]: 04 62 11 1F 56 00 00 00 | t_ms=2010 ext=0 rtr=0
+ODB PROBE_RX t_ms=2010 seq=5 request_id=0x7E0 ecu=0x7E8 service=0x22 did=0x111F name=nissan_oil_temperature_candidate raw=0x56 value=36.000 unit=degC latency_ms=10
+```
+
+The other candidate names are `nissan_fuel_level_raw` (`1114`),
+`nissan_gear_position_raw` (`1183`) and `nissan_clutch_switch_raw` (`1304`).
+
 - `RX`: raw CAN frame, with unchanged ID, DLC, bytes and flags.
 - `ODB RAW_RX`: raw frame received in the diagnostic range `0x7DF–0x7EF`.
 - `ODB TX`: request with its exact bytes and `queued` or `failed` status.
 - `ODB SUPPORTED`: received capability page, bitmap and ECU.
-- `ODB RX`: decoded reference with PID, ECU, sequence, unit and latency.
+- `ODB RX`: decoded service 01 reference with PID, ECU, sequence, unit and latency.
+- `ODB PROBE_RX`: candidate service 22 result, with `service=0x22`, `did=0x....`,
+  `name=...`, `raw=0x..`, `value=...`, `unit=degC` or `unit=raw`, plus request,
+  ECU, sequence, timestamp and latency. The raw byte remains visible even
+  when a candidate conversion is displayed.
 - `ODB NEGATIVE`, `ODB TIMEOUT`: negative response or missing response.
+  Service 22 records use `service=0x22 did=0x....`; their `ODB TX` records also
+  include the service and DID, with exact transmitted bytes. Existing service
+  01 record formats and the `RX 0x` / `ODB RAW_RX` prefixes are unchanged.
 - `ODB STATE`: start/stop or discovery state.
 - `ODB DRIVER`: RX losses, TX failures, queue occupancy, errors and controller
   state, at most once per second.
@@ -151,7 +247,10 @@ streams separate, pairs the closest timestamped frames, and produces
 with several hypotheses, including RPM `/7`, `/8` and the two speed offsets.
 PIDs without a CAN candidate remain listed in the report. Different units
 do not produce a numerical error; a constant capture cannot confirm a scale.
-Mappings are never changed automatically.
+Mappings are never changed automatically. Candidate service 22 records are
+separate from service 01 `ODB RX` references: the comparison commands above
+do not establish a physical calibration for the raw Nissan candidates.
+Preserve `ODB PROBE_RX` and their associated raw frames in the full export.
 
 Boot messages, echoes and command responses may also appear in a full export.
 The reader reports them as unrecognized records; inspect the rejection
