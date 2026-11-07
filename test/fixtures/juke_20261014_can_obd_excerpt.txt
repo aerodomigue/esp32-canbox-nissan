@@ -1,0 +1,25 @@
+# Authentic excerpt of the owner's CAN/OBD parking capture; records unchanged.
+# Source: canlog_20261014_210614_663_762622981087673198.txt
+# Source SHA-256: e5c2a7539b3ad13da7c04cc15883a4b271a67c76fb3280a61878523d13311ce3
+# Original line numbers: 10, 11, 22, 45, 46, 5469, 11239, 17519, 17520, 17521, 17523, 25940, 25957, 25958, 25959, 43094, 43231, 89933.
+# Line endings normalized to LF; payloads, timestamps and ODB references preserved.
+# Covers RPM/speed references, brake states and the raw 0x551 counter wrap.
+# The historical legacy fields without references are not physically calibrated here.
+RX 0x180 [8]: 15 E0 31 F3 11 00 30 15 | t_ms=30985 ext=0 rtr=0
+RX 0x182 [8]: 00 00 00 00 00 10 40 C5 | t_ms=30985 ext=0 rtr=0
+RX 0x5C5 [8]: 44 03 C4 A1 00 0C 00 7F | t_ms=30994 ext=0 rtr=0
+RX 0x551 [8]: 66 34 00 80 FF 02 80 FF | t_ms=31008 ext=0 rtr=0
+RX 0x580 [8]: 00 6E 80 00 6D 00 00 4B | t_ms=31008 ext=0 rtr=0
+RX 0x5C5 [8]: 40 03 C4 A1 00 0C 00 7F | t_ms=35194 ext=0 rtr=0
+RX 0x180 [8]: 14 82 31 E3 12 00 3D 04 | t_ms=39641 ext=0 rtr=0
+ODB TX t_ms=44483 seq=28 can_id=0x7E0 service=0x01 pid=0x0C status=queued data=02 01 0C 00 00 00 00 00
+ODB RAW_RX 0x7E8 [8]: 04 41 0C 0E 10 00 00 00 | t_ms=44484 ext=0 rtr=0
+ODB RX t_ms=44484 seq=28 request_id=0x7E0 ecu=0x7E8 pid=0x0C name=rpm value=900.000 unit=rpm latency_ms=1
+RX 0x180 [8]: 1C 39 30 D3 08 00 36 04 | t_ms=44485 ext=0 rtr=0
+RX 0x284 [8]: 0C DC 0D 19 06 6F F1 FA | t_ms=50976 ext=0 rtr=0
+ODB BUFFER t_ms=50983 queued_bytes=195 dropped_raw=0 dropped_odb=0 short_writes=0 rejected_responses=0
+ODB RAW_RX 0x7E8 [8]: 03 41 0D 10 00 00 00 00 | t_ms=50984 ext=0 rtr=0
+ODB RX t_ms=50984 seq=41 request_id=0x7E0 ecu=0x7E8 pid=0x0D name=speed value=16.000 unit=km/h latency_ms=1
+RX 0x551 [8]: 67 FF 00 80 FF 02 80 FF | t_ms=64194 ext=0 rtr=0
+RX 0x551 [8]: 67 00 00 80 FF 02 80 FF | t_ms=64297 ext=0 rtr=0
+RX 0x5C5 [8]: 44 03 C4 A1 00 0C 00 7F | t_ms=100294 ext=0 rtr=0

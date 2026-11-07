@@ -1,0 +1,177 @@
+{
+  "capture": {
+    "filename": "canlog_20261014_210614_663_762622981087673198.txt",
+    "sha256": "e5c2a7539b3ad13da7c04cc15883a4b271a67c76fb3280a61878523d13311ce3"
+  },
+  "preset": {
+    "filename": "data/NissanJukeF15.json",
+    "sha256": "0a3789623ae9c2fd46008aa408fc215bb93015af482978363ace06f7fece5bd0"
+  },
+  "method": "Production integer extraction/rounding; nearest CAN sample in same log session within 60 ms; ECU 0x7E8.",
+  "comparisons": [
+    {
+      "candidate": "preset COOLANT_TEMP 0x551 bytes0-0",
+      "origin": "active_preset",
+      "session": 1,
+      "pid": "0x05",
+      "ecu": "0x7E8",
+      "can_unit": "C",
+      "reference_unit": "C",
+      "unit_match": true,
+      "reference_samples": 35,
+      "candidate_frames": 701,
+      "matched": 35,
+      "unmatched": 0,
+      "distinct_matched_frames": 35,
+      "max_observed_delay_ms": 51,
+      "can_values": {
+        "samples": 35,
+        "min": 61.0,
+        "max": 67.0,
+        "first": 62.0,
+        "last": 67.0,
+        "unique_count": 7,
+        "changes": 7,
+        "unique_values": [
+          61.0,
+          62.0,
+          63.0,
+          64.0,
+          65.0,
+          66.0,
+          67.0
+        ]
+      },
+      "mean_error": -0.02857142857142857,
+      "mean_absolute_error": 0.02857142857142857,
+      "max_absolute_error": 1.0,
+      "rmse": 0.1690308509457033
+    },
+    {
+      "candidate": "preset ENGINE_RPM 0x180 bytes0-1",
+      "origin": "active_preset",
+      "session": 1,
+      "pid": "0x0C",
+      "ecu": "0x7E8",
+      "can_unit": "rpm",
+      "reference_unit": "rpm",
+      "unit_match": true,
+      "reference_samples": 36,
+      "candidate_frames": 7012,
+      "matched": 36,
+      "unmatched": 0,
+      "distinct_matched_frames": 36,
+      "max_observed_delay_ms": 5,
+      "can_values": {
+        "samples": 36,
+        "min": 618.0,
+        "max": 1753.0,
+        "first": 665.0,
+        "last": 687.0,
+        "unique_count": 35,
+        "changes": 35,
+        "unique_values": null
+      },
+      "mean_error": 4.972222222222222,
+      "mean_absolute_error": 7.388888888888889,
+      "max_absolute_error": 28.0,
+      "rmse": 9.650129532809391
+    },
+    {
+      "candidate": "preset VEHICLE_SPEED 0x284 bytes4-5",
+      "origin": "active_preset",
+      "session": 1,
+      "pid": "0x0D",
+      "ecu": "0x7E8",
+      "can_unit": "km/h",
+      "reference_unit": "km/h",
+      "unit_match": true,
+      "reference_samples": 35,
+      "candidate_frames": 3591,
+      "matched": 35,
+      "unmatched": 0,
+      "distinct_matched_frames": 35,
+      "max_observed_delay_ms": 10,
+      "can_values": {
+        "samples": 35,
+        "min": 0.0,
+        "max": 16.0,
+        "first": 0.0,
+        "last": 0.0,
+        "unique_count": 8,
+        "changes": 15,
+        "unique_values": [
+          0.0,
+          3.0,
+          4.0,
+          6.0,
+          7.0,
+          8.0,
+          11.0,
+          16.0
+        ]
+      },
+      "mean_error": 0.02857142857142857,
+      "mean_absolute_error": 0.14285714285714285,
+      "max_absolute_error": 1.0,
+      "rmse": 0.3779644730092272
+    },
+    {
+      "candidate": "preset VOLTAGE 0x6F6 bytes0-0",
+      "origin": "active_preset",
+      "session": 1,
+      "pid": "0x42",
+      "ecu": "0x7E8",
+      "can_unit": "V",
+      "reference_unit": "V",
+      "unit_match": true,
+      "reference_samples": 35,
+      "candidate_frames": 718,
+      "matched": 35,
+      "unmatched": 0,
+      "distinct_matched_frames": 35,
+      "max_observed_delay_ms": 21,
+      "can_values": {
+        "samples": 35,
+        "min": 13.8,
+        "max": 14.3,
+        "first": 14.0,
+        "last": 14.100000000000001,
+        "unique_count": 6,
+        "changes": 25,
+        "unique_values": [
+          13.8,
+          13.9,
+          14.0,
+          14.100000000000001,
+          14.200000000000001,
+          14.3
+        ]
+      },
+      "mean_error": -0.09199999999999915,
+      "mean_absolute_error": 0.13885714285714243,
+      "max_absolute_error": 0.4399999999999995,
+      "rmse": 0.16804761230079976
+    }
+  ],
+  "changed_fields": [
+    "ENGINE_RPM: 0x180 B0-B1 BE /8",
+    "VEHICLE_SPEED: 0x284 B4-B5 BE /100",
+    "HANDBRAKE: 0x5C5 B0 bit2",
+    "BRAKE_PEDAL: 0x180 B7 bit0",
+    "FUEL_COUNTER_RAW: 0x551 B1, no physical fuel unit inferred"
+  ],
+  "removed_fields": [
+    "FUEL_LEVEL from 0x5C5 B0",
+    "FUEL_CONS_INST from 0x580 B3",
+    "FUEL_CONS_AVG from 0x580 B4"
+  ],
+  "limits": [
+    "RPM and speed are truncated to integer dashboard units.",
+    "Voltage is retained, not recalibrated; OBD and CAN may refer to different measurement points.",
+    "No validated liters, L/h or L/100km conversion for the raw counter.",
+    "Steering, ambient temperature, odometer and DTE remain legacy candidates, not newly calibrated."
+  ],
+  "rejected_can_records": [],
+  "rejected_references": []
+}

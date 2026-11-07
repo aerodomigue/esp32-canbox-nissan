@@ -21,6 +21,10 @@ public:
         return (c == EOF) ? -1 : c;
     }
 
+    size_t write(const uint8_t* buf, size_t len) {
+        return _fp ? fwrite(buf, 1, len, _fp) : 0;
+    }
+
     bool available() {
         if (!_fp) return false;
         return !feof(_fp);
@@ -39,6 +43,11 @@ public:
         return (size_t)sz;
     }
 
+    // Directory iteration stubs (not needed for test fixtures)
+    bool   isDirectory() { return false; }
+    File   openNextFile() { return File(); }
+    const char* name() const { return ""; }
+
 private:
     FILE* _fp;
 };
@@ -47,8 +56,9 @@ private:
 // Fixture JSON files live in test/fixtures/ and are accessed by name (no leading /).
 class FS {
 public:
-    bool begin(bool) { return true; }
-    bool begin() { return true; }
+    bool mountSucceeds = true;
+    bool formatRequested = false;
+    bool begin(bool format = false) { formatRequested = format; return mountSucceeds; }
 
     // Base path used by tests — set before calling loadFromJson()
     const char* basePath = "test/fixtures";
@@ -64,6 +74,11 @@ public:
         std::string full = _fullPath(path);
         FILE* fp = fopen(full.c_str(), mode);
         return File(fp);
+    }
+
+    bool remove(const char* path) {
+        std::string full = _fullPath(path);
+        return ::remove(full.c_str()) == 0;
     }
 
 private:

@@ -16,14 +16,15 @@ A vehicle preset is a JSON file that tells the ESP32 how to decode CAN frames fr
 {
   "name": "Make Model Year",
   "isMock": false,
+  "radioReceiver": "FYT",
   "vehicleParams": {
     "steerScale": 300,
     "steerOffset": 100,
     "steerInvert": true,
-    "indTimeout": null,
-    "rpmDiv": null,
-    "tankCap": null,
-    "dteDiv": null
+    "indTimeout": 500,
+    "rpmDiv": 7,
+    "tankCap": 45,
+    "dteDiv": 283
   },
   "frames": [
     {
@@ -36,7 +37,9 @@ A vehicle preset is a JSON file that tells the ESP32 how to decode CAN frames fr
           "byteOrder": "BE",
           "dataType": "UINT16",
           "formula": "SCALE",
-          "params": [1, 7, 0]
+          "params": [1, 8, 0],
+          "invalidRawValues": [65535],
+          "estimated": false
         }
       ]
     }
@@ -54,7 +57,9 @@ A vehicle preset is a JSON file that tells the ESP32 how to decode CAN frames fr
 |-------|------|-------------|
 | `name` | string | Vehicle name (displayed in logs) |
 | `isMock` | boolean | `true` = simulate data, `false` = read real CAN |
+| `radioReceiver` | string (optional) | `"FYT"` (default) or `"DUDU"`; selects receiver-specific unavailable-value handling, not the vehicle CAN mapping |
 | `vehicleParams` | object (optional) | Calibration overrides for this model — see [Vehicle Parameters](#vehicle-parameters-vehicleparams) |
+| `fuelConsumption` | object (optional) | Derive radio consumption from a raw counter and speed — see [Counter-based fuel consumption](#counter-based-fuel-consumption-fuelconsumption) |
 | `frames` | array | List of CAN frames to decode |
 
 ### Frame Object
@@ -75,12 +80,29 @@ A vehicle preset is a JSON file that tells the ESP32 how to decode CAN frames fr
 | `dataType` | string | How to interpret bytes (see [Data Types](#data-types)) |
 | `formula` | string | Conversion formula (see [Formulas](#formulas)) |
 | `params` | array | Formula parameters |
+| `invalidRawValues` | array of int32 (optional) | Exact extracted raw values to reject before formula conversion; omitted/empty means no additional exclusion |
+| `estimated` | boolean (optional) | Mark a decoded source as provisional; defaults to `false`, does not validate or alter its conversion |
+
+### Invalid raw values and provisional sources
+
+`invalidRawValues` compares against the extracted integer after byte order and
+signedness have been interpreted, **before** applying `formula`. It is not a
+list of converted physical values and does not change raw CAN logs. For example,
+`[65535]` rejects `UINT16` raw `0xFFFF`; a signed `INT16` representation of the
+same bits is `-1`, so it must be listed as `[-1]` for that data type. Invalid
+measurements must not refresh a source or be published as real values.
+
+`estimated: true` explicitly preserves a source's provisional status. In the F15
+preset it applies to candidate `OIL_TEMP`, `0x580 B4−40`; coolant is independently
+corroborated. No universal raw oil invalid value is inferred from the coolant
+sentinel. See the [current F15/DUDU contract](F15_DUDU_BOOT_TRIP_MAPPING.md) for
+source confidence, freshness and receiver-specific output restrictions.
 
 ---
 
 ## Vehicle Parameters (`vehicleParams`)
 
-The optional `vehicleParams` object embeds vehicle-specific calibration directly in the preset file. When a new vehicle is loaded, these values are applied automatically and saved to persistent storage (NVS).
+The optional `vehicleParams` object embeds calibration directly in the preset file. Explicit values take priority over local settings on **every successful load**, including `CAN LOAD`, `CAN RELOAD` and reboot. Only explicit keys are saved to persistent storage (NVS) on a same-file reload, and only when their stored values differ. Temporary changes to null/absent keys remain in RAM until `CFG SAVE`.
 
 ### Null semantics
 
@@ -94,14 +116,35 @@ Each field is independently nullable:
 ### Priority
 
 ```
-NVS (same vehicle loaded again)  ← highest priority
-  vehicleParams (vehicle switch)
-    firmware defaults             ← lowest priority
+vehicleParams (every load)        ← highest priority
+  NVS (null/absent keys, same file)
+    firmware defaults (new file)  ← lowest priority
 ```
 
-When the **same vehicle file** is loaded again (e.g., on reboot), NVS values are preserved and `vehicleParams` is **not** re-applied. This ensures user calibrations made via `CFG SET` survive reboots.
+When the **same vehicle file** is loaded again, explicit JSON values replace local overrides. Only `null` or absent keys retain local values. This replaces the previous behaviour that preserved all NVS values when reloading the same filename.
 
-When a **different vehicle file** is loaded, NVS is reset to firmware defaults first, then `vehicleParams` is applied and saved. Use `CFG SAVE` after any further tuning to persist your customisations.
+When a **different vehicle file** is loaded, NVS is reset to firmware defaults first, then `vehicleParams` is applied and saved. Null or absent keys therefore use firmware defaults on a switch.
+
+`CFG SET` still changes the running calibration immediately, and `CFG SAVE` still saves it to NVS. Neither command edits the JSON: an explicit JSON value wins again on the next load/reboot. To share a lasting adjustment between head units, edit and transfer the same JSON to each unit, then load it. To deliberately keep a setting local instead, set that key to `null` or omit it. `CFG RESET` also remains temporary for keys specified in the JSON.
+
+All provided values are checked before changing the active profile or NVS. Numeric keys require finite integer values within the ranges below: `500`, `500.0` and `5e2` are equivalent, while `500.5` is rejected. Numeric strings and booleans are rejected for numeric keys; `steerInvert` requires a JSON boolean (not `0`/`1`). Invalid types or ranges reject the entire load and leave the active profile and calibration untouched. `CAN GET` returns the file contents; `CFG LIST` reports the current runtime values.
+
+### Load failures and recovery
+
+`CAN RELOAD` loads only the selected file. A missing or invalid file returns
+`ERROR` and preserves the running profile, decoded data, calibration and saved
+selection. It never selects a fallback vehicle or demo profile.
+
+At boot, a missing/invalid saved selection leaves the device without an active
+profile: `CAN STATUS` reports `Mode: ERROR (no valid profile)`. Raw CAN/OBD logs
+and USB commands remain available, but radio output is disabled and simulated
+data is not generated. Upload a corrected file and use `CAN RELOAD`, or explicitly
+select another valid profile with `CAN LOAD <filename>`.
+
+Only when there is no saved selection does boot check `/vehicle.json`,
+`/MockDemo.json`, then `/NissanJukeF15.json`. It tries the first existing file
+and stops on an error. A valid demo profile still enables simulation; having
+no valid file does not. LittleFS is never formatted automatically on mount failure.
 
 ### Supported keys
 
@@ -111,13 +154,21 @@ When a **different vehicle file** is loaded, NVS is reset to firmware defaults f
 | `steerOffset` | integer | -500 to +500 | `steerOffset` | Steering centre offset |
 | `steerInvert` | boolean | `true` / `false` | `steerInvert` | Reverse steering direction |
 | `indTimeout` | integer | 100–2000 ms | `indTimeout` | Indicator blink detection timeout |
-| `rpmDiv` | integer | 1–20 | `rpmDiv` | RPM raw value divisor |
-| `tankCap` | integer | 20–100 L | `tankCap` | Fuel tank capacity in litres |
-| `dteDiv` | integer | 100–500 | `dteDiv` | DTE divisor × 100 |
+| `rpmDiv` | integer | 1–20 | `rpmDiv` | Legacy RPM divisor, stored only |
+| `tankCap` | integer | 20–100 L | `tankCap` | Legacy tank capacity, stored only |
+| `dteDiv` | integer | 100–500 | `dteDiv` | Legacy DTE divisor × 100, stored only |
 
 ### Note on `rpmDiv`, `tankCap`, `dteDiv`
 
-For most vehicles, these values are already encoded in the formula `params` of individual frame fields (e.g., `"params": [1, 7, 0]` for RPM). Setting them to `null` in `vehicleParams` avoids duplication and potential inconsistency. Define them here only if your vehicle requires a post-processing adjustment independent of the frame-level formula.
+These values are stored in NVS but are not currently used for post-processing
+in the CAN decoder or radio encoder. Set conversions in the formula `params`
+of individual frame fields (e.g., `"params": [1, 8, 0]` for Juke RPM and
+`[1, 10, 0]` for `0x2DE B6..B7` DTE). The legacy `dteDiv` value does not
+select or calibrate this mapping. The preset retains `tankCap: 45` as a
+legacy compatibility placeholder. This is **not a claim
+about the car's tank capacity**, nor validation of the DTE formula. These
+three stored parameters do not change RPM, fuel level, consumption or range
+calculations; they must not be applied a second time to the decoded values.
 
 The steering parameters (`steerScale`, `steerOffset`, `steerInvert`) have **no frame-level equivalent** — they are applied during radio output in `RadioSend.cpp` and must be set here or via `CFG SET`.
 
@@ -125,17 +176,106 @@ The steering parameters (`steerScale`, `steerOffset`, `steerInvert`) have **no f
 
 ```
 1. Load NissanJukeF15.json for the first time
-   → NVS reset → steerScale=300, steerOffset=100, steerInvert=true applied and saved
+   → NVS reset → steerScale=500, steerOffset=0, steerInvert=true applied and saved
 
-2. Fine-tune via app: CFG SET steerScale 320, CFG SAVE
-   → NVS now holds steerScale=320
+2. Try a local adjustment: CFG SET steerScale 600, CFG SAVE
+   → Running calibration and NVS now hold steerScale=600; JSON still has 500
 
-3. Reboot — same vehicle file reloaded
-   → vehicleParams NOT applied → NVS value 320 preserved ✓
+3. CAN RELOAD, CAN LOAD NissanJukeF15.json or reboot
+   → JSON wins → steerScale=500 applied and saved again
 
-4. Load a different vehicle (OtherVehicle.json)
+4. To keep the adjustment, change steerScale to 600 in the JSON and upload/load it
+   → Every unit using that file now loads 600
+
+5. Load a different vehicle (OtherVehicle.json)
    → NVS reset → OtherVehicle vehicleParams applied
 ```
+
+---
+
+## Counter-based fuel consumption (`fuelConsumption`)
+
+The Juke preset adds this **root-level** object. It enables an experimental
+conversion of modulo-256 counter increments from `0x551 B1` into the
+Toyota RAV4 UART format used by the selected FYT/DUDU receiver. The **80 mm³/increment coefficient is
+provisional on the Juke MR16DDT**: it comes from a
+[Clio III calibration report](https://x0r.fr/blog/39#comment-396), not a
+Juke measurement. The archived VBOX REF retains its original factor 1;
+this configurable conversion does not alter that source file.
+
+```json
+{
+  "fuelConsumption": {
+    "enabled": true,
+    "calibration": "provisional",
+    "source": "https://x0r.fr/blog/39#comment-396",
+    "mm3PerTick": 80,
+    "windowMs": 1000,
+    "maxGapMs": 500,
+    "minSpeedKmh": 2,
+    "minAverageDistanceM": 100,
+    "maxTicksPerSecond": 400
+  }
+}
+```
+
+This is a root-object fragment to insert alongside `frames`, not a complete
+preset. These settings are also read from the JSON on every load, but are
+not stored in NVS or exposed through `CFG SET`.
+
+| Key | Meaning |
+| --- | --- |
+| `enabled` | Enable the estimator; omission of the object preserves older profiles' behaviour |
+| `calibration` | `provisional` (default) or `calibrated`; only mark calibrated after an independent check on the vehicle |
+| `source` | Documentary provenance of the coefficient; does not calibrate the signal |
+| `mm3PerTick` | Required finite, positive volume per modulo-256 increment; adjustable after calibration |
+| `windowMs` | Instantaneous consumption calculation window, 100–10000 ms; Juke: 1000 ms |
+| `maxGapMs` | Maximum gap in either source; beyond it, tracking rebases and the full-boot trip becomes incomplete, 100–1000 ms; Juke: 500 ms |
+| `minSpeedKmh` | Below this speed, publish instantaneous 0 with fresh sources; this display convention does not mean zero fuel flow |
+| `minAverageDistanceM` | Minimum boot-trip distance before publishing average consumption; Juke: 100 m |
+| `maxTicksPerSecond` | Plausibility limit on counter progression, 400 increments/s |
+
+An enabled estimator requires exactly one `FUEL_COUNTER_RAW` field
+(`UINT8`, `byteCount: 1`, `formula: "NONE"`) and one `VEHICLE_SPEED` field.
+It rejects profiles with competing direct `FUEL_CONS_INST` or
+`FUEL_CONS_AVG` fields. Invalid settings leave the active profile unchanged.
+The rate and gap must satisfy `maxTicksPerSecond * maxGapMs / 1000 + 1 < 256`
+to keep the plausibility budget below a full counter rollover.
+
+The firmware accumulates `(current - previous) modulo 256` and multiplies
+by `mm3PerTick`. It integrates speed to obtain distance using the fractional
+Juke value `U16BE(0x280 B4,B5)/100` before truncation for dashboard output.
+For nonzero distance, **radio units (0.1 L/100 km) = volume in mm³ / distance
+in metres**. Instantaneous consumption uses the configured window; average
+consumption covers this device boot, including fuel consumed while stationary,
+once its distance threshold is reached. It is not the Nissan historical average.
+
+An identical estimator/source reload preserves the counter baseline, window and
+totals. `LOG ON`/`LOG OFF` do not reset them. A source gap beyond `maxGapMs`, invalid
+input, an implausible increment or a changed calibration/source after tracking
+starts preserves acquired totals but permanently marks the boot trip incomplete.
+Instantaneous output can recover; the full-boot average remains unavailable until
+a new boot instead of silently starting a shorter trip. No trip state is saved
+in NVS. A counter reset resembling a normal rollover cannot always be detected.
+The long-trip replay supports dynamic behaviour and distance, but does not
+independently calibrate the provisional fuel-volume coefficient.
+
+`SYS DATA` reports availability through `FuelConsValid` and the provisional
+coefficient through `FuelConsEstimated: 1`. Availability is not a calibration
+claim. The radio receives unit `0x02` and unsigned big-endian values:
+`0x22` has a 3-byte payload; `0x23` has a 13-byte payload with the boot
+average and five unavailable history slots (`0xFFFF`). An unavailable current
+instantaneous or average value is **not transmitted**: the audited receivers
+do not share a safe clearing sentinel. In particular DUDU would display an
+instantaneous `0xFFFF` as 6553.5. A withheld field may leave its previous value
+visible on the radio. See
+[radio protocol](technical/RADIO_SEND.md) for packet details.
+The radio format has no calibration flag; `FuelConsEstimated` is available
+only in `SYS DATA`.
+
+Install the matching firmware first, transfer the updated JSON separately,
+then run `CAN LOAD NissanJukeF15.json`; application OTA alone does not
+replace the profile in LittleFS. `RX` and `ODB` log formats are unchanged.
 
 ---
 
@@ -154,9 +294,36 @@ Variables that can be updated from CAN data:
 | `ODOMETER` | Total mileage | km |
 | `VOLTAGE` | Battery voltage | 0.1V |
 | `TEMPERATURE` | Temperature | °C |
+| `COOLANT_TEMP` | Engine coolant temperature | °C |
+| `OIL_TEMP` | Engine oil temperature; F15 candidate remains provisional | °C |
 | `DTE` | Distance to empty | km |
 | `FUEL_CONS_INST` | Instant consumption | 0.1 L/100km |
 | `FUEL_CONS_AVG` | Average consumption | 0.1 L/100km |
+| `FUEL_COUNTER_RAW` | Raw fuel-related byte, separate from consumption | No validated physical unit |
+
+Direct `FUEL_LEVEL`, `FUEL_CONS_INST` and `FUEL_CONS_AVG` targets require
+sources in the specified units. Their availability becomes true after a
+configured frame supplies a value. The Juke has no fuel-level source and
+derives consumption separately through `fuelConsumption` above. Mock mode
+retains synthetic values. `FUEL_COUNTER_RAW` remains exposed as the unchanged
+`FuelRaw` byte; it must not be displayed directly as L/h or L/100km.
+
+### Additional vehicle states (boolean)
+
+| Target | Description |
+| --- | --- |
+| `HANDBRAKE` | Juke `0x5C5 B0 bit2`; observed 1 = applied |
+| `BRAKE_PEDAL` | Juke `0x180 B7 bit0`; raw switch state, action/polarity to verify |
+
+These states and `FUEL_COUNTER_RAW` report `unknown` in `SYS DATA` before
+the first configured frame. Availability resets at profile load; it does not
+provide a freshness timeout or physical calibration.
+
+Missing or unknown targets are rejected without replacing the active
+profile. Install the matching new firmware **before** uploading a JSON with
+these new targets: older parsers may silently map them to `STEERING`.
+Application OTA does not update LittleFS; transfer the JSON separately and
+activate it with `CAN LOAD <filename>`.
 
 ### Door Status (boolean)
 
@@ -196,11 +363,15 @@ Variables that can be updated from CAN data:
 
 ## Formulas
 
+The snippets below are field fragments with explanatory comments or symbolic
+parameters. Use numeric parameters and omit comments in the final JSON file.
+The complete file examples elsewhere in this guide are valid JSON.
+
 ### NONE
 
 No conversion, use raw value as-is.
 
-```json
+```text
 "formula": "NONE"
 ```
 
@@ -208,16 +379,16 @@ No conversion, use raw value as-is.
 
 Linear conversion: `result = (value × mult ÷ div) + offset`
 
-```json
+```text
 "formula": "SCALE",
 "params": [mult, div, offset]
 ```
 
 **Examples:**
 
-```json
-// RPM: raw / 7
-"params": [1, 7, 0]
+```text
+// Corrected Juke RPM: raw / 8, corroborated by OBD
+"params": [1, 8, 0]
 
 // Speed: raw / 100
 "params": [1, 100, 0]
@@ -225,38 +396,43 @@ Linear conversion: `result = (value × mult ÷ div) + offset`
 // Temperature: raw - 40
 "params": [1, 1, -40]
 
-// DTE: raw × 100 / 283
-"params": [100, 283, 0]
+// Current Juke DTE: U16BE at 0x2DE B6..B7 / 10 km
+"params": [1, 10, 0]
 ```
 
 ### MAP_RANGE
 
 Map value from one range to another: `map(value, inMin, inMax, outMin, outMax)`
 
-```json
+```text
 "formula": "MAP_RANGE",
 "params": [inMin, inMax, outMin, outMax]
 ```
 
 **Example:**
 
-```json
-// Fuel: 255=empty, 0=full → map to 0-45 liters
+```text
+// Historical, contradicted Juke fuel hypothesis; do not use as a fuel gauge
 "params": [255, 0, 0, 45]
 ```
+
+This historical whole-byte Juke interpretation has been removed from the
+active preset: the byte contains parking-brake and other states. The example
+only illustrates formula syntax. Use [the current mapping evidence](JUKE_F15_CAN_MAPPING.md)
+and [OBD reference capture](OBD_CALIBRATION.md) for vehicle validation.
 
 ### BITMASK_EXTRACT
 
 Extract specific bit(s): `result = (value & mask) >> shift`
 
-```json
+```text
 "formula": "BITMASK_EXTRACT",
 "params": [mask, shift]
 ```
 
 **Example:**
 
-```json
+```text
 // Extract bit 20 from 3-byte value (door status)
 "params": [1048576, 20]
 // 1048576 = 0x100000 = bit 20
@@ -280,14 +456,15 @@ Extract specific bit(s): `result = (value & mask) >> shift`
 
 ## Complete Example
 
-Nissan Juke F15 - Engine RPM from CAN ID 0x180:
+Nissan Juke F15 - corrected RPM mapping from CAN ID 0x180. This
+synthetic example checks the formula, not physical calibration:
 
 ```
 CAN Frame 0x180: [0x44, 0x7E, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
                   ^^^^  ^^^^
                   Bytes 0-1 = 0x447E = 17534 (raw)
 
-RPM = 17534 / 7 = 2504 RPM
+RPM = 17534 / 8 = 2191 RPM (integer division)
 ```
 
 ```json
@@ -301,7 +478,7 @@ RPM = 17534 / 7 = 2504 RPM
       "byteOrder": "BE",
       "dataType": "UINT16",
       "formula": "SCALE",
-      "params": [1, 7, 0]
+      "params": [1, 8, 0]
     }
   ]
 }
@@ -368,7 +545,18 @@ Shows current values for all fields.
 LOG ON
 ```
 
-Shows raw CAN frames being processed.
+Records all received CAN frames with unchanged bytes, DLC and flags, plus
+software `t_ms` timestamps. In real mode, it also starts supported OBD
+service 01 reference queries; diagnostic lines begin with `ODB`. Mock mode
+sends no OBD queries, and OTA pauses polling. The exact real F15 profile also
+attempts the bounded manufacturer-session groups described in the
+[F15/DUDU contract](F15_DUDU_BOOT_TRIP_MAPPING.md#bounded-nissan-diagnostic-experiment).
+Their results remain references; they do not overwrite radio measurements.
+
+Save the complete output without time/color prefixes so the comparison tools
+can read both raw frames and references. Stop with `LOG OFF`. See
+[OBD capture and comparison](OBD_CALIBRATION.md). Reference values never
+modify your preset automatically.
 
 ---
 

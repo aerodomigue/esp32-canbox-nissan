@@ -1,0 +1,2264 @@
+{
+  "vehicle": "Owner-reported Nissan Juke F15 phase 1, 2011, MR16DDT 1.6 DIG-T, manual transmission",
+  "owner_annotation": {
+    "source": "Owner recollection provided on 2026-10-14 after the capture",
+    "description_fr": "Desserrer le frein à main, sortir de la place, tourner à gauche sur environ 30 m, reculer sur environ 30 m, se garer en marche arrière, serrer le frein à main.",
+    "limitations_fr": "Distances incertaines et actions non horodatées. Ne pas convertir cette description en étiquettes temporelles exactes."
+  },
+  "method": {
+    "byte_numbering": "Zero-based",
+    "alignment": "Nearest CAN frame by ESP32 t_ms at decoded ODB response; ties prefer preceding frame. No interpolation and no latency optimisation.",
+    "windows_ms": [
+      5,
+      10,
+      60,
+      200
+    ],
+    "runtime_note": "Preset SCALE and MAP_RANGE use truncation toward zero; alternatives explicitly named /8 or /100 retain fractions unless marked trunc.",
+    "limitations": [
+      "One short driving/parking capture; references are sparse, staggered, and internally sampled at unknown times.",
+      "Speed range is low. Zero-valued pairs inflate agreement; nonzero subsets reported separately.",
+      "No OBD steering, doors, lamps, handbrake, ambient temperature, fuel level, fuel flow or DTE reference exists in either capture.",
+      "The historical capture has no timestamps and contains invalid classical CAN records; it cannot calibrate scale or synchronise data.",
+      "Manufacturer reference definitions are considered separately in the bilingual mapping documentation; this report contains capture-derived evidence."
+    ]
+  },
+  "binary_signals": {
+    "handbrake_candidate_5c5_b0_bit2": {
+      "can_id": "0x5C5",
+      "byte": 0,
+      "mask": 4,
+      "changes": [
+        {
+          "t_ms": 30994,
+          "elapsed_s": 0.011,
+          "line": 22,
+          "value": 1,
+          "payload": "44 03 C4 A1 00 0C 00 7F",
+          "nearby_candidate_speed_kmh": 0.0,
+          "nearby_speed_line": 27
+        },
+        {
+          "t_ms": 35194,
+          "elapsed_s": 4.211,
+          "line": 5469,
+          "value": 0,
+          "payload": "40 03 C4 A1 00 0C 00 7F",
+          "nearby_candidate_speed_kmh": 0.0,
+          "nearby_speed_line": 5474
+        },
+        {
+          "t_ms": 100294,
+          "elapsed_s": 69.311,
+          "line": 89933,
+          "value": 1,
+          "payload": "44 03 C4 A1 00 0C 00 7F",
+          "nearby_candidate_speed_kmh": 0.0,
+          "nearby_speed_line": 89928
+        }
+      ],
+      "active_frames": 68,
+      "total_frames": 719
+    },
+    "brake_candidate_35d_b4_bit4": {
+      "can_id": "0x35D",
+      "byte": 4,
+      "mask": 16,
+      "changes": [
+        {
+          "t_ms": 31055,
+          "elapsed_s": 0.072,
+          "line": 102,
+          "value": 1,
+          "payload": "80 03 00 00 10 00 00 00",
+          "nearby_candidate_speed_kmh": 0.0,
+          "nearby_speed_line": 103
+        },
+        {
+          "t_ms": 39681,
+          "elapsed_s": 8.698,
+          "line": 11290,
+          "value": 0,
+          "payload": "80 03 00 00 00 00 00 00",
+          "nearby_candidate_speed_kmh": 0.0,
+          "nearby_speed_line": 11285
+        },
+        {
+          "t_ms": 52110,
+          "elapsed_s": 21.127,
+          "line": 27423,
+          "value": 1,
+          "payload": "80 03 00 00 10 00 00 00",
+          "nearby_candidate_speed_kmh": 15.7,
+          "nearby_speed_line": 27427
+        },
+        {
+          "t_ms": 55644,
+          "elapsed_s": 24.661,
+          "line": 32003,
+          "value": 0,
+          "payload": "80 03 00 00 00 00 00 00",
+          "nearby_candidate_speed_kmh": 0.0,
+          "nearby_speed_line": 31992
+        },
+        {
+          "t_ms": 66236,
+          "elapsed_s": 35.253,
+          "line": 45745,
+          "value": 1,
+          "payload": "80 03 00 00 10 00 00 00",
+          "nearby_candidate_speed_kmh": 6.15,
+          "nearby_speed_line": 45743
+        },
+        {
+          "t_ms": 67643,
+          "elapsed_s": 36.66,
+          "line": 47568,
+          "value": 0,
+          "payload": "80 03 00 00 00 00 00 00",
+          "nearby_candidate_speed_kmh": 3.61,
+          "nearby_speed_line": 47562
+        },
+        {
+          "t_ms": 71297,
+          "elapsed_s": 40.314,
+          "line": 52316,
+          "value": 1,
+          "payload": "80 03 00 00 10 00 00 00",
+          "nearby_candidate_speed_kmh": 0.0,
+          "nearby_speed_line": 52311
+        },
+        {
+          "t_ms": 72395,
+          "elapsed_s": 41.412,
+          "line": 53739,
+          "value": 0,
+          "payload": "80 03 00 00 00 00 00 00",
+          "nearby_candidate_speed_kmh": 0.0,
+          "nearby_speed_line": 53734
+        },
+        {
+          "t_ms": 75131,
+          "elapsed_s": 44.148,
+          "line": 57283,
+          "value": 1,
+          "payload": "80 03 00 00 10 00 00 00",
+          "nearby_candidate_speed_kmh": 3.94,
+          "nearby_speed_line": 57291
+        },
+        {
+          "t_ms": 77487,
+          "elapsed_s": 46.504,
+          "line": 60343,
+          "value": 0,
+          "payload": "80 03 00 00 00 00 00 00",
+          "nearby_candidate_speed_kmh": 0.0,
+          "nearby_speed_line": 60352
+        },
+        {
+          "t_ms": 82648,
+          "elapsed_s": 51.665,
+          "line": 67038,
+          "value": 1,
+          "payload": "80 03 00 00 10 00 00 00",
+          "nearby_candidate_speed_kmh": 0.0,
+          "nearby_speed_line": 67049
+        },
+        {
+          "t_ms": 83476,
+          "elapsed_s": 52.493,
+          "line": 68114,
+          "value": 0,
+          "payload": "80 03 00 00 00 00 00 00",
+          "nearby_candidate_speed_kmh": 0.0,
+          "nearby_speed_line": 68111
+        },
+        {
+          "t_ms": 98651,
+          "elapsed_s": 67.668,
+          "line": 87804,
+          "value": 1,
+          "payload": "80 03 00 00 10 00 00 00",
+          "nearby_candidate_speed_kmh": 0.0,
+          "nearby_speed_line": 87806
+        },
+        {
+          "t_ms": 101616,
+          "elapsed_s": 70.633,
+          "line": 91650,
+          "value": 0,
+          "payload": "80 03 00 00 00 00 00 00",
+          "nearby_candidate_speed_kmh": 0.0,
+          "nearby_speed_line": 91645
+        }
+      ],
+      "active_frames": 212,
+      "total_frames": 725
+    },
+    "brake_candidate_354_b6_bit4": {
+      "can_id": "0x354",
+      "byte": 6,
+      "mask": 16,
+      "changes": [
+        {
+          "t_ms": 31017,
+          "elapsed_s": 0.034,
+          "line": 58,
+          "value": 1,
+          "payload": "00 00 00 00 00 10 14 00",
+          "nearby_candidate_speed_kmh": 0.0,
+          "nearby_speed_line": 56
+        },
+        {
+          "t_ms": 39696,
+          "elapsed_s": 8.713,
+          "line": 11313,
+          "value": 0,
+          "payload": "00 00 00 00 00 18 04 00",
+          "nearby_candidate_speed_kmh": 0.0,
+          "nearby_speed_line": 11311
+        },
+        {
+          "t_ms": 52097,
+          "elapsed_s": 21.114,
+          "line": 27403,
+          "value": 1,
+          "payload": "06 2A 00 00 00 08 14 00",
+          "nearby_candidate_speed_kmh": 15.78,
+          "nearby_speed_line": 27397
+        },
+        {
+          "t_ms": 55656,
+          "elapsed_s": 24.673,
+          "line": 32021,
+          "value": 0,
+          "payload": "00 00 00 00 00 10 04 00",
+          "nearby_candidate_speed_kmh": 0.0,
+          "nearby_speed_line": 32019
+        },
+        {
+          "t_ms": 66215,
+          "elapsed_s": 35.232,
+          "line": 45720,
+          "value": 1,
+          "payload": "02 69 00 00 00 10 14 00",
+          "nearby_candidate_speed_kmh": 6.17,
+          "nearby_speed_line": 45718
+        },
+        {
+          "t_ms": 67656,
+          "elapsed_s": 36.673,
+          "line": 47593,
+          "value": 0,
+          "payload": "01 68 00 00 00 10 04 00",
+          "nearby_candidate_speed_kmh": 3.6,
+          "nearby_speed_line": 47586
+        },
+        {
+          "t_ms": 71255,
+          "elapsed_s": 40.272,
+          "line": 52261,
+          "value": 1,
+          "payload": "00 00 00 00 00 00 14 00",
+          "nearby_candidate_speed_kmh": 0.0,
+          "nearby_speed_line": 52259
+        },
+        {
+          "t_ms": 72415,
+          "elapsed_s": 41.432,
+          "line": 53764,
+          "value": 0,
+          "payload": "00 00 00 00 00 08 04 00",
+          "nearby_candidate_speed_kmh": 0.0,
+          "nearby_speed_line": 53761
+        },
+        {
+          "t_ms": 75095,
+          "elapsed_s": 44.112,
+          "line": 57243,
+          "value": 1,
+          "payload": "01 90 00 00 00 00 14 00",
+          "nearby_candidate_speed_kmh": 4.0,
+          "nearby_speed_line": 57241
+        },
+        {
+          "t_ms": 77495,
+          "elapsed_s": 46.512,
+          "line": 60354,
+          "value": 0,
+          "payload": "00 00 00 00 00 00 04 00",
+          "nearby_candidate_speed_kmh": 0.0,
+          "nearby_speed_line": 60352
+        },
+        {
+          "t_ms": 82615,
+          "elapsed_s": 51.632,
+          "line": 66998,
+          "value": 1,
+          "payload": "00 00 00 00 00 00 14 00",
+          "nearby_candidate_speed_kmh": 0.0,
+          "nearby_speed_line": 66996
+        },
+        {
+          "t_ms": 83495,
+          "elapsed_s": 52.512,
+          "line": 68141,
+          "value": 0,
+          "payload": "00 00 00 00 00 10 04 00",
+          "nearby_candidate_speed_kmh": 0.0,
+          "nearby_speed_line": 68138
+        },
+        {
+          "t_ms": 98614,
+          "elapsed_s": 67.631,
+          "line": 87757,
+          "value": 1,
+          "payload": "00 00 00 00 00 00 14 00",
+          "nearby_candidate_speed_kmh": 0.0,
+          "nearby_speed_line": 87754
+        },
+        {
+          "t_ms": 101614,
+          "elapsed_s": 70.631,
+          "line": 91648,
+          "value": 0,
+          "payload": "00 00 00 00 00 18 04 00",
+          "nearby_candidate_speed_kmh": 0.0,
+          "nearby_speed_line": 91645
+        }
+      ],
+      "active_frames": 528,
+      "total_frames": 1795
+    },
+    "brake_candidate_182_b6_bit6": {
+      "can_id": "0x182",
+      "byte": 6,
+      "mask": 64,
+      "changes": [
+        {
+          "t_ms": 30985,
+          "elapsed_s": 0.002,
+          "line": 11,
+          "value": 1,
+          "payload": "00 00 00 00 00 10 40 C5",
+          "nearby_candidate_speed_kmh": 0.0,
+          "nearby_speed_line": 27
+        },
+        {
+          "t_ms": 39641,
+          "elapsed_s": 8.658,
+          "line": 11240,
+          "value": 0,
+          "payload": "00 00 00 00 00 1D 00 C5",
+          "nearby_candidate_speed_kmh": 0.0,
+          "nearby_speed_line": 11233
+        },
+        {
+          "t_ms": 52066,
+          "elapsed_s": 21.083,
+          "line": 27361,
+          "value": 1,
+          "payload": "00 00 00 00 00 1A 40 BB",
+          "nearby_candidate_speed_kmh": 15.73,
+          "nearby_speed_line": 27351
+        },
+        {
+          "t_ms": 55599,
+          "elapsed_s": 24.616,
+          "line": 31945,
+          "value": 0,
+          "payload": "00 00 00 00 00 13 00 C5",
+          "nearby_candidate_speed_kmh": 0.0,
+          "nearby_speed_line": 31940
+        },
+        {
+          "t_ms": 66191,
+          "elapsed_s": 35.208,
+          "line": 45684,
+          "value": 1,
+          "payload": "00 00 00 00 00 1D 40 C4",
+          "nearby_candidate_speed_kmh": 6.18,
+          "nearby_speed_line": 45692
+        },
+        {
+          "t_ms": 67604,
+          "elapsed_s": 36.621,
+          "line": 47523,
+          "value": 0,
+          "payload": "00 00 00 00 00 17 00 C6",
+          "nearby_candidate_speed_kmh": 3.64,
+          "nearby_speed_line": 47510
+        },
+        {
+          "t_ms": 71251,
+          "elapsed_s": 40.268,
+          "line": 52253,
+          "value": 1,
+          "payload": "00 00 00 00 00 1B 40 C0",
+          "nearby_candidate_speed_kmh": 0.0,
+          "nearby_speed_line": 52259
+        },
+        {
+          "t_ms": 72357,
+          "elapsed_s": 41.374,
+          "line": 53688,
+          "value": 0,
+          "payload": "00 00 00 00 00 17 00 C4",
+          "nearby_candidate_speed_kmh": 0.0,
+          "nearby_speed_line": 53682
+        },
+        {
+          "t_ms": 75092,
+          "elapsed_s": 44.109,
+          "line": 57236,
+          "value": 1,
+          "payload": "00 00 00 00 00 12 40 C3",
+          "nearby_candidate_speed_kmh": 4.0,
+          "nearby_speed_line": 57241
+        },
+        {
+          "t_ms": 77438,
+          "elapsed_s": 46.455,
+          "line": 60276,
+          "value": 0,
+          "payload": "00 00 00 00 00 17 00 C4",
+          "nearby_candidate_speed_kmh": 0.0,
+          "nearby_speed_line": 60271
+        },
+        {
+          "t_ms": 82610,
+          "elapsed_s": 51.627,
+          "line": 66991,
+          "value": 1,
+          "payload": "00 00 00 00 00 10 40 C4",
+          "nearby_candidate_speed_kmh": 0.0,
+          "nearby_speed_line": 66996
+        },
+        {
+          "t_ms": 83430,
+          "elapsed_s": 52.447,
+          "line": 68051,
+          "value": 0,
+          "payload": "00 00 00 00 00 10 00 C4",
+          "nearby_candidate_speed_kmh": 0.0,
+          "nearby_speed_line": 68055
+        },
+        {
+          "t_ms": 98610,
+          "elapsed_s": 67.627,
+          "line": 87748,
+          "value": 1,
+          "payload": "00 00 00 00 00 1A 40 C4",
+          "nearby_candidate_speed_kmh": 0.0,
+          "nearby_speed_line": 87754
+        },
+        {
+          "t_ms": 101570,
+          "elapsed_s": 70.587,
+          "line": 91589,
+          "value": 0,
+          "payload": "00 00 00 00 00 1B 00 C5",
+          "nearby_candidate_speed_kmh": 0.0,
+          "nearby_speed_line": 91591
+        }
+      ],
+      "active_frames": 2034,
+      "total_frames": 7012
+    },
+    "unidentified_60d_b2_bits3_4": {
+      "can_id": "0x60D",
+      "byte": 2,
+      "mask": 24,
+      "changes": [
+        {
+          "t_ms": 31066,
+          "elapsed_s": 0.083,
+          "line": 115,
+          "value": 0,
+          "payload": "06 06 00 00 00 00 00 00",
+          "nearby_candidate_speed_kmh": 0.0,
+          "nearby_speed_line": 103
+        },
+        {
+          "t_ms": 49784,
+          "elapsed_s": 18.801,
+          "line": 24399,
+          "value": 1,
+          "payload": "06 06 18 00 00 00 00 00",
+          "nearby_candidate_speed_kmh": 11.48,
+          "nearby_speed_line": 24387
+        }
+      ],
+      "active_frames": 532,
+      "total_frames": 720
+    },
+    "unidentified_351_b5": {
+      "can_id": "0x351",
+      "byte": 5,
+      "mask": 255,
+      "changes": [
+        {
+          "t_ms": 31046,
+          "elapsed_s": 0.063,
+          "line": 86,
+          "value": 1,
+          "payload": "00 00 00 00 00 07 42 06",
+          "nearby_candidate_speed_kmh": 0.0,
+          "nearby_speed_line": 78
+        },
+        {
+          "t_ms": 51621,
+          "elapsed_s": 20.638,
+          "line": 26786,
+          "value": 0,
+          "payload": "00 00 00 00 00 00 42 06",
+          "nearby_candidate_speed_kmh": 16.0,
+          "nearby_speed_line": 26779
+        }
+      ],
+      "active_frames": 207,
+      "total_frames": 720
+    },
+    "indicator_left_60d_b1_bit5": {
+      "can_id": "0x60D",
+      "byte": 1,
+      "mask": 32,
+      "changes": [
+        {
+          "t_ms": 31066,
+          "elapsed_s": 0.083,
+          "line": 115,
+          "value": 0,
+          "payload": "06 06 00 00 00 00 00 00",
+          "nearby_candidate_speed_kmh": 0.0,
+          "nearby_speed_line": 103
+        }
+      ],
+      "active_frames": 0,
+      "total_frames": 720
+    },
+    "indicator_right_60d_b1_bit6": {
+      "can_id": "0x60D",
+      "byte": 1,
+      "mask": 64,
+      "changes": [
+        {
+          "t_ms": 31066,
+          "elapsed_s": 0.083,
+          "line": 115,
+          "value": 0,
+          "payload": "06 06 00 00 00 00 00 00",
+          "nearby_candidate_speed_kmh": 0.0,
+          "nearby_speed_line": 103
+        }
+      ],
+      "active_frames": 0,
+      "total_frames": 720
+    }
+  },
+  "replicated_brake_edge_delays_ms": {
+    "brake_candidate_35d_b4_bit4": {
+      "count": 13,
+      "min": 38,
+      "max": 49,
+      "mean": 42.76923076923077,
+      "distinct": 8,
+      "first": 40,
+      "last": 46
+    },
+    "brake_candidate_354_b6_bit4": {
+      "count": 13,
+      "min": 3,
+      "max": 65,
+      "mean": 35.30769230769231,
+      "distinct": 11,
+      "first": 55,
+      "last": 44
+    }
+  },
+  "steering": {
+    "preset_bytes1_2_big_endian_signed": {
+      "values": {
+        "count": 7181,
+        "min": -5120,
+        "max": 3870,
+        "mean": -1421.9962400779837,
+        "distinct": 1363,
+        "first": -256,
+        "last": -256
+      },
+      "absolute_step": {
+        "count": 7180,
+        "min": 0,
+        "max": 266,
+        "mean": 9.037883008356546,
+        "distinct": 27,
+        "first": 0,
+        "last": 0
+      },
+      "first_example": {
+        "line": 19,
+        "payload": "D4 FF 00 07 F1",
+        "value": -256
+      }
+    },
+    "candidate_bytes0_1_little_endian_signed": {
+      "values": {
+        "count": 7181,
+        "min": -5057,
+        "max": 3887,
+        "mean": -1290.4085781924523,
+        "distinct": 2324,
+        "first": -44,
+        "last": -24
+      },
+      "absolute_step": {
+        "count": 7180,
+        "min": 0,
+        "max": 68,
+        "mean": 8.31058495821727,
+        "distinct": 66,
+        "first": 0,
+        "last": 0
+      },
+      "first_example": {
+        "line": 19,
+        "payload": "D4 FF 00 07 F1",
+        "value": -44
+      }
+    },
+    "control_bytes0_1_big_endian_signed": {
+      "values": {
+        "count": 7181,
+        "min": -32768,
+        "max": 32767,
+        "mean": -1187.9558557303997,
+        "distinct": 2324,
+        "first": -11009,
+        "last": -5889
+      },
+      "absolute_step": {
+        "count": 7180,
+        "min": 0,
+        "max": 65024,
+        "mean": 3727.0791086350973,
+        "distinct": 181,
+        "first": 0,
+        "last": 0
+      },
+      "first_example": {
+        "line": 19,
+        "payload": "D4 FF 00 07 F1",
+        "value": -11009
+      }
+    }
+  },
+  "fuel_580": {
+    "new": {
+      "frames": 701,
+      "byte3_counts": {
+        "0": 176,
+        "2": 175,
+        "4": 175,
+        "6": 175
+      },
+      "transition_counts": {
+        "0->2": 175,
+        "2->4": 175,
+        "4->6": 175,
+        "6->0": 175
+      },
+      "increments_modulo8": {
+        "2": 700
+      },
+      "period_ms": {
+        "count": 700,
+        "min": 98,
+        "max": 106,
+        "mean": 102.42857142857143,
+        "distinct": 7,
+        "first": 101,
+        "last": 103
+      },
+      "first_ten": [
+        {
+          "line": 46,
+          "t_ms": 31008,
+          "payload": "00 6E 80 00 6D 00 00 4B"
+        },
+        {
+          "line": 177,
+          "t_ms": 31109,
+          "payload": "00 6E 80 02 6D 00 00 49"
+        },
+        {
+          "line": 309,
+          "t_ms": 31212,
+          "payload": "00 6E 80 04 6D 00 00 4B"
+        },
+        {
+          "line": 440,
+          "t_ms": 31314,
+          "payload": "00 6E 80 06 6D 00 00 49"
+        },
+        {
+          "line": 570,
+          "t_ms": 31416,
+          "payload": "00 6E 80 00 6D 00 00 4A"
+        },
+        {
+          "line": 707,
+          "t_ms": 31519,
+          "payload": "00 6E 80 02 6D 00 00 49"
+        },
+        {
+          "line": 838,
+          "t_ms": 31621,
+          "payload": "00 6E 80 04 6D 00 00 4A"
+        },
+        {
+          "line": 968,
+          "t_ms": 31724,
+          "payload": "00 6B 80 06 6D 00 00 4B"
+        },
+        {
+          "line": 1103,
+          "t_ms": 31827,
+          "payload": "00 64 80 00 6D 00 00 49"
+        },
+        {
+          "line": 1233,
+          "t_ms": 31929,
+          "payload": "00 64 80 02 6D 00 00 4A"
+        }
+      ],
+      "byte4_changes": [
+        {
+          "t_ms": 31008,
+          "elapsed_s": 0.025,
+          "line": 46,
+          "value": 109,
+          "payload": "00 6E 80 00 6D 00 00 4B"
+        },
+        {
+          "t_ms": 77510,
+          "elapsed_s": 46.527,
+          "line": 60378,
+          "value": 110,
+          "payload": "00 6E 80 04 6E 00 00 4A"
+        },
+        {
+          "t_ms": 99942,
+          "elapsed_s": 68.959,
+          "line": 89474,
+          "value": 111,
+          "payload": "00 5A 80 02 6F 00 00 47"
+        }
+      ]
+    },
+    "historical": {
+      "frames": 10,
+      "byte3_counts": {
+        "2": 3,
+        "4": 2,
+        "6": 3,
+        "0": 2
+      },
+      "transition_counts": {
+        "0->2": 2,
+        "2->4": 2,
+        "2->6": 1,
+        "4->6": 2,
+        "6->0": 2
+      },
+      "increments_modulo8": {
+        "2": 8,
+        "4": 1
+      },
+      "period_ms": null,
+      "first_ten": [
+        {
+          "line": 71,
+          "t_ms": null,
+          "payload": "00 14 80 02 6F 00 00 19"
+        },
+        {
+          "line": 157,
+          "t_ms": null,
+          "payload": "00 1E 80 04 6F 00 00 19"
+        },
+        {
+          "line": 242,
+          "t_ms": null,
+          "payload": "00 1E 80 06 6F 00 00 19"
+        },
+        {
+          "line": 329,
+          "t_ms": null,
+          "payload": "00 1E 80 00 6F 00 00 19"
+        },
+        {
+          "line": 414,
+          "t_ms": null,
+          "payload": "00 2E 80 02 6F 00 00 19"
+        },
+        {
+          "line": 498,
+          "t_ms": null,
+          "payload": "00 3C 80 04 6F 00 00 19"
+        },
+        {
+          "line": 584,
+          "t_ms": null,
+          "payload": "00 3C 80 06 6F 00 00 19"
+        },
+        {
+          "line": 669,
+          "t_ms": null,
+          "payload": "00 3C 80 00 6F 00 00 19"
+        },
+        {
+          "line": 753,
+          "t_ms": null,
+          "payload": "00 3C 80 02 6F 00 00 19"
+        },
+        {
+          "line": 917,
+          "t_ms": null,
+          "payload": "00 3C 80 06 6F 00 00 19"
+        }
+      ],
+      "byte4_changes": [
+        {
+          "t_ms": null,
+          "elapsed_s": null,
+          "line": 71,
+          "value": 111,
+          "payload": "00 14 80 02 6F 00 00 19"
+        }
+      ]
+    },
+    "finding_fr": "Le byte 3 suit un cycle exact modulo 8 par pas de 2 ; le preset le lit actuellement comme consommation instantanée. Ce comportement identifie un compteur, pas une consommation instantanée validée.",
+    "byte4_finding_fr": "La valeur lente 109→110→111 n’a aucune référence de consommation pour établir son sens ou son unité."
+  },
+  "fuel_551_byte1_candidate": {
+    "new": {
+      "range": {
+        "count": 701,
+        "min": 0,
+        "max": 255,
+        "mean": 119.40798858773181,
+        "distinct": 250,
+        "first": 52,
+        "last": 182
+      },
+      "modulo256_increments": {
+        "0": 343,
+        "1": 330,
+        "2": 25,
+        "3": 2
+      },
+      "wraps": [
+        {
+          "previous_line": 43094,
+          "previous_t_ms": 64194,
+          "previous_raw": 255,
+          "line": 43231,
+          "t_ms": 64297,
+          "raw": 0,
+          "modulo_increment": 1
+        }
+      ],
+      "sum_modulo_increments": 386,
+      "counter_unit": "unknown",
+      "finding_fr": "Octet cumulatif modulo 256 : variations 0..3 seulement dans le log courant. Le déroulement modulo est continu, mais ni son unité physique ni son taux de mise à jour interne ne sont établis ; aucune conversion L/h ou L/100 km appliquée.",
+      "rate_windows": [
+        {
+          "window_ms": 1000,
+          "samples": 71,
+          "counter_rate_unit": "unknown counter increments per second",
+          "counter_rate": {
+            "count": 71,
+            "min": 2.1715526601520088,
+            "max": 20.607375271149674,
+            "mean": 5.451030720434713,
+            "distinct": 28,
+            "first": 4.3478260869565215,
+            "last": 3.2573289902280127
+          },
+          "pearson_vs_mean_can_rpm_div8": 0.6738156170539934,
+          "interpretation_fr": "Corrélation exploratoire avec le régime, sans valeur de carburant indépendante ; ne démontre pas la grandeur physique."
+        },
+        {
+          "window_ms": 2000,
+          "samples": 35,
+          "counter_rate_unit": "unknown counter increments per second",
+          "counter_rate": {
+            "count": 35,
+            "min": 3.0832476875642345,
+            "max": 19.527235354573484,
+            "mean": 5.426928449641091,
+            "distinct": 23,
+            "first": 3.5989717223650386,
+            "last": 3.0832476875642345
+          },
+          "pearson_vs_mean_can_rpm_div8": 0.7146274857585995,
+          "interpretation_fr": "Corrélation exploratoire avec le régime, sans valeur de carburant indépendante ; ne démontre pas la grandeur physique."
+        },
+        {
+          "window_ms": 5000,
+          "samples": 14,
+          "counter_rate_unit": "unknown counter increments per second",
+          "counter_rate": {
+            "count": 14,
+            "min": 3.457392719137686,
+            "max": 11.185682326621924,
+            "mean": 5.450732042605797,
+            "distinct": 14,
+            "first": 3.6622583926754833,
+            "last": 3.6615134255492268
+          },
+          "pearson_vs_mean_can_rpm_div8": 0.7410087484528413,
+          "interpretation_fr": "Corrélation exploratoire avec le régime, sans valeur de carburant indépendante ; ne démontre pas la grandeur physique."
+        }
+      ],
+      "initial_stationary_interval": {
+        "start_line": 45,
+        "end_line": 11069,
+        "start_t_ms": 31008,
+        "end_t_ms": 39508,
+        "duration_s": 8.5,
+        "counter_start": 52,
+        "counter_end": 82,
+        "increments": 30,
+        "increments_per_second": 3.5294117647058822,
+        "can_rpm_div8": {
+          "count": 830,
+          "min": 637.5,
+          "max": 715.625,
+          "mean": 663.023343373494,
+          "distinct": 24,
+          "first": 700.0,
+          "last": 656.25
+        },
+        "interpretation_fr": "Début immobile, régime compatible avec le ralenti : le compteur augmente de 30 en 8,5 s malgré un régime relativement stable."
+      }
+    },
+    "historical": {
+      "range": {
+        "count": 9,
+        "min": 47,
+        "max": 50,
+        "mean": 48.333333333333336,
+        "distinct": 4,
+        "first": 47,
+        "last": 50
+      },
+      "modulo256_increments": {
+        "0": 5,
+        "1": 3
+      },
+      "wraps": [],
+      "sum_modulo_increments": 3,
+      "counter_unit": "unknown",
+      "finding_fr": "Octet cumulatif modulo 256 : variations 0..3 seulement dans le log courant. Le déroulement modulo est continu, mais ni son unité physique ni son taux de mise à jour interne ne sont établis ; aucune conversion L/h ou L/100 km appliquée."
+    }
+  },
+  "candidate_2de_bytes6_7": {
+    "all_raw": {
+      "count": 7182,
+      "min": 2684,
+      "max": 65535,
+      "mean": 9900.231411862991,
+      "distinct": 4,
+      "first": 65535,
+      "last": 2684
+    },
+    "ffff_count": 824,
+    "excluding_ffff_div10": {
+      "count": 6358,
+      "min": 268.4,
+      "max": 270.7,
+      "mean": 268.99374016986474,
+      "distinct": 3,
+      "first": 270.7,
+      "last": 268.4
+    },
+    "raw_changes": [
+      {
+        "t_ms": 30989,
+        "elapsed_s": 0.006,
+        "line": 18,
+        "value": 65535,
+        "payload": "00 00 80 06 F0 00 FF FF"
+      },
+      {
+        "t_ms": 39229,
+        "elapsed_s": 8.246,
+        "line": 10702,
+        "value": 2707,
+        "payload": "00 00 80 06 F0 00 0A 93"
+      },
+      {
+        "t_ms": 51729,
+        "elapsed_s": 20.746,
+        "line": 26926,
+        "value": 2687,
+        "payload": "00 00 80 06 F0 00 0A 7F"
+      },
+      {
+        "t_ms": 81730,
+        "elapsed_s": 50.747,
+        "line": 65848,
+        "value": 2684,
+        "payload": "00 00 80 06 F0 00 0A 7C"
+      }
+    ],
+    "byte4_counts": {
+      "240": 7182
+    },
+    "finding_fr": "0xFFFF doit rester une valeur brute sans mesure physique validée. Les valeurs restantes changent lentement ; aucune référence ne prouve DTE ni facteur /10."
+  },
+  "new_preset_decoded_outputs": [
+    {
+      "target": "STEERING",
+      "can_id": "0x002",
+      "field": {
+        "target": "STEERING",
+        "startByte": 1,
+        "byteCount": 2,
+        "byteOrder": "BE",
+        "dataType": "INT16",
+        "formula": "NONE"
+      },
+      "decoded_output": {
+        "count": 7181,
+        "min": -5120,
+        "max": 3870,
+        "mean": -1421.9962400779837,
+        "distinct": 1363,
+        "first": -256,
+        "last": -256
+      },
+      "first_example": {
+        "line": 19,
+        "t_ms": 30989,
+        "payload": "D4 FF 00 07 F1",
+        "value": -256
+      }
+    },
+    {
+      "target": "ENGINE_RPM",
+      "can_id": "0x180",
+      "field": {
+        "target": "ENGINE_RPM",
+        "startByte": 0,
+        "byteCount": 2,
+        "byteOrder": "BE",
+        "dataType": "UINT16",
+        "formula": "SCALE",
+        "params": [
+          1,
+          7,
+          0
+        ]
+      },
+      "decoded_output": {
+        "count": 7012,
+        "min": 671,
+        "max": 2271,
+        "mean": 1026.4182829435254,
+        "distinct": 398,
+        "first": 800,
+        "last": 785
+      },
+      "first_example": {
+        "line": 10,
+        "t_ms": 30985,
+        "payload": "15 E0 31 F3 11 00 30 15",
+        "value": 800
+      }
+    },
+    {
+      "target": "VEHICLE_SPEED",
+      "can_id": "0x284",
+      "field": {
+        "target": "VEHICLE_SPEED",
+        "startByte": 0,
+        "byteCount": 2,
+        "byteOrder": "BE",
+        "dataType": "UINT16",
+        "formula": "SCALE",
+        "params": [
+          1,
+          100,
+          0
+        ]
+      },
+      "decoded_output": {
+        "count": 3591,
+        "min": 0,
+        "max": 33,
+        "mean": 5.742968532442217,
+        "distinct": 33,
+        "first": 0,
+        "last": 0
+      },
+      "first_example": {
+        "line": 27,
+        "t_ms": 30996,
+        "payload": "00 00 00 00 00 00 0A 90",
+        "value": 0
+      }
+    },
+    {
+      "target": "FUEL_LEVEL",
+      "can_id": "0x5C5",
+      "field": {
+        "target": "FUEL_LEVEL",
+        "startByte": 0,
+        "byteCount": 1,
+        "byteOrder": "BE",
+        "dataType": "UINT8",
+        "formula": "MAP_RANGE",
+        "params": [
+          255,
+          0,
+          0,
+          45
+        ]
+      },
+      "decoded_output": {
+        "count": 719,
+        "min": 33,
+        "max": 33,
+        "mean": 33,
+        "distinct": 1,
+        "first": 33,
+        "last": 33
+      },
+      "first_example": {
+        "line": 22,
+        "t_ms": 30994,
+        "payload": "44 03 C4 A1 00 0C 00 7F",
+        "value": 33
+      }
+    },
+    {
+      "target": "ODOMETER",
+      "can_id": "0x5C5",
+      "field": {
+        "target": "ODOMETER",
+        "startByte": 1,
+        "byteCount": 3,
+        "byteOrder": "BE",
+        "dataType": "UINT24",
+        "formula": "NONE"
+      },
+      "decoded_output": {
+        "count": 719,
+        "min": 246945,
+        "max": 246945,
+        "mean": 246945,
+        "distinct": 1,
+        "first": 246945,
+        "last": 246945
+      },
+      "first_example": {
+        "line": 22,
+        "t_ms": 30994,
+        "payload": "44 03 C4 A1 00 0C 00 7F",
+        "value": 246945
+      }
+    },
+    {
+      "target": "VOLTAGE",
+      "can_id": "0x6F6",
+      "field": {
+        "target": "VOLTAGE",
+        "startByte": 0,
+        "byteCount": 1,
+        "byteOrder": "BE",
+        "dataType": "UINT8",
+        "formula": "NONE"
+      },
+      "decoded_output": {
+        "count": 718,
+        "min": 13.0,
+        "max": 14.5,
+        "mean": 14.091225626740947,
+        "distinct": 11,
+        "first": 14.2,
+        "last": 14.1
+      },
+      "first_example": {
+        "line": 117,
+        "t_ms": 31066,
+        "payload": "8E 00 00",
+        "value": 14.2
+      }
+    },
+    {
+      "target": "TEMPERATURE",
+      "can_id": "0x540",
+      "field": {
+        "target": "TEMPERATURE",
+        "startByte": 0,
+        "byteCount": 1,
+        "byteOrder": "BE",
+        "dataType": "UINT8",
+        "formula": "SCALE",
+        "params": [
+          1,
+          1,
+          -40
+        ]
+      },
+      "decoded_output": {
+        "count": 718,
+        "min": 28,
+        "max": 28,
+        "mean": 28,
+        "distinct": 1,
+        "first": 28,
+        "last": 28
+      },
+      "first_example": {
+        "line": 94,
+        "t_ms": 31048,
+        "payload": "44 40 00 00 00 00 00 03",
+        "value": 28
+      }
+    },
+    {
+      "target": "COOLANT_TEMP",
+      "can_id": "0x551",
+      "field": {
+        "target": "COOLANT_TEMP",
+        "startByte": 0,
+        "byteCount": 1,
+        "byteOrder": "BE",
+        "dataType": "UINT8",
+        "formula": "SCALE",
+        "params": [
+          1,
+          1,
+          -40
+        ]
+      },
+      "decoded_output": {
+        "count": 701,
+        "min": 61,
+        "max": 67,
+        "mean": 63.52639087018545,
+        "distinct": 7,
+        "first": 62,
+        "last": 67
+      },
+      "first_example": {
+        "line": 45,
+        "t_ms": 31008,
+        "payload": "66 34 00 80 FF 02 80 FF",
+        "value": 62
+      }
+    },
+    {
+      "target": "DOOR_DRIVER",
+      "can_id": "0x60D",
+      "field": {
+        "target": "DOOR_DRIVER",
+        "startByte": 0,
+        "byteCount": 3,
+        "byteOrder": "BE",
+        "dataType": "BITMASK",
+        "formula": "BITMASK_EXTRACT",
+        "params": [
+          1048576,
+          20
+        ]
+      },
+      "decoded_output": {
+        "count": 720,
+        "min": 0,
+        "max": 0,
+        "mean": 0,
+        "distinct": 1,
+        "first": 0,
+        "last": 0
+      },
+      "first_example": {
+        "line": 115,
+        "t_ms": 31066,
+        "payload": "06 06 00 00 00 00 00 00",
+        "value": 0
+      }
+    },
+    {
+      "target": "DOOR_PASSENGER",
+      "can_id": "0x60D",
+      "field": {
+        "target": "DOOR_PASSENGER",
+        "startByte": 0,
+        "byteCount": 3,
+        "byteOrder": "BE",
+        "dataType": "BITMASK",
+        "formula": "BITMASK_EXTRACT",
+        "params": [
+          524288,
+          19
+        ]
+      },
+      "decoded_output": {
+        "count": 720,
+        "min": 0,
+        "max": 0,
+        "mean": 0,
+        "distinct": 1,
+        "first": 0,
+        "last": 0
+      },
+      "first_example": {
+        "line": 115,
+        "t_ms": 31066,
+        "payload": "06 06 00 00 00 00 00 00",
+        "value": 0
+      }
+    },
+    {
+      "target": "DOOR_REAR_LEFT",
+      "can_id": "0x60D",
+      "field": {
+        "target": "DOOR_REAR_LEFT",
+        "startByte": 0,
+        "byteCount": 3,
+        "byteOrder": "BE",
+        "dataType": "BITMASK",
+        "formula": "BITMASK_EXTRACT",
+        "params": [
+          2097152,
+          21
+        ]
+      },
+      "decoded_output": {
+        "count": 720,
+        "min": 0,
+        "max": 0,
+        "mean": 0,
+        "distinct": 1,
+        "first": 0,
+        "last": 0
+      },
+      "first_example": {
+        "line": 115,
+        "t_ms": 31066,
+        "payload": "06 06 00 00 00 00 00 00",
+        "value": 0
+      }
+    },
+    {
+      "target": "DOOR_REAR_RIGHT",
+      "can_id": "0x60D",
+      "field": {
+        "target": "DOOR_REAR_RIGHT",
+        "startByte": 0,
+        "byteCount": 3,
+        "byteOrder": "BE",
+        "dataType": "BITMASK",
+        "formula": "BITMASK_EXTRACT",
+        "params": [
+          4194304,
+          22
+        ]
+      },
+      "decoded_output": {
+        "count": 720,
+        "min": 0,
+        "max": 0,
+        "mean": 0,
+        "distinct": 1,
+        "first": 0,
+        "last": 0
+      },
+      "first_example": {
+        "line": 115,
+        "t_ms": 31066,
+        "payload": "06 06 00 00 00 00 00 00",
+        "value": 0
+      }
+    },
+    {
+      "target": "DOOR_BOOT",
+      "can_id": "0x60D",
+      "field": {
+        "target": "DOOR_BOOT",
+        "startByte": 0,
+        "byteCount": 3,
+        "byteOrder": "BE",
+        "dataType": "BITMASK",
+        "formula": "BITMASK_EXTRACT",
+        "params": [
+          8388608,
+          23
+        ]
+      },
+      "decoded_output": {
+        "count": 720,
+        "min": 0,
+        "max": 0,
+        "mean": 0,
+        "distinct": 1,
+        "first": 0,
+        "last": 0
+      },
+      "first_example": {
+        "line": 115,
+        "t_ms": 31066,
+        "payload": "06 06 00 00 00 00 00 00",
+        "value": 0
+      }
+    },
+    {
+      "target": "HIGH_BEAM",
+      "can_id": "0x60D",
+      "field": {
+        "target": "HIGH_BEAM",
+        "startByte": 0,
+        "byteCount": 3,
+        "byteOrder": "BE",
+        "dataType": "BITMASK",
+        "formula": "BITMASK_EXTRACT",
+        "params": [
+          2048,
+          11
+        ]
+      },
+      "decoded_output": {
+        "count": 720,
+        "min": 0,
+        "max": 0,
+        "mean": 0,
+        "distinct": 1,
+        "first": 0,
+        "last": 0
+      },
+      "first_example": {
+        "line": 115,
+        "t_ms": 31066,
+        "payload": "06 06 00 00 00 00 00 00",
+        "value": 0
+      }
+    },
+    {
+      "target": "HEADLIGHTS",
+      "can_id": "0x60D",
+      "field": {
+        "target": "HEADLIGHTS",
+        "startByte": 0,
+        "byteCount": 3,
+        "byteOrder": "BE",
+        "dataType": "BITMASK",
+        "formula": "BITMASK_EXTRACT",
+        "params": [
+          131072,
+          17
+        ]
+      },
+      "decoded_output": {
+        "count": 720,
+        "min": 1,
+        "max": 1,
+        "mean": 1,
+        "distinct": 1,
+        "first": 1,
+        "last": 1
+      },
+      "first_example": {
+        "line": 115,
+        "t_ms": 31066,
+        "payload": "06 06 00 00 00 00 00 00",
+        "value": 1
+      }
+    },
+    {
+      "target": "PARKING_LIGHTS",
+      "can_id": "0x60D",
+      "field": {
+        "target": "PARKING_LIGHTS",
+        "startByte": 0,
+        "byteCount": 3,
+        "byteOrder": "BE",
+        "dataType": "BITMASK",
+        "formula": "BITMASK_EXTRACT",
+        "params": [
+          262144,
+          18
+        ]
+      },
+      "decoded_output": {
+        "count": 720,
+        "min": 1,
+        "max": 1,
+        "mean": 1,
+        "distinct": 1,
+        "first": 1,
+        "last": 1
+      },
+      "first_example": {
+        "line": 115,
+        "t_ms": 31066,
+        "payload": "06 06 00 00 00 00 00 00",
+        "value": 1
+      }
+    },
+    {
+      "target": "INDICATOR_LEFT",
+      "can_id": "0x60D",
+      "field": {
+        "target": "INDICATOR_LEFT",
+        "startByte": 0,
+        "byteCount": 3,
+        "byteOrder": "BE",
+        "dataType": "BITMASK",
+        "formula": "BITMASK_EXTRACT",
+        "params": [
+          8192,
+          13
+        ]
+      },
+      "decoded_output": {
+        "count": 720,
+        "min": 0,
+        "max": 0,
+        "mean": 0,
+        "distinct": 1,
+        "first": 0,
+        "last": 0
+      },
+      "first_example": {
+        "line": 115,
+        "t_ms": 31066,
+        "payload": "06 06 00 00 00 00 00 00",
+        "value": 0
+      }
+    },
+    {
+      "target": "INDICATOR_RIGHT",
+      "can_id": "0x60D",
+      "field": {
+        "target": "INDICATOR_RIGHT",
+        "startByte": 0,
+        "byteCount": 3,
+        "byteOrder": "BE",
+        "dataType": "BITMASK",
+        "formula": "BITMASK_EXTRACT",
+        "params": [
+          16384,
+          14
+        ]
+      },
+      "decoded_output": {
+        "count": 720,
+        "min": 0,
+        "max": 0,
+        "mean": 0,
+        "distinct": 1,
+        "first": 0,
+        "last": 0
+      },
+      "first_example": {
+        "line": 115,
+        "t_ms": 31066,
+        "payload": "06 06 00 00 00 00 00 00",
+        "value": 0
+      }
+    },
+    {
+      "target": "DTE",
+      "can_id": "0x54C",
+      "field": {
+        "target": "DTE",
+        "startByte": 6,
+        "byteCount": 2,
+        "byteOrder": "BE",
+        "dataType": "UINT16",
+        "formula": "SCALE",
+        "params": [
+          100,
+          338,
+          0
+        ]
+      },
+      "decoded_output": {
+        "count": 719,
+        "min": 305,
+        "max": 305,
+        "mean": 305,
+        "distinct": 1,
+        "first": 305,
+        "last": 305
+      },
+      "first_example": {
+        "line": 44,
+        "t_ms": 31007,
+        "payload": "00 00 00 00 00 80 04 08",
+        "value": 305
+      }
+    },
+    {
+      "target": "FUEL_CONS_INST",
+      "can_id": "0x580",
+      "field": {
+        "target": "FUEL_CONS_INST",
+        "startByte": 3,
+        "byteCount": 1,
+        "byteOrder": "BE",
+        "dataType": "UINT8",
+        "formula": "NONE"
+      },
+      "decoded_output": {
+        "count": 701,
+        "min": 0,
+        "max": 6,
+        "mean": 2.9957203994293864,
+        "distinct": 4,
+        "first": 0,
+        "last": 0
+      },
+      "first_example": {
+        "line": 46,
+        "t_ms": 31008,
+        "payload": "00 6E 80 00 6D 00 00 4B",
+        "value": 0
+      }
+    },
+    {
+      "target": "FUEL_CONS_AVG",
+      "can_id": "0x580",
+      "field": {
+        "target": "FUEL_CONS_AVG",
+        "startByte": 4,
+        "byteCount": 1,
+        "byteOrder": "BE",
+        "dataType": "UINT8",
+        "formula": "NONE"
+      },
+      "decoded_output": {
+        "count": 701,
+        "min": 109,
+        "max": 111,
+        "mean": 109.3922967189729,
+        "distinct": 3,
+        "first": 109,
+        "last": 111
+      },
+      "first_example": {
+        "line": 46,
+        "t_ms": 31008,
+        "payload": "00 6E 80 00 6D 00 00 4B",
+        "value": 109
+      }
+    }
+  ],
+  "historical_preset_decoded_outputs": [
+    {
+      "target": "STEERING",
+      "can_id": "0x002",
+      "field": {
+        "target": "STEERING",
+        "startByte": 1,
+        "byteCount": 2,
+        "byteOrder": "BE",
+        "dataType": "INT16",
+        "formula": "NONE"
+      },
+      "decoded_output": {
+        "count": 0
+      },
+      "first_example": null
+    },
+    {
+      "target": "ENGINE_RPM",
+      "can_id": "0x180",
+      "field": {
+        "target": "ENGINE_RPM",
+        "startByte": 0,
+        "byteCount": 2,
+        "byteOrder": "BE",
+        "dataType": "UINT16",
+        "formula": "SCALE",
+        "params": [
+          1,
+          7,
+          0
+        ]
+      },
+      "decoded_output": {
+        "count": 114,
+        "min": 182,
+        "max": 182,
+        "mean": 182,
+        "distinct": 1,
+        "first": 182,
+        "last": 182
+      },
+      "first_example": {
+        "line": 8,
+        "t_ms": null,
+        "payload": "04 FB 36 23 4C 00 36 00",
+        "value": 182
+      }
+    },
+    {
+      "target": "VEHICLE_SPEED",
+      "can_id": "0x284",
+      "field": {
+        "target": "VEHICLE_SPEED",
+        "startByte": 0,
+        "byteCount": 2,
+        "byteOrder": "BE",
+        "dataType": "UINT16",
+        "formula": "SCALE",
+        "params": [
+          1,
+          100,
+          0
+        ]
+      },
+      "decoded_output": {
+        "count": 0
+      },
+      "first_example": null
+    },
+    {
+      "target": "FUEL_LEVEL",
+      "can_id": "0x5C5",
+      "field": {
+        "target": "FUEL_LEVEL",
+        "startByte": 0,
+        "byteCount": 1,
+        "byteOrder": "BE",
+        "dataType": "UINT8",
+        "formula": "MAP_RANGE",
+        "params": [
+          255,
+          0,
+          0,
+          45
+        ]
+      },
+      "decoded_output": {
+        "count": 12,
+        "min": 33,
+        "max": 33,
+        "mean": 33,
+        "distinct": 1,
+        "first": 33,
+        "last": 33
+      },
+      "first_example": {
+        "line": 13,
+        "t_ms": null,
+        "payload": "40 03 A9 48 00 0C 00 7F",
+        "value": 33
+      }
+    },
+    {
+      "target": "ODOMETER",
+      "can_id": "0x5C5",
+      "field": {
+        "target": "ODOMETER",
+        "startByte": 1,
+        "byteCount": 3,
+        "byteOrder": "BE",
+        "dataType": "UINT24",
+        "formula": "NONE"
+      },
+      "decoded_output": {
+        "count": 12,
+        "min": 239944,
+        "max": 239944,
+        "mean": 239944,
+        "distinct": 1,
+        "first": 239944,
+        "last": 239944
+      },
+      "first_example": {
+        "line": 13,
+        "t_ms": null,
+        "payload": "40 03 A9 48 00 0C 00 7F",
+        "value": 239944
+      }
+    },
+    {
+      "target": "VOLTAGE",
+      "can_id": "0x6F6",
+      "field": {
+        "target": "VOLTAGE",
+        "startByte": 0,
+        "byteCount": 1,
+        "byteOrder": "BE",
+        "dataType": "UINT8",
+        "formula": "NONE"
+      },
+      "decoded_output": {
+        "count": 0
+      },
+      "first_example": null
+    },
+    {
+      "target": "TEMPERATURE",
+      "can_id": "0x540",
+      "field": {
+        "target": "TEMPERATURE",
+        "startByte": 0,
+        "byteCount": 1,
+        "byteOrder": "BE",
+        "dataType": "UINT8",
+        "formula": "SCALE",
+        "params": [
+          1,
+          1,
+          -40
+        ]
+      },
+      "decoded_output": {
+        "count": 0
+      },
+      "first_example": null
+    },
+    {
+      "target": "COOLANT_TEMP",
+      "can_id": "0x551",
+      "field": {
+        "target": "COOLANT_TEMP",
+        "startByte": 0,
+        "byteCount": 1,
+        "byteOrder": "BE",
+        "dataType": "UINT8",
+        "formula": "SCALE",
+        "params": [
+          1,
+          1,
+          -40
+        ]
+      },
+      "decoded_output": {
+        "count": 9,
+        "min": 67,
+        "max": 67,
+        "mean": 67,
+        "distinct": 1,
+        "first": 67,
+        "last": 67
+      },
+      "first_example": {
+        "line": 70,
+        "t_ms": null,
+        "payload": "6B 2F 00 00 FF 02 80 FF",
+        "value": 67
+      }
+    },
+    {
+      "target": "DOOR_DRIVER",
+      "can_id": "0x60D",
+      "field": {
+        "target": "DOOR_DRIVER",
+        "startByte": 0,
+        "byteCount": 3,
+        "byteOrder": "BE",
+        "dataType": "BITMASK",
+        "formula": "BITMASK_EXTRACT",
+        "params": [
+          1048576,
+          20
+        ]
+      },
+      "decoded_output": {
+        "count": 12,
+        "min": 0,
+        "max": 0,
+        "mean": 0,
+        "distinct": 1,
+        "first": 0,
+        "last": 0
+      },
+      "first_example": {
+        "line": 33,
+        "t_ms": null,
+        "payload": "08 00 00 00 00 00 00 00",
+        "value": 0
+      }
+    },
+    {
+      "target": "DOOR_PASSENGER",
+      "can_id": "0x60D",
+      "field": {
+        "target": "DOOR_PASSENGER",
+        "startByte": 0,
+        "byteCount": 3,
+        "byteOrder": "BE",
+        "dataType": "BITMASK",
+        "formula": "BITMASK_EXTRACT",
+        "params": [
+          524288,
+          19
+        ]
+      },
+      "decoded_output": {
+        "count": 12,
+        "min": 1,
+        "max": 1,
+        "mean": 1,
+        "distinct": 1,
+        "first": 1,
+        "last": 1
+      },
+      "first_example": {
+        "line": 33,
+        "t_ms": null,
+        "payload": "08 00 00 00 00 00 00 00",
+        "value": 1
+      }
+    },
+    {
+      "target": "DOOR_REAR_LEFT",
+      "can_id": "0x60D",
+      "field": {
+        "target": "DOOR_REAR_LEFT",
+        "startByte": 0,
+        "byteCount": 3,
+        "byteOrder": "BE",
+        "dataType": "BITMASK",
+        "formula": "BITMASK_EXTRACT",
+        "params": [
+          2097152,
+          21
+        ]
+      },
+      "decoded_output": {
+        "count": 12,
+        "min": 0,
+        "max": 0,
+        "mean": 0,
+        "distinct": 1,
+        "first": 0,
+        "last": 0
+      },
+      "first_example": {
+        "line": 33,
+        "t_ms": null,
+        "payload": "08 00 00 00 00 00 00 00",
+        "value": 0
+      }
+    },
+    {
+      "target": "DOOR_REAR_RIGHT",
+      "can_id": "0x60D",
+      "field": {
+        "target": "DOOR_REAR_RIGHT",
+        "startByte": 0,
+        "byteCount": 3,
+        "byteOrder": "BE",
+        "dataType": "BITMASK",
+        "formula": "BITMASK_EXTRACT",
+        "params": [
+          4194304,
+          22
+        ]
+      },
+      "decoded_output": {
+        "count": 12,
+        "min": 0,
+        "max": 0,
+        "mean": 0,
+        "distinct": 1,
+        "first": 0,
+        "last": 0
+      },
+      "first_example": {
+        "line": 33,
+        "t_ms": null,
+        "payload": "08 00 00 00 00 00 00 00",
+        "value": 0
+      }
+    },
+    {
+      "target": "DOOR_BOOT",
+      "can_id": "0x60D",
+      "field": {
+        "target": "DOOR_BOOT",
+        "startByte": 0,
+        "byteCount": 3,
+        "byteOrder": "BE",
+        "dataType": "BITMASK",
+        "formula": "BITMASK_EXTRACT",
+        "params": [
+          8388608,
+          23
+        ]
+      },
+      "decoded_output": {
+        "count": 12,
+        "min": 0,
+        "max": 0,
+        "mean": 0,
+        "distinct": 1,
+        "first": 0,
+        "last": 0
+      },
+      "first_example": {
+        "line": 33,
+        "t_ms": null,
+        "payload": "08 00 00 00 00 00 00 00",
+        "value": 0
+      }
+    },
+    {
+      "target": "HIGH_BEAM",
+      "can_id": "0x60D",
+      "field": {
+        "target": "HIGH_BEAM",
+        "startByte": 0,
+        "byteCount": 3,
+        "byteOrder": "BE",
+        "dataType": "BITMASK",
+        "formula": "BITMASK_EXTRACT",
+        "params": [
+          2048,
+          11
+        ]
+      },
+      "decoded_output": {
+        "count": 12,
+        "min": 0,
+        "max": 0,
+        "mean": 0,
+        "distinct": 1,
+        "first": 0,
+        "last": 0
+      },
+      "first_example": {
+        "line": 33,
+        "t_ms": null,
+        "payload": "08 00 00 00 00 00 00 00",
+        "value": 0
+      }
+    },
+    {
+      "target": "HEADLIGHTS",
+      "can_id": "0x60D",
+      "field": {
+        "target": "HEADLIGHTS",
+        "startByte": 0,
+        "byteCount": 3,
+        "byteOrder": "BE",
+        "dataType": "BITMASK",
+        "formula": "BITMASK_EXTRACT",
+        "params": [
+          131072,
+          17
+        ]
+      },
+      "decoded_output": {
+        "count": 12,
+        "min": 0,
+        "max": 0,
+        "mean": 0,
+        "distinct": 1,
+        "first": 0,
+        "last": 0
+      },
+      "first_example": {
+        "line": 33,
+        "t_ms": null,
+        "payload": "08 00 00 00 00 00 00 00",
+        "value": 0
+      }
+    },
+    {
+      "target": "PARKING_LIGHTS",
+      "can_id": "0x60D",
+      "field": {
+        "target": "PARKING_LIGHTS",
+        "startByte": 0,
+        "byteCount": 3,
+        "byteOrder": "BE",
+        "dataType": "BITMASK",
+        "formula": "BITMASK_EXTRACT",
+        "params": [
+          262144,
+          18
+        ]
+      },
+      "decoded_output": {
+        "count": 12,
+        "min": 0,
+        "max": 0,
+        "mean": 0,
+        "distinct": 1,
+        "first": 0,
+        "last": 0
+      },
+      "first_example": {
+        "line": 33,
+        "t_ms": null,
+        "payload": "08 00 00 00 00 00 00 00",
+        "value": 0
+      }
+    },
+    {
+      "target": "INDICATOR_LEFT",
+      "can_id": "0x60D",
+      "field": {
+        "target": "INDICATOR_LEFT",
+        "startByte": 0,
+        "byteCount": 3,
+        "byteOrder": "BE",
+        "dataType": "BITMASK",
+        "formula": "BITMASK_EXTRACT",
+        "params": [
+          8192,
+          13
+        ]
+      },
+      "decoded_output": {
+        "count": 12,
+        "min": 0,
+        "max": 0,
+        "mean": 0,
+        "distinct": 1,
+        "first": 0,
+        "last": 0
+      },
+      "first_example": {
+        "line": 33,
+        "t_ms": null,
+        "payload": "08 00 00 00 00 00 00 00",
+        "value": 0
+      }
+    },
+    {
+      "target": "INDICATOR_RIGHT",
+      "can_id": "0x60D",
+      "field": {
+        "target": "INDICATOR_RIGHT",
+        "startByte": 0,
+        "byteCount": 3,
+        "byteOrder": "BE",
+        "dataType": "BITMASK",
+        "formula": "BITMASK_EXTRACT",
+        "params": [
+          16384,
+          14
+        ]
+      },
+      "decoded_output": {
+        "count": 12,
+        "min": 0,
+        "max": 0,
+        "mean": 0,
+        "distinct": 1,
+        "first": 0,
+        "last": 0
+      },
+      "first_example": {
+        "line": 33,
+        "t_ms": null,
+        "payload": "08 00 00 00 00 00 00 00",
+        "value": 0
+      }
+    },
+    {
+      "target": "DTE",
+      "can_id": "0x54C",
+      "field": {
+        "target": "DTE",
+        "startByte": 6,
+        "byteCount": 2,
+        "byteOrder": "BE",
+        "dataType": "UINT16",
+        "formula": "SCALE",
+        "params": [
+          100,
+          338,
+          0
+        ]
+      },
+      "decoded_output": {
+        "count": 0
+      },
+      "first_example": null
+    },
+    {
+      "target": "FUEL_CONS_INST",
+      "can_id": "0x580",
+      "field": {
+        "target": "FUEL_CONS_INST",
+        "startByte": 3,
+        "byteCount": 1,
+        "byteOrder": "BE",
+        "dataType": "UINT8",
+        "formula": "NONE"
+      },
+      "decoded_output": {
+        "count": 10,
+        "min": 0,
+        "max": 6,
+        "mean": 3.2,
+        "distinct": 4,
+        "first": 2,
+        "last": 6
+      },
+      "first_example": {
+        "line": 71,
+        "t_ms": null,
+        "payload": "00 14 80 02 6F 00 00 19",
+        "value": 2
+      }
+    },
+    {
+      "target": "FUEL_CONS_AVG",
+      "can_id": "0x580",
+      "field": {
+        "target": "FUEL_CONS_AVG",
+        "startByte": 4,
+        "byteCount": 1,
+        "byteOrder": "BE",
+        "dataType": "UINT8",
+        "formula": "NONE"
+      },
+      "decoded_output": {
+        "count": 10,
+        "min": 111,
+        "max": 111,
+        "mean": 111,
+        "distinct": 1,
+        "first": 111,
+        "last": 111
+      },
+      "first_example": {
+        "line": 71,
+        "t_ms": null,
+        "payload": "00 14 80 02 6F 00 00 19",
+        "value": 111
+      }
+    }
+  ],
+  "captures": [
+    {
+      "sha256": "e5c2a7539b3ad13da7c04cc15883a4b271a67c76fb3280a61878523d13311ce3",
+      "bytes": 5613177,
+      "lines": 93188,
+      "valid_classical_frames": 92610,
+      "filename": "canlog_20261014_210614_663_762622981087673198.txt"
+    },
+    {
+      "sha256": "35de3a33b22716b88b28a2adfa1e6d6ed916b230cbbe2bba569b2206700df5c6",
+      "bytes": 51500,
+      "lines": 1016,
+      "valid_classical_frames": 1013,
+      "filename": "historical-nissan-trame-export.txt"
+    }
+  ],
+  "provenance_note": "Capture-only measurements; external definitions are referenced in the accompanying mapping documentation, not copied here."
+}

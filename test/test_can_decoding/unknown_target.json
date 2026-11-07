@@ -1,0 +1,32 @@
+{
+  "name": "Invalid target must not replace the active vehicle",
+  "isMock": false,
+  "frames": [
+    {
+      "canId": "0x180",
+      "fields": [
+        {
+          "target": "ENGINE_RPM",
+          "startByte": 0,
+          "byteCount": 2,
+          "byteOrder": "BE",
+          "dataType": "UINT16",
+          "formula": "NONE"
+        }
+      ]
+    },
+    {
+      "canId": "0x551",
+      "fields": [
+        {
+          "target": "FUEL_COUNTER_RAW_typo",
+          "startByte": 1,
+          "byteCount": 1,
+          "byteOrder": "BE",
+          "dataType": "UINT8",
+          "formula": "NONE"
+        }
+      ]
+    }
+  ]
+}

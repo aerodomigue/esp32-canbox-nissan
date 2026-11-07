@@ -1,0 +1,24 @@
+# Authentic excerpt from tools/data/nissan trame export.txt, not the June 2026 PR log.
+# Source revision: 009f032dc395895bc8dd0eab34d55633301aed0a (2026-01-19)
+# Git blob: 6c7faf62b99c09df014bda638e737fa1dad308fe
+# Full source SHA-256: 35de3a33b22716b88b28a2adfa1e6d6ed916b230cbbe2bba569b2206700df5c6
+# Source: https://github.com/aerodomigue/esp32-canbox-nissan/blob/009f032dc395895bc8dd0eab34d55633301aed0a/tools/data/nissan%20trame%20export.txt
+# Original line numbers: 1, 4, 8, 13, 71, 107, 157, 242, 329, 414, 498, 584, 669, 753, 917.
+# Line 107 has an invalid CAN ID; preserve it to verify replay rejects it.
+# Trailing whitespace normalized; all CAN IDs, DLCs and payload bytes are unchanged.
+# Decoded values are regression results, without contemporaneous dashboard readings.
+RX ID: 0x182 | DLC: 8 | Data: 00 00 00 00 00 35 00 CE
+RX ID: 0x2DE | DLC: 8 | Data: 00 00 80 06 F0 00 0E AC
+RX ID: 0x180 | DLC: 8 | Data: 04 FB 36 23 4C 00 36 00
+RX ID: 0x5C5 | DLC: 8 | Data: 40 03 A9 48 00 0C 00 7F
+RX ID: 0x580 | DLC: 8 | Data: 00 14 80 02 6F 00 00 19
+RX ID: 0x3FC91000 | DLC: 0 | Data:
+RX ID: 0x580 | DLC: 8 | Data: 00 1E 80 04 6F 00 00 19
+RX ID: 0x580 | DLC: 8 | Data: 00 1E 80 06 6F 00 00 19
+RX ID: 0x580 | DLC: 8 | Data: 00 1E 80 00 6F 00 00 19
+RX ID: 0x580 | DLC: 8 | Data: 00 2E 80 02 6F 00 00 19
+RX ID: 0x580 | DLC: 8 | Data: 00 3C 80 04 6F 00 00 19
+RX ID: 0x580 | DLC: 8 | Data: 00 3C 80 06 6F 00 00 19
+RX ID: 0x580 | DLC: 8 | Data: 00 3C 80 00 6F 00 00 19
+RX ID: 0x580 | DLC: 8 | Data: 00 3C 80 02 6F 00 00 19
+RX ID: 0x580 | DLC: 8 | Data: 00 3C 80 06 6F 00 00 19

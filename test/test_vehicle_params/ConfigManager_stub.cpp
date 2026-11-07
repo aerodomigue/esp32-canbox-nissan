@@ -30,8 +30,9 @@ void configReset() {
     g_mock.resetCount++;
 }
 
-void configSave() {
+void configSave(uint8_t fields) {
     g_mock.saveCount++;
+    g_mock.lastSavedFields = fields;
 }
 
 const CanboxConfig* configGet() { return nullptr; }

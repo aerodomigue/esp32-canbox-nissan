@@ -1,0 +1,45 @@
+Racelogic Can Data File V1a
+Unit serial number: 00000000
+Number of signals: 37
+CAN IDs: 14
+
+Recovered signal records (lossless textual field values):
+Throttle_Position,352,%,32,8,0,0.5,127.5,0,Unsigned,Motorola,7,
+Handbrake,1477,,58,1,0,1,0,0,Unsigned,Motorola,8,
+Ignition_On,1549,,50,1,0,1,0,0,Unsigned,Motorola,8,
+Ignition_-_Acc_Position,1549,,49,1,0,1,0,0,Unsigned,Motorola,8,
+Full_Beam,1549,,51,1,0,1,0,0,Unsigned,Motorola,8,
+Indicator_Left,1549,,53,1,0,1,0,0,Unsigned,Motorola,8,
+Indicator_Right,1549,,54,1,0,1,0,0,Unsigned,Motorola,8,
+Headlights,1549,,57,1,0,1,0,0,Unsigned,Motorola,8,
+Side_Lights,1549,,58,1,0,1,0,0,Unsigned,Motorola,8,
+Door_Open_-_Front_Right,1549,,60,1,0,1,0,0,Unsigned,Motorola,8,
+Door_Open_-_Front_Left,1549,,59,1,0,1,0,0,Unsigned,Motorola,8,
+Brake_Position,384,,56,1,0,1,0,0,Unsigned,Intel,8,
+Engine_Speed,384,rpm,56,8,0,32,10000,0,Unsigned,Motorola,8,
+Fuel_Consumption,1361,mm³,8,8,0,1,0,0,Unsigned,Intel,8,
+Yaw_Rate,658,,28,12,-2048,1,2047,-2048,Unsigned,Motorola,8,
+Indicated_Lateral_Acceleration,658,,40,12,-2048,1,2047,-2048,Unsigned,Motorola,8,
+Indicated_Longitudinal_Acceleration,658,,52,12,-2048,1,2047,-2048,Unsigned,Motorola,8,
+Wheel_Speed_RL_kph,645,km/h,32,16,0,0.00537,351.92295,0,Unsigned,Motorola,8,
+Wheel_Speed_RR_kph,645,km/h,48,16,0,0.00537,351.92295,0,Unsigned,Motorola,8,
+Indicated_Vehicle_Speed_kph,644,km/h,16,16,0,0.01,655.35,0,Unsigned,Motorola,8,
+Wheel_Speed_FL_kph,644,km/h,32,16,0,0.00541,354.54435,0,Unsigned,Motorola,8,
+Wheel_Speed_FR_kph,644,km/h,48,16,0,0.00541,354.54435,0,Unsigned,Motorola,8,
+Ignition_-_Run_Position,505,,61,1,0,1,0,0,Unsigned,Motorola,8,
+Ignition_-_Starter_Position,505,,60,1,0,1,0,0,Unsigned,Motorola,8,
+Steering_Rate,2,°/s,40,8,0,4,1020,0,Unsigned,Motorola,5,
+Clutch_Position,534,,51,1,0,1,0,0,Unsigned,Motorola,2,
+Gear,1057,,59,5,-15,1,16,-16,Unsigned,Motorola,3,
+Wiper_Fast,861,,41,1,0,1,0,0,Unsigned,Motorola,8,
+Wiper_Trigger,861,,42,1,0,1,0,0,Unsigned,Motorola,8,
+Wiper_Once,861,,43,1,0,1,0,0,Unsigned,Motorola,8,
+Transmission_Oil_Temperature,1376,°C,56,8,-40,1,215,-40,Unsigned,Motorola,6,
+Coolant_Temperature,1361,°C,56,8,-40,1,200,-40,Unsigned,Motorola,8,
+Wheel_Speed_RL_mph,645,mph,32,16,0,0.00333477,218.54415195,0,Unsigned,Motorola,8,
+Wheel_Speed_RR_mph,645,mph,48,16,0,0.00333477,218.54415195,0,Unsigned,Motorola,8,
+Indicated_Vehicle_Speed_mph,644,mph,16,16,0,0.00621,406.97235,0,Unsigned,Motorola,8,
+Wheel_Speed_FL_mph,644,mph,32,16,0,0.00335961,220.17204135,0,Unsigned,Motorola,8,
+Wheel_Speed_FR_mph,644,mph,48,16,0,0.00335961,220.17204135,0,Unsigned,Motorola,8,
+
+Note: the field after byte_order has not been verified. It can be 2,3,5,6,7 or 8.

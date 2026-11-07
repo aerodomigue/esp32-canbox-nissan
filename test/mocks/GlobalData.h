@@ -1,3 +1,4 @@
+#include "CanAuxData.h"
 #pragma once
 #include <stdint.h>
 
@@ -13,6 +14,7 @@ extern float    voltBat;
 extern int16_t  dteValue;
 extern float    fuelConsoMoy;
 extern int8_t   tempExt;
+extern int16_t   coolantTemp;
 extern uint32_t currentOdo;
 
 extern bool indicatorLeft;
@@ -26,6 +28,6 @@ extern unsigned long lastRightIndicatorTime;
 extern uint16_t fuelConsumptionInst;
 extern uint16_t fuelConsumptionAvg;
 extern uint16_t averageSpeed;
-extern uint16_t elapsedTime;
+extern uint32_t elapsedTime;
 
 inline void resetVehicleData() {}

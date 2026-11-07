@@ -47,11 +47,24 @@ struct CanboxConfig {
  */
 void configInit();
 
+// Fields eligible for persistence in one configSave() call.
+enum ConfigFields : uint8_t {
+    CONFIG_STEER_OFFSET = 1 << 0,
+    CONFIG_STEER_INVERT = 1 << 1,
+    CONFIG_STEER_SCALE = 1 << 2,
+    CONFIG_IND_TIMEOUT = 1 << 3,
+    CONFIG_RPM_DIV = 1 << 4,
+    CONFIG_TANK_CAP = 1 << 5,
+    CONFIG_DTE_DIV = 1 << 6,
+    CONFIG_ALL = 0x7F
+};
+
 /**
- * @brief Save all current config values to NVS
- * Call after modifying config values to persist them.
+ * Save selected RAM values to NVS (all fields by default for CFG SAVE).
+ * JSON reloads pass only their explicit keys. Values already equal in NVS
+ * are not rewritten; unrelated temporary RAM adjustments remain unsaved.
  */
-void configSave();
+void configSave(uint8_t fields = CONFIG_ALL);
 
 /**
  * @brief Reset all config values to defaults and save to NVS
@@ -76,7 +89,7 @@ uint8_t  configGetTankCapacity();
 uint16_t configGetDteDivisor();
 
 // =============================================================================
-// INDIVIDUAL SETTERS (automatically marks config as dirty, call configSave() to persist)
+// INDIVIDUAL SETTERS (RAM only; call configSave() to persist)
 // =============================================================================
 
 void configSetSteerOffset(int16_t value);

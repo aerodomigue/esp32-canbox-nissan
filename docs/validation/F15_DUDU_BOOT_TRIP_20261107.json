@@ -1,0 +1,235 @@
+{
+  "base_commit": "1f364760dc88d8336292aebba3d598a656b83ae2",
+  "result": "PASS",
+  "native_tests_passed": 296,
+  "optional_long_capture_replay": "PASS (run separately; 7 tests including 1 optional full-capture replay)",
+  "python_tests_passed": 36,
+  "original_receiver_contract_assertions": 1829,
+  "actual_cpp_sender_to_original_receiver_assertions": 208,
+  "original_dudu_dex_sha256": "c0a588c524044b534688a26946535e3ea7318573c97baa39c54987d4d84f6db8",
+  "capture": {
+    "sha256_text": "a466358af5116da3797bf6d62da7548a9bdd3c3961b49a3d6466a4cfa1183cd2",
+    "raw_frames": 1235533,
+    "parser_rejected": 0,
+    "handled": 380445,
+    "unconfigured": 855088,
+    "decoder_rejected": 0,
+    "last_average_01_L100km": 81
+  },
+  "source_sha256": {
+    "include/BootTripComputer.h": "9ed00b2a5afcaca840bac7826ddca464a31aa3845375acf7880654d24066548f",
+    "include/FuelConsumptionEstimator.h": "e0da5526ab7010819dbe17a2206010a97ba76b5cb920273cd04730f329983d30",
+    "include/CanAuxData.h": "016d6ff2cc9c7292b44e21ee208a0784fdf5d59c89cceaf037a1b1ea2f8a9059",
+    "include/VehicleConfig.h": "10add8a7bad475917273caf2828823a98c551028a688fdca7efa728db968133f",
+    "src/CanConfigProcessor.cpp": "b48fa0aef1f756602c091807ef36b201f4017a2942a4ad0408f937f1e5558641",
+    "src/RadioSend.cpp": "15323d9f4ef2dd1219923c052d55ee159667e5fcdd1abb7ec9ba87c9c57869b9",
+    "src/ObdCalibration.cpp": "2f11ad678357d85145005a4fa1adaba36fc41b226bd440d6d8563665926e44ae",
+    "src/SerialCommand.cpp": "fb37c5ca5a9c084a0893663f4a36ccb6453b8845c426d8823d6a9ac3c76bda80",
+    "src/main.cpp": "3933081f14fcb50fc05af9185b5932509dfc29e0101224de7b400bd124724818",
+    "data/NissanJukeF15.json": "85d57ff795918f23a01715a6a4fa16e25660a148ab8c49e5ee3c79e8e2e11df8"
+  },
+  "hardware_validation": "No new hardware run. Oil identity and 80 mm3/tick remain provisional. Replays cannot reconstruct data before capture starts.",
+  "actual_sender_scenarios": [
+    {
+      "name": "fresh",
+      "packets": [
+        {
+          "command": "0x29",
+          "payload_hex": "00 00"
+        },
+        {
+          "command": "0x24",
+          "payload_hex": "00 02"
+        },
+        {
+          "command": "0x7D",
+          "payload_hex": "01 00"
+        },
+        {
+          "command": "0x7D",
+          "payload_hex": "0A 54 2A"
+        },
+        {
+          "command": "0x7D",
+          "payload_hex": "03 69 24 EA 15 00"
+        },
+        {
+          "command": "0x22",
+          "payload_hex": "02 00 51"
+        },
+        {
+          "command": "0x23",
+          "payload_hex": "02 00 51 FF FF FF FF FF FF FF FF FF FF"
+        },
+        {
+          "command": "0x7D",
+          "payload_hex": "09 7D 7D 87"
+        },
+        {
+          "command": "0x21",
+          "payload_hex": "02 31 00 0F 00 99 02"
+        },
+        {
+          "command": "0x7D",
+          "payload_hex": "04 CA C6 03 F2 08 95 00 00 95 00 00"
+        }
+      ]
+    },
+    {
+      "name": "dudu_gap",
+      "packets": [
+        {
+          "command": "0x29",
+          "payload_hex": "00 00"
+        },
+        {
+          "command": "0x24",
+          "payload_hex": "00 02"
+        },
+        {
+          "command": "0x7D",
+          "payload_hex": "01 00"
+        },
+        {
+          "command": "0x7D",
+          "payload_hex": "0A 54 2A"
+        },
+        {
+          "command": "0x7D",
+          "payload_hex": "03 69 24 FF FF 00"
+        },
+        {
+          "command": "0x22",
+          "payload_hex": "02 00 51"
+        },
+        {
+          "command": "0x7D",
+          "payload_hex": "09 7D 7D 87"
+        },
+        {
+          "command": "0x21",
+          "payload_hex": "FF FF 00 0F 00 99 02"
+        }
+      ]
+    },
+    {
+      "name": "dudu_no_dte",
+      "packets": [
+        {
+          "command": "0x29",
+          "payload_hex": "00 00"
+        },
+        {
+          "command": "0x24",
+          "payload_hex": "00 02"
+        },
+        {
+          "command": "0x7D",
+          "payload_hex": "01 00"
+        },
+        {
+          "command": "0x7D",
+          "payload_hex": "0A 54 2A"
+        },
+        {
+          "command": "0x7D",
+          "payload_hex": "03 69 24 EA 15 00"
+        },
+        {
+          "command": "0x22",
+          "payload_hex": "02 00 51"
+        },
+        {
+          "command": "0x23",
+          "payload_hex": "02 00 51 FF FF FF FF FF FF FF FF FF FF"
+        },
+        {
+          "command": "0x7D",
+          "payload_hex": "09 7D 7D 87"
+        },
+        {
+          "command": "0x21",
+          "payload_hex": "02 31 00 0F FF FF 02"
+        },
+        {
+          "command": "0x7D",
+          "payload_hex": "04 CA C6 03 F2 08 95 00 00 95 00 00"
+        }
+      ]
+    },
+    {
+      "name": "dudu_no_oil",
+      "packets": [
+        {
+          "command": "0x29",
+          "payload_hex": "00 00"
+        },
+        {
+          "command": "0x24",
+          "payload_hex": "00 02"
+        },
+        {
+          "command": "0x7D",
+          "payload_hex": "01 00"
+        },
+        {
+          "command": "0x7D",
+          "payload_hex": "0A 54 2A"
+        },
+        {
+          "command": "0x7D",
+          "payload_hex": "03 69 24 EA 15 00"
+        },
+        {
+          "command": "0x22",
+          "payload_hex": "02 00 51"
+        },
+        {
+          "command": "0x23",
+          "payload_hex": "02 00 51 FF FF FF FF FF FF FF FF FF FF"
+        },
+        {
+          "command": "0x21",
+          "payload_hex": "02 31 00 0F 00 99 02"
+        },
+        {
+          "command": "0x7D",
+          "payload_hex": "04 CA C6 03 F2 08 95 00 00 95 00 00"
+        }
+      ]
+    },
+    {
+      "name": "fyt_gap",
+      "packets": [
+        {
+          "command": "0x29",
+          "payload_hex": "00 00"
+        },
+        {
+          "command": "0x24",
+          "payload_hex": "00 02"
+        },
+        {
+          "command": "0x7D",
+          "payload_hex": "01 00"
+        },
+        {
+          "command": "0x7D",
+          "payload_hex": "0A 54 2A"
+        },
+        {
+          "command": "0x22",
+          "payload_hex": "02 00 51"
+        },
+        {
+          "command": "0x23",
+          "payload_hex": "02 00 51 FF FF FF FF FF FF FF FF FF FF"
+        },
+        {
+          "command": "0x7D",
+          "payload_hex": "09 7D 7D 87"
+        }
+      ]
+    }
+  ]
+}

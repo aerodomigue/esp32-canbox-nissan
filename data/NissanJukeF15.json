@@ -1,14 +1,25 @@
 {
   "name": "Nissan Juke F15",
   "isMock": false,
+  "fuelConsumption": {
+    "enabled": true,
+    "calibration": "provisional",
+    "source": "https://x0r.fr/blog/39#comment-396",
+    "mm3PerTick": 80,
+    "windowMs": 1000,
+    "maxGapMs": 500,
+    "minSpeedKmh": 2,
+    "minAverageDistanceM": 100,
+    "maxTicksPerSecond": 400
+  },
   "vehicleParams": {
-    "steerScale": 300,
-    "steerOffset": 100,
+    "steerScale": 500,
+    "steerOffset": 0,
     "steerInvert": true,
-    "indTimeout": null,
-    "rpmDiv": null,
-    "tankCap": null,
-    "dteDiv": null
+    "indTimeout": 500,
+    "rpmDiv": 8,
+    "tankCap": 45,
+    "dteDiv": 338
   },
   "frames": [
     {
@@ -16,9 +27,9 @@
       "fields": [
         {
           "target": "STEERING",
-          "startByte": 1,
+          "startByte": 0,
           "byteCount": 2,
-          "byteOrder": "BE",
+          "byteOrder": "LE",
           "dataType": "INT16",
           "formula": "NONE"
         }
@@ -34,21 +45,32 @@
           "byteOrder": "BE",
           "dataType": "UINT16",
           "formula": "SCALE",
-          "params": [1, 7, 0]
+          "params": [1, 8, 0],
+          "invalidRawValues": [65535]
+        },
+        {
+          "target": "BRAKE_PEDAL",
+          "startByte": 7,
+          "byteCount": 1,
+          "byteOrder": "BE",
+          "dataType": "UINT8",
+          "formula": "BITMASK_EXTRACT",
+          "params": [1, 0]
         }
       ]
     },
     {
-      "canId": "0x284",
+      "canId": "0x280",
       "fields": [
         {
           "target": "VEHICLE_SPEED",
-          "startByte": 0,
+          "startByte": 4,
           "byteCount": 2,
           "byteOrder": "BE",
           "dataType": "UINT16",
           "formula": "SCALE",
-          "params": [1, 100, 0]
+          "params": [1, 100, 0],
+          "invalidRawValues": [65535]
         }
       ]
     },
@@ -56,13 +78,13 @@
       "canId": "0x5C5",
       "fields": [
         {
-          "target": "FUEL_LEVEL",
+          "target": "HANDBRAKE",
           "startByte": 0,
           "byteCount": 1,
           "byteOrder": "BE",
           "dataType": "UINT8",
-          "formula": "MAP_RANGE",
-          "params": [255, 0, 0, 45]
+          "formula": "BITMASK_EXTRACT",
+          "params": [4, 2]
         },
         {
           "target": "ODOMETER",
@@ -91,13 +113,22 @@
       "canId": "0x551",
       "fields": [
         {
-          "target": "TEMPERATURE",
+          "target": "COOLANT_TEMP",
           "startByte": 0,
           "byteCount": 1,
           "byteOrder": "BE",
           "dataType": "UINT8",
           "formula": "SCALE",
-          "params": [1, 1, -40]
+          "params": [1, 1, -40],
+          "invalidRawValues": [255]
+        },
+        {
+          "target": "FUEL_COUNTER_RAW",
+          "startByte": 1,
+          "byteCount": 1,
+          "byteOrder": "LE",
+          "dataType": "UINT8",
+          "formula": "NONE"
         }
       ]
     },
@@ -197,7 +228,7 @@
       ]
     },
     {
-      "canId": "0x54C",
+      "canId": "0x2DE",
       "fields": [
         {
           "target": "DTE",
@@ -206,7 +237,8 @@
           "byteOrder": "BE",
           "dataType": "UINT16",
           "formula": "SCALE",
-          "params": [100, 283, 0]
+          "params": [1, 10, 0],
+          "invalidRawValues": [65535]
         }
       ]
     },
@@ -214,23 +246,17 @@
       "canId": "0x580",
       "fields": [
         {
-          "target": "FUEL_CONS_INST",
-          "startByte": 2,
-          "byteCount": 1,
-          "byteOrder": "BE",
-          "dataType": "UINT8",
-          "formula": "BITMASK_EXTRACT",
-          "params": [127, 0]
-        },
-        {
-          "target": "FUEL_CONS_AVG",
+          "target": "OIL_TEMP",
           "startByte": 4,
           "byteCount": 1,
           "byteOrder": "BE",
           "dataType": "UINT8",
-          "formula": "NONE"
+          "formula": "SCALE",
+          "params": [1, 1, -40],
+          "estimated": true
         }
       ]
     }
-  ]
+  ],
+  "radioReceiver": "DUDU"
 }

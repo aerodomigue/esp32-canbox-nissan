@@ -10,7 +10,8 @@
  * - REAL CAN MODE: Reads actual CAN frames from the vehicle bus
  *   (JSON with "isMock": false)
  * - MOCK MODE: Generates simulated data for testing without a vehicle
- *   (JSON with "isMock": true, or no config file found)
+ *   (a successfully loaded JSON with "isMock": true)
+ * - No valid profile: raw CAN/USB remain available, radio output is disabled.
  *
  * Data Flow:
  * ┌─────────────┐    ┌──────────────────┐    ┌────────────┐
@@ -31,6 +32,7 @@
 #include <ESP32-TWAI-CAN.hpp>
 #include <ArduinoJson.h>
 #include "VehicleConfig.h"
+#include "BootTripComputer.h"
 
 /**
  * @brief Configurable CAN frame processor
@@ -43,17 +45,19 @@ public:
     CanConfigProcessor();
 
     /**
-     * @brief Initialize processor - load config from SPIFFS
+     * @brief Mount LittleFS and load the selected profile.
      *
-     * Searches for configuration files in order:
-     * 1. /vehicle.json (primary)
-     * 2. /NissanJukeF15.json (fallback)
-     *
-     * If no config found, activates mock mode with default simulated data.
-     *
-     * @return true if config loaded successfully, false if using mock mode
+     * A missing/invalid selected file returns an error without a fallback.
+     * Without a saved selection, try the first existing file in this order:
+     * /vehicle.json, /MockDemo.json, /NissanJukeF15.json. Never skip a bad file.
+     * @return true if a real or mock profile loaded successfully
      */
     bool begin();
+
+    // Reload only the selected file; failure preserves all active state.
+    bool reload();
+
+    bool hasProfile() const { return _hasProfile; }
 
     /**
      * @brief Load vehicle configuration from JSON file
@@ -65,20 +69,29 @@ public:
     /**
      * @brief Process a received CAN frame
      *
-     * Looks up the frame's CAN ID in the configuration, extracts all defined
-     * fields, applies conversion formulas, and writes to GlobalData.
+     * Accepts standard 11-bit data frames only. Looks up the CAN ID, extracts
+     * all defined fields, applies formulas, and writes to GlobalData. Extended
+     * or RTR frames, out-of-range IDs, invalid DLC, and incomplete fields are
+     * rejected before any writes or statistics updates.
      *
      * @param frame Reference to received CAN frame from TWAI
-     * @return true if frame was handled (CAN ID found in config)
+     * @return true if a standard data frame is configured and all fields were
+     *         processed; false for unsupported frames, unknown IDs, invalid
+     *         DLC, or incomplete/zero-length fields.
      */
     bool processFrame(const CanFrame& frame);
+
+    // Explicit dequeue time keeps derived consumption aligned with raw logs.
+    bool processFrame(const CanFrame& frame, uint32_t receivedAt);
+
+    // Call even without CAN traffic so expired sources stop reaching the radio.
+    void updateFuelConsumption(uint32_t now);
 
     /**
      * @brief Check if running in mock mode
      *
      * Mock mode is active when:
-     * - No config file was found on SPIFFS
-     * - Config file has "isMock": true
+     * - A valid loaded config file has "isMock": true
      *
      * @return true if generating simulated data
      */
@@ -86,9 +99,9 @@ public:
 
     /**
      * @brief Get loaded profile name
-     * @return Vehicle name from config, or "Unknown" if not loaded
+     * @return Vehicle name from config, or "None" if not loaded
      */
-    const char* getProfileName() const { return _profile.name.c_str(); }
+    const char* getProfileName() const { return _hasProfile ? _profile.name.c_str() : "None"; }
 
     /**
      * @brief Get count of successfully processed frames
@@ -105,8 +118,11 @@ public:
 private:
     VehicleProfile _profile;        // Loaded vehicle configuration
     bool _mockMode;                 // true = simulating data, false = real CAN
+    bool _hasProfile;               // false until a profile loads successfully
     uint32_t _framesProcessed;      // Statistics: processed frame count
     uint32_t _unknownFrames;        // Statistics: unknown CAN ID count
+    FuelConsumptionEstimator _fuelEstimator;
+    BootTripComputer _bootTrip;
 
     /**
      * @brief Find frame configuration for a CAN ID
@@ -151,11 +167,11 @@ private:
     /**
      * @brief Apply vehicleParams overrides from JSON to in-memory config.
      *
-     * Called only on vehicle switch, after configReset(). Each non-null key
-     * overrides the corresponding CanboxConfig field. Caller must call
-     * configSave() afterwards to persist.
+     * Called after validation on every successful load, including reboot.
+     * Each non-null key overrides the corresponding CanboxConfig field.
+     * Returns the mask of explicit keys to save (even if RAM already matches).
      */
-    void applyVehicleParams(JsonObjectConst params);
+    uint8_t applyVehicleParams(JsonObjectConst params);
 };
 
 #endif // CAN_CONFIG_PROCESSOR_H

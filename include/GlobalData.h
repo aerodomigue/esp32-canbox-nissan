@@ -14,6 +14,7 @@
 #define GLOBAL_DATA_H
 
 #include <Arduino.h>
+#include "CanAuxData.h"
 
 // =============================================================================
 // SHARED VEHICLE DATA (extern declarations)
@@ -31,7 +32,7 @@ extern uint8_t vehicleSpeed;
 /** Door status bitmask (see CanCapture.cpp for bit mapping) */
 extern uint8_t currentDoors;
 
-/** Fuel level in liters, scaled to tank capacity (default 0-45L for Juke F15) */
+/** Fuel level in liters; only meaningful when canAuxData.fuelLevelValid is true. */
 extern uint8_t fuelLevel;
 
 /** Battery/alternator voltage in volts (typically 12.0-14.5V) */
@@ -40,11 +41,14 @@ extern float voltBat;
 /** Distance to empty in km (estimated remaining range) */
 extern int16_t dteValue;
 
-/** Average fuel consumption (L/100km) - reserved for future use */
+/** Legacy average fuel consumption (L/100km); radio uses fuelConsumptionAvg */
 extern float fuelConsoMoy;
 
-/** External temperature in °C (actually coolant temp, used as substitute) */
+/** External temperature in °C; consult canAuxData validity/freshness. */
 extern int8_t tempExt;
+
+/** Engine coolant °C; check canAuxData validity/freshness before transmission. */
+extern int16_t coolantTemp;
 
 /** Odometer (Total Mileage) in km - 0 = unknown */
 extern uint32_t currentOdo;
@@ -75,13 +79,13 @@ extern unsigned long lastLeftIndicatorTime;
 extern unsigned long lastRightIndicatorTime;
 
 // =============================================================================
-// FUEL CONSUMPTION (from CAN 0x580)
+// FUEL CONSUMPTION (direct sources or configurable counter-based estimates)
 // =============================================================================
 
-/** Instantaneous fuel consumption in 0.1 L/100km units (e.g., 75 = 7.5 L/100km) */
+/** Instantaneous 0.1 L/100km; check canAuxData validity and estimated flags. */
 extern uint16_t fuelConsumptionInst;
 
-/** Average fuel consumption in 0.1 L/100km units */
+/** Average 0.1 L/100km; check canAuxData validity and estimated flags. */
 extern uint16_t fuelConsumptionAvg;
 
 // =============================================================================
@@ -91,8 +95,8 @@ extern uint16_t fuelConsumptionAvg;
 /** Average speed in 0.1 km/h units (e.g., 450 = 45.0 km/h) - for trip display */
 extern uint16_t averageSpeed;
 
-/** Elapsed driving time in seconds - for trip display */
-extern uint16_t elapsedTime;
+/** Elapsed time since device boot in seconds - for trip display */
+extern uint32_t elapsedTime;
 
 // =============================================================================
 // UTILITY FUNCTIONS

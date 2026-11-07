@@ -1,3 +1,6 @@
+#include "CanAuxData.h"
+CanAuxData canAuxData;
+
 // Stub definitions for GlobalData globals used by CanConfigProcessor::writeToGlobalData()
 #include <stdint.h>
 #include "Arduino.h"
@@ -12,6 +15,7 @@ float    voltBat             = 0.0f;
 int16_t  dteValue           = 0;
 float    fuelConsoMoy        = 0.0f;
 int8_t   tempExt             = 0;
+int16_t   coolantTemp         = 0;
 uint32_t currentOdo          = 0;
 
 bool         indicatorLeft           = false;
@@ -25,7 +29,7 @@ unsigned long lastRightIndicatorTime = 0;
 uint16_t fuelConsumptionInst = 0;
 uint16_t fuelConsumptionAvg  = 0;
 uint16_t averageSpeed        = 0;
-uint16_t elapsedTime         = 0;
+uint32_t elapsedTime         = 0;
 
 // Arduino and filesystem globals (SerialClass and FS are defined in Arduino.h/LittleFS.h mocks)
 SerialClass Serial;
