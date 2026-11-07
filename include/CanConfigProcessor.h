@@ -32,6 +32,7 @@
 #include <ESP32-TWAI-CAN.hpp>
 #include <ArduinoJson.h>
 #include "VehicleConfig.h"
+#include "BootTripComputer.h"
 
 /**
  * @brief Configurable CAN frame processor
@@ -121,6 +122,7 @@ private:
     uint32_t _framesProcessed;      // Statistics: processed frame count
     uint32_t _unknownFrames;        // Statistics: unknown CAN ID count
     FuelConsumptionEstimator _fuelEstimator;
+    BootTripComputer _bootTrip;
 
     /**
      * @brief Find frame configuration for a CAN ID

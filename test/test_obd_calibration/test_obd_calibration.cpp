@@ -475,6 +475,40 @@ void test_enabled_is_idempotent_and_off_cancels_pending_state() {
     assertRequest(harness, 0x7DF, 0);
 }
 
+void test_log_cycles_preserve_global_spacing_even_after_failed_tx_or_millis_wrap() {
+    for (const bool queued : {false, true}) for (const uint32_t start : {0u, UINT32_MAX - 100u}) {
+        Harness h;
+        h.acceptSend = queued;
+        ObdCalibration obd(Harness::send, Harness::emit, &h);
+        obd.setEnabled(true, start);
+        obd.tick(start);
+        TEST_ASSERT_EQUAL_UINT(1, h.attempts.size());
+        obd.setEnabled(false, start + 1u);
+        obd.setEnabled(true, start + 2u);
+        obd.tick(start + 2u);
+        TEST_ASSERT_EQUAL_UINT(1, h.attempts.size());
+        TEST_ASSERT_FALSE(obd.waiting());
+        // A reply from the cancelled discovery must not seed the new session.
+        obd.receive(supported(0x7E8, 0, supportBit(0, 0x0C)), start + 3u);
+        TEST_ASSERT_EQUAL_UINT(0, h.count("ODB SUPPORTED "));
+        obd.tick(start + 499u);
+        TEST_ASSERT_EQUAL_UINT(1, h.attempts.size());
+        h.acceptSend = true;
+        obd.tick(start + 500u);
+        TEST_ASSERT_EQUAL_UINT(2, h.attempts.size());
+        assertRequest(h, 0x7DF, 0);
+        TEST_ASSERT_TRUE(obd.waiting());
+        // A second rapid cycle must retain the most recent attempt, too.
+        obd.setEnabled(false, start + 501u);
+        obd.setEnabled(true, start + 502u);
+        obd.tick(start + 999u);
+        TEST_ASSERT_EQUAL_UINT(2, h.attempts.size());
+        obd.tick(start + 1000u);
+        TEST_ASSERT_EQUAL_UINT(3, h.attempts.size());
+        assertRequest(h, 0x7DF, 0);
+    }
+}
+
 void test_millis_wrap_preserves_latency_timeout_and_request_spacing() {
     Harness harness;
     ObdCalibration obd(Harness::send, Harness::emit, &harness);
@@ -645,13 +679,20 @@ void assertProbe(const Harness& h, uint16_t did) {
     TEST_ASSERT_FALSE(f.extd); TEST_ASSERT_FALSE(f.rtr);
     TEST_ASSERT_EQUAL_HEX8_ARRAY(bytes, f.data, 8);
 }
-uint32_t beginProbe(ObdCalibration& obd, Harness& h, uint32_t start = 0) {
-    obd.setNissanProbesEnabled(true);
-    obd.setEnabled(true, start); obd.tick(start);
-    obd.receive(supported(0x7E8, 0, supportBit(0, 0x0C)), start + 1);
-    obd.tick(start + 250); obd.tick(start + 500);
-    assertProbe(h, 0x111F);
-    return start + 500;
+void assertSession(const Harness& h, uint8_t command) {
+    TEST_ASSERT_FALSE(h.attempts.empty());
+    const auto& f = h.attempts.back();
+    const uint8_t bytes[] = {2, 0x10, command, 0, 0, 0, 0, 0};
+    TEST_ASSERT_EQUAL_HEX32(0x7E0, f.identifier);
+    TEST_ASSERT_EQUAL_UINT8(8, f.data_length_code);
+    TEST_ASSERT_FALSE(f.extd); TEST_ASSERT_FALSE(f.rtr);
+    TEST_ASSERT_EQUAL_HEX8_ARRAY(bytes, f.data, 8);
+}
+CanFrame sessionValue(uint8_t command) {
+    CanFrame f = {};
+    f.identifier = 0x7E8; f.data_length_code = 8;
+    f.data[0] = 2; f.data[1] = 0x50; f.data[2] = command;
+    return f;
 }
 CanFrame probeValue(uint16_t did, uint8_t raw) {
     CanFrame f = {};
@@ -660,92 +701,291 @@ CanFrame probeValue(uint16_t did, uint8_t raw) {
     f.data[2] = did >> 8; f.data[3] = did; f.data[4] = raw;
     return f;
 }
-CanFrame probeNegative(uint8_t nrc) {
-    auto f = negative(0x7E8, nrc); f.data[2] = 0x22; return f;
+CanFrame manufacturerNegative(uint8_t service, uint8_t nrc) {
+    auto f = negative(0x7E8, nrc); f.data[2] = service; return f;
 }
-uint16_t nextProbe(ObdCalibration& obd, Harness& h, uint32_t& now) {
-    for (unsigned i = 0; i < 100; ++i) {
-        now += 500;
-        const auto attempts = h.attempts.size();
-        obd.tick(now);
-        if (h.attempts.size() == attempts) continue;
-        const auto& f = h.attempts.back();
-        if (f.data[1] == 0x22) return uint16_t(f.data[2]) * 256 + f.data[3];
-    }
-    TEST_FAIL_MESSAGE("No probe within 50 seconds");
-    return 0;
+uint32_t beginSession(ObdCalibration& obd, Harness& h, uint32_t start = 0) {
+    obd.setNissanProbesEnabled(true, start);
+    obd.setEnabled(true, start); obd.tick(start);
+    obd.receive(supported(0x7E8, 0, supportBit(0, 0x0C)), uint32_t(start + 1));
+    obd.tick(uint32_t(start + 250)); obd.tick(uint32_t(start + 500));
+    assertSession(h, 0xC0);
+    return start + 500;
+}
+uint32_t beginOil(ObdCalibration& obd, Harness& h, uint32_t start = 0) {
+    auto now = beginSession(obd, h, start);
+    obd.receive(sessionValue(0xC0), uint32_t(now + 1));
+    obd.tick(uint32_t(now + 500)); assertProbe(h, 0x1101);
+    obd.receive(probeValue(0x1101, 110), uint32_t(now + 501));
+    obd.tick(uint32_t(now + 1000)); assertProbe(h, 0x111F);
+    return now + 1000;
+}
+size_t countService(const Harness& h, uint8_t service) {
+    size_t n = 0;
+    for (const auto& f : h.attempts) if (f.data[1] == service) ++n;
+    return n;
 }
 }
 
-void test_nissan_probes_validate_ecu_did_lengths_and_preserve_candidate_status() {
-    Harness h;
-    ObdCalibration obd(Harness::send, Harness::emit, &h);
-    auto now = beginProbe(obd, h);
-    for (const auto did : {0x1114, 0x1183, 0x1304}) obd.receive(probeValue(did, 100), now + 1);
-    auto bad = probeValue(0x111F, 100); bad.identifier = 0x7E9; obd.receive(bad, now + 1);
-    bad = probeValue(0x111F, 100); bad.extd = true; obd.receive(bad, now + 1);
-    bad = probeValue(0x111F, 100); bad.rtr = true; obd.receive(bad, now + 1);
-    for (const auto size : {0, 3, 5, 0x14}) { bad = probeValue(0x111F, 100); bad.data[0] = size; obd.receive(bad, now + 1); }
+void test_nissan_session_requires_positive_exact_echo_before_any_did() {
+    Harness h; ObdCalibration obd(Harness::send, Harness::emit, &h);
+    const auto now = beginSession(obd, h);
+    obd.receive(probeValue(0x111F, 120), now + 1);
+    for (const uint8_t echo : {0x40, 0x81}) obd.receive(sessionValue(echo), now + 2);
+    auto bad = sessionValue(0xC0); bad.identifier = 0x7E9; obd.receive(bad, now + 3);
+    bad = sessionValue(0xC0); bad.extd = true; obd.receive(bad, now + 3);
+    bad = sessionValue(0xC0); bad.rtr = true; obd.receive(bad, now + 3);
+    for (const uint8_t length : {0, 1, 8, 0x12}) {
+        bad = sessionValue(0xC0); bad.data[0] = length; obd.receive(bad, now + 4);
+    }
+    TEST_ASSERT_EQUAL_UINT(0, h.count("ODB SESSION_RX "));
     TEST_ASSERT_EQUAL_UINT(0, h.count("ODB PROBE_RX "));
-    obd.receive(probeValue(0x111F, 100), now + 2);
-    contains(h.last("ODB PROBE_RX "), "service=0x22 did=0x111F name=nissan_oil_temperature_candidate raw=0x64 value=50.000 unit=degC latency_ms=2");
-    obd.receive(probeValue(0x111F, 200), now + 3);
-    TEST_ASSERT_EQUAL_UINT(1, h.count("ODB PROBE_RX "));
-    TEST_ASSERT_EQUAL_UINT(0, h.count("ODB RX "));
-    const uint16_t remaining[] = {0x1114, 0x1183, 0x1304};
-    uint32_t previous = now;
-    for (const auto did : remaining) {
-        TEST_ASSERT_EQUAL_HEX16(did, nextProbe(obd, h, now));
-        TEST_ASSERT_GREATER_OR_EQUAL_UINT32(10000, now - previous);
-        assertProbe(h, did);
-        obd.receive(probeValue(did, 67), now + 2);
-        contains(h.last("ODB PROBE_RX "), "raw=0x43 value=67.000 unit=raw");
-        previous = now;
-    }
-    // No control/session services are emitted anywhere in the sequence.
-    for (const auto& f : h.attempts) TEST_ASSERT_TRUE(f.data[1] == 1 || f.data[1] == 0x22);
+    // Optional timing bytes are retained in RAW, not mistaken for measurements.
+    auto accepted = sessionValue(0xC0); accepted.data[0] = 6;
+    accepted.data[3] = 0x12; accepted.data[4] = 0x34;
+    obd.receive(accepted, now + 100);
+    obd.receive(accepted, now + 101);
+    TEST_ASSERT_EQUAL_UINT(1, h.count("ODB SESSION_RX "));
+    contains(h.last("ODB SESSION_RX "), "subfunction=0xC0 status=opened length=6 latency_ms=100");
+    obd.tick(now + 499); TEST_ASSERT_EQUAL_UINT(0, countService(h, 0x22));
+    obd.tick(now + 500); assertProbe(h, 0x1101);
+    obd.receive(probeValue(0x1101, 110), now + 501);
+    contains(h.last("ODB PROBE_RX "), "name=nissan_coolant_temperature_candidate raw=0x6E value=60.000 unit=degC");
+    obd.tick(now + 1000); assertProbe(h, 0x111F);
+    obd.receive(probeValue(0x111F, 114), now + 1001);
+    contains(h.last("ODB PROBE_RX "), "name=nissan_oil_temperature_candidate raw=0x72 value=64.000 unit=degC");
+    obd.tick(now + 1500); assertSession(h, 0x81);
+    obd.receive(sessionValue(0x81), now + 1501);
+    contains(h.last("ODB SESSION_RX "), "subfunction=0x81 status=closed");
+    obd.tick(now + 2000); assertRequest(h, 0x7E0, 0x0C);
+    obd.receive(value(0x7E8, 0x0C, {0x0C, 0x80}), now + 2001);
+    contains(h.last("ODB RX "), "name=rpm value=800.000 unit=rpm");
 }
 
-void test_nissan_terminal_negatives_disable_did_in_both_response_orders() {
-    for (const bool positiveFirst : {false, true}) {
-        Harness h; ObdCalibration obd(Harness::send, Harness::emit, &h);
-        auto now = beginProbe(obd, h);
-        if (positiveFirst) obd.receive(probeValue(0x111F, 100), now + 1);
-        obd.receive(probeNegative(0x22), now + 2);
-        obd.receive(probeNegative(0x78), now + 3);
-        obd.receive(probeValue(0x111F, 100), now + 4);
-        TEST_ASSERT_EQUAL_UINT(positiveFirst ? 1 : 0, h.count("ODB PROBE_RX "));
-        for (const auto did : {0x1114, 0x1183, 0x1304, 0x1114}) {
-            TEST_ASSERT_EQUAL_HEX16(did, nextProbe(obd, h, now));
-            obd.receive(probeValue(did, 12), now + 1);
-        }
-        obd.setEnabled(false, now + 2);
-        beginProbe(obd, h, now + 3); // New LOG ON re-enables previously rejected DIDs.
+void test_nissan_groups_cover_all_candidates_once_and_leave_raw_units_unchanged() {
+    Harness h; ObdCalibration obd(Harness::send, Harness::emit, &h);
+    auto now = beginSession(obd, h);
+    size_t consumed = h.attempts.size() - 1;
+    std::vector<uint16_t> dids;
+    std::vector<uint32_t> starts;
+    unsigned readsInGroup = 0;
+    for (unsigned i = 0; i < 130; ++i, now += 250) {
+        obd.tick(now);
+        if (consumed == h.attempts.size()) continue;
+        TEST_ASSERT_EQUAL_UINT(consumed + 1, h.attempts.size());
+        const auto f = h.attempts[consumed++];
+        if (f.data[1] == 0x10) {
+            if (f.data[2] == 0xC0) { starts.push_back(now); readsInGroup = 0; }
+            else { TEST_ASSERT_EQUAL_HEX8(0x81, f.data[2]); TEST_ASSERT_LESS_OR_EQUAL_UINT(2, readsInGroup); }
+            obd.receive(sessionValue(f.data[2]), now + 1);
+        } else if (f.data[1] == 0x22) {
+            ++readsInGroup;
+            const uint16_t did = uint16_t(f.data[2]) * 256 + f.data[3];
+            dids.push_back(did); obd.receive(probeValue(did, 67), now + 1);
+            if (did != 0x1101 && did != 0x111F) contains(h.last("ODB PROBE_RX "), "raw=0x43 value=67.000 unit=raw");
+        } else TEST_ASSERT_EQUAL_HEX8(1, f.data[1]);
     }
+    const uint16_t expected[] = {0x1101, 0x111F, 0x1114, 0x1183, 0x1304};
+    TEST_ASSERT_EQUAL_UINT(5, dids.size());
+    TEST_ASSERT_EQUAL_HEX16_ARRAY(expected, dids.data(), 5);
+    TEST_ASSERT_EQUAL_UINT(3, starts.size());
+    for (size_t i = 1; i < starts.size(); ++i) TEST_ASSERT_GREATER_OR_EQUAL_UINT32(10000, starts[i] - starts[i-1]);
+    TEST_ASSERT_EQUAL_UINT(6, countService(h, 0x10));
+    const auto manufacturer = countService(h, 0x22) + countService(h, 0x10);
+    for (; now < 65000; now += 500) obd.tick(now);
+    TEST_ASSERT_EQUAL_UINT(manufacturer, countService(h, 0x22) + countService(h, 0x10));
 }
 
-void test_nissan_pending_response_has_bounded_window_and_off_stops_all_queries() {
-    for (const bool responds : {false, true}) {
+void test_nissan_open_refusal_or_timeout_never_reads_dids_or_retries_session() {
+    for (const uint8_t nrc : {0, 0x12, 0x78, 0x80}) {
         Harness h; ObdCalibration obd(Harness::send, Harness::emit, &h);
-        auto now = beginProbe(obd, h);
-        obd.receive(probeNegative(0x78), now + 1);
-        if (responds) obd.receive(probeValue(0x111F, 100), now + 249);
+        const auto now = beginSession(obd, h);
+        if (nrc) obd.receive(manufacturerNegative(0x10, nrc), now + 1);
         obd.tick(now + 250);
         TEST_ASSERT_FALSE(obd.waiting());
-        TEST_ASSERT_EQUAL_UINT(responds ? 0 : 1, h.count("ODB TIMEOUT "));
-        obd.receive(probeValue(0x111F, 100), now + 251);
-        TEST_ASSERT_EQUAL_UINT(responds ? 1 : 0, h.count("ODB PROBE_RX "));
-        for (const auto did : {0x1114, 0x1183, 0x1304}) {
-            TEST_ASSERT_EQUAL_HEX16(did, nextProbe(obd, h, now));
-            obd.receive(probeValue(did, 12), now + 1);
-        }
-        TEST_ASSERT_EQUAL_HEX16(responds ? 0x111F : 0x1114, nextProbe(obd, h, now));
-        const auto attempts = h.attempts.size();
-        obd.setEnabled(false, now + 1);
-        obd.receive(probeValue(responds ? 0x111F : 0x1114, 100), now + 2);
-        obd.tick(now + 100000);
-        TEST_ASSERT_EQUAL_UINT(attempts, h.attempts.size());
+        TEST_ASSERT_EQUAL_UINT(nrc == 0 || nrc == 0x78 ? 1 : 0, h.count("ODB TIMEOUT "));
+        obd.tick(now + 500); assertSession(h, 0x81);
+        obd.receive(sessionValue(0x81), now + 501);
+        for (uint32_t t = now + 750; t < now + 35000; t += 250) obd.tick(t);
+        TEST_ASSERT_EQUAL_UINT(0, countService(h, 0x22));
+        TEST_ASSERT_EQUAL_UINT(2, countService(h, 0x10));
+        TEST_ASSERT_GREATER_THAN_UINT(2, countService(h, 1));
     }
+}
+
+void test_nissan_terminal_session_nrc_cannot_be_overridden_by_late_positive() {
+    for (const bool positiveFirst : {false, true}) {
+        Harness h; ObdCalibration obd(Harness::send, Harness::emit, &h);
+        const auto now = beginSession(obd, h);
+        if (positiveFirst) obd.receive(sessionValue(0xC0), now + 1);
+        obd.receive(manufacturerNegative(0x10, 0x12), now + 2);
+        obd.receive(manufacturerNegative(0x10, 0x78), now + 3);
+        obd.receive(sessionValue(0xC0), now + 4);
+        TEST_ASSERT_EQUAL_UINT(positiveFirst ? 1 : 0, h.count("ODB SESSION_RX "));
+        obd.tick(now + 500); assertSession(h, 0x81);
+        TEST_ASSERT_EQUAL_UINT(0, countService(h, 0x22));
+    }
+}
+
+void test_nissan_control_refusal_does_not_claim_oil_is_absent() {
+    Harness h; ObdCalibration obd(Harness::send, Harness::emit, &h);
+    const auto now = beginSession(obd, h);
+    obd.receive(sessionValue(0xC0), now + 1);
+    obd.tick(now + 500); assertProbe(h, 0x1101);
+    obd.receive(manufacturerNegative(0x22, 0x12), now + 501);
+    obd.tick(now + 1000); assertProbe(h, 0x111F);
+    obd.receive(probeValue(0x111F, 110), now + 1001);
+    contains(h.last("ODB PROBE_RX "), "did=0x111F");
+    obd.tick(now + 1500); assertSession(h, 0x81);
+}
+
+void test_nissan_probe_lengths_ecu_and_terminal_nrc_are_checked() {
+    for (const bool positiveFirst : {false, true}) {
+        Harness h; ObdCalibration obd(Harness::send, Harness::emit, &h);
+        const auto now = beginOil(obd, h);
+        const auto prior = h.count("ODB PROBE_RX ");
+        auto bad = probeValue(0x111F, 110); bad.identifier = 0x7E9; obd.receive(bad, now + 1);
+        bad = probeValue(0x111F, 110); bad.extd = true; obd.receive(bad, now + 1);
+        bad = probeValue(0x111F, 110); bad.rtr = true; obd.receive(bad, now + 1);
+        bad = probeValue(0x111F, 110); bad.data_length_code = 7; obd.receive(bad, now + 1);
+        for (const uint8_t length : {0, 3, 5, 0x14}) {
+            bad = probeValue(0x111F, 110); bad.data[0] = length; obd.receive(bad, now + 1);
+        }
+        obd.receive(probeValue(0x1114, 110), now + 1);
+        TEST_ASSERT_EQUAL_UINT(prior, h.count("ODB PROBE_RX "));
+        if (positiveFirst) obd.receive(probeValue(0x111F, 110), now + 2);
+        obd.receive(manufacturerNegative(0x22, 0x12), now + 3);
+        obd.receive(manufacturerNegative(0x22, 0x78), now + 4);
+        obd.receive(probeValue(0x111F, 110), now + 5);
+        TEST_ASSERT_EQUAL_UINT(prior + (positiveFirst ? 1 : 0), h.count("ODB PROBE_RX "));
+        obd.tick(now + 500); assertSession(h, 0x81);
+    }
+}
+
+void test_nissan_pending_window_is_bounded_for_session_and_probe() {
+    for (const bool session : {false, true}) for (const bool responds : {false, true}) {
+        Harness h; ObdCalibration obd(Harness::send, Harness::emit, &h);
+        const auto now = session ? beginSession(obd, h) : beginOil(obd, h);
+        const auto count = h.count(session ? "ODB SESSION_RX " : "ODB PROBE_RX ");
+        obd.receive(manufacturerNegative(session ? 0x10 : 0x22, 0x78), now + 1);
+        const auto response = session ? sessionValue(0xC0) : probeValue(0x111F, 110);
+        if (responds) obd.receive(response, now + 249);
+        obd.tick(now + 250);
+        TEST_ASSERT_FALSE(obd.waiting());
+        obd.receive(response, now + 251);
+        TEST_ASSERT_EQUAL_UINT(count + (responds ? 1 : 0), h.count(session ? "ODB SESSION_RX " : "ODB PROBE_RX "));
+        TEST_ASSERT_EQUAL_UINT(responds ? 0 : 1, h.count("ODB TIMEOUT "));
+    }
+}
+
+void test_nissan_close_failure_blocks_further_groups_but_standard_polling_survives() {
+    for (const unsigned failure : {0U, 1U, 2U}) {
+        const bool sendFailure = failure == 1;
+        Harness h; ObdCalibration obd(Harness::send, Harness::emit, &h);
+        const auto now = beginOil(obd, h);
+        obd.receive(probeValue(0x111F, 110), now + 1);
+        if (sendFailure) h.acceptSend = false;
+        obd.tick(now + 500); assertSession(h, 0x81);
+        h.acceptSend = true;
+        if (failure == 2) obd.receive(manufacturerNegative(0x10, 0x12), now + 501);
+        for (uint32_t t = now + 750; t < now + 35000; t += 250) obd.tick(t);
+        contains(h.last("ODB SESSION_STATE "), "state=unknown");
+        TEST_ASSERT_EQUAL_UINT(2, countService(h, 0x10));
+        TEST_ASSERT_EQUAL_UINT(2, countService(h, 0x22));
+        TEST_ASSERT_GREATER_THAN_UINT(2, countService(h, 1));
+    }
+}
+
+void test_nissan_cancel_is_best_effort_and_respects_spacing() {
+    for (const bool profile : {false, true}) for (const bool spaced : {false, true}) {
+        Harness h; ObdCalibration obd(Harness::send, Harness::emit, &h);
+        const auto now = beginOil(obd, h);
+        const auto attempts = h.attempts.size();
+        const auto cancelledAt = now + (spaced ? 500 : 1);
+        if (profile) obd.setNissanProbesEnabled(false, cancelledAt);
+        else obd.setEnabled(false, cancelledAt);
+        TEST_ASSERT_FALSE(obd.waiting());
+        TEST_ASSERT_EQUAL_UINT(attempts + (spaced ? 1 : 0), h.attempts.size());
+        contains(h.last("ODB SESSION_STATE "), "status=cancelled");
+        contains(h.last("ODB SESSION_STATE "), spaced ? "close=queued_unconfirmed" : "close=request_interval");
+        if (spaced) assertSession(h, 0x81);
+        obd.receive(probeValue(0x111F, 110), cancelledAt + 1);
+        const auto manufacturer = countService(h, 0x10) + countService(h, 0x22);
+        if (profile) obd.setNissanProbesEnabled(true, cancelledAt + 2);
+        for (uint32_t t = cancelledAt + 500; t < cancelledAt + 35000; t += 500) obd.tick(t);
+        TEST_ASSERT_EQUAL_UINT(manufacturer, countService(h, 0x10) + countService(h, 0x22));
+        if (profile) obd.setEnabled(false, cancelledAt + 35000);
+        beginSession(obd, h, cancelledAt + 35001); // Only fresh LOG ON resets attempts.
+    }
+}
+
+void test_nissan_cancel_close_and_immediate_log_restart_share_one_request_budget() {
+    for (const bool closeQueued : {false, true}) {
+        Harness h;
+        ObdCalibration obd(Harness::send, Harness::emit, &h);
+        const auto now = beginOil(obd, h);
+        const uint32_t closedAt = now + 500;
+        const auto beforeClose = h.attempts.size();
+        h.acceptSend = closeQueued;
+        obd.setEnabled(false, closedAt);
+        assertSession(h, 0x81);
+        TEST_ASSERT_EQUAL_UINT(beforeClose + 1, h.attempts.size());
+        const auto sessionResponses = h.count("ODB SESSION_RX ");
+        h.acceptSend = true;
+        obd.setEnabled(true, closedAt + 1);
+        obd.tick(closedAt + 1);
+        TEST_ASSERT_EQUAL_UINT(beforeClose + 1, h.attempts.size());
+        TEST_ASSERT_FALSE(obd.waiting());
+        obd.receive(sessionValue(0x81), closedAt + 2);
+        TEST_ASSERT_EQUAL_UINT(sessionResponses, h.count("ODB SESSION_RX "));
+        obd.tick(closedAt + 499);
+        TEST_ASSERT_EQUAL_UINT(beforeClose + 1, h.attempts.size());
+        obd.tick(closedAt + 500);
+        TEST_ASSERT_EQUAL_UINT(beforeClose + 2, h.attempts.size());
+        assertRequest(h, 0x7DF, 0);
+        obd.receive(supported(0x7E8, 0, supportBit(0, 0x0C)), closedAt + 501);
+        obd.tick(closedAt + 1000);
+        assertSession(h, 0xC0);
+    }
+}
+
+void test_nissan_send_failures_do_not_fabricate_an_open_session_or_leave_it_unclosed() {
+    Harness h; ObdCalibration obd(Harness::send, Harness::emit, &h);
+    obd.setNissanProbesEnabled(true);
+    obd.setEnabled(true, 0); obd.tick(0);
+    obd.receive(supported(0x7E8, 0, supportBit(0, 0x0C)), 1);
+    h.acceptSend = false; obd.tick(500); assertSession(h, 0xC0);
+    TEST_ASSERT_FALSE(obd.waiting());
+    obd.receive(sessionValue(0xC0), 501);
+    TEST_ASSERT_EQUAL_UINT(0, h.count("ODB SESSION_RX "));
+    h.acceptSend = true; obd.tick(1000); assertRequest(h, 0x7E0, 0x0C);
+    TEST_ASSERT_EQUAL_UINT(0, countService(h, 0x22));
+    obd.setEnabled(false, 1001);
+    const auto now = beginSession(obd, h, 2000);
+    obd.receive(sessionValue(0xC0), now + 1);
+    h.acceptSend = false; obd.tick(now + 500); assertProbe(h, 0x1101);
+    TEST_ASSERT_FALSE(obd.waiting());
+    h.acceptSend = true; obd.tick(now + 1000); assertSession(h, 0x81);
+}
+
+void test_nissan_deadline_wrap_and_broadcast_interleaving_do_not_extend_session() {
+    Harness h; ObdCalibration obd(Harness::send, Harness::emit, &h);
+    const auto now = beginSession(obd, h, UINT32_MAX - 700);
+    // An ordinary broadcast must remain byte-for-byte available to RAW formatting.
+    auto broadcast = probeValue(0x111F, 120); broadcast.identifier = 0x180;
+    char raw[160]; TEST_ASSERT_TRUE(formatCanFrameLog(broadcast, uint32_t(now + 10), raw, sizeof(raw)));
+    const auto original = broadcast;
+    obd.receive(broadcast, uint32_t(now + 10));
+    TEST_ASSERT_EQUAL_MEMORY(original.data, broadcast.data, 8);
+    TEST_ASSERT_EQUAL_UINT(0, h.count("ODB PROBE_RX "));
+    obd.receive(sessionValue(0xC0), uint32_t(now + 200));
+    contains(h.last("ODB SESSION_RX "), "latency_ms=200");
+    obd.tick(uint32_t(now + 2000)); // Scheduler was delayed; skip all data reads.
+    assertSession(h, 0x81);
+    contains(h.last("ODB SESSION_STATE "), "status=read_deadline");
+    TEST_ASSERT_EQUAL_UINT(0, countService(h, 0x22));
+    obd.receive(sessionValue(0x81), uint32_t(now + 2001));
+    obd.tick(uint32_t(now + 2500)); assertRequest(h, 0x7E0, 0x0C);
 }
 
 void test_nissan_probes_are_opt_in_and_require_engine_ecu_support() {
@@ -781,6 +1021,7 @@ int main(int, char**) {
     RUN_TEST(test_poll_timeout_keeps_supported_reference_and_never_invents_zero);
     RUN_TEST(test_response_at_window_boundary_is_too_late);
     RUN_TEST(test_enabled_is_idempotent_and_off_cancels_pending_state);
+    RUN_TEST(test_log_cycles_preserve_global_spacing_even_after_failed_tx_or_millis_wrap);
     RUN_TEST(test_millis_wrap_preserves_latency_timeout_and_request_spacing);
     RUN_TEST(test_raw_formatter_preserves_payload_and_records_dequeue_time);
     RUN_TEST(test_raw_formatter_marks_only_standard_diagnostic_identifiers);
@@ -790,9 +1031,18 @@ int main(int, char**) {
     RUN_TEST(test_raw_formatter_rejects_null_or_small_buffer_before_writing);
     RUN_TEST(test_additional_service01_conversions_and_multi_value_responses);
     RUN_TEST(test_fast_references_get_priority_without_starving_slow_parameters);
-    RUN_TEST(test_nissan_probes_validate_ecu_did_lengths_and_preserve_candidate_status);
-    RUN_TEST(test_nissan_terminal_negatives_disable_did_in_both_response_orders);
-    RUN_TEST(test_nissan_pending_response_has_bounded_window_and_off_stops_all_queries);
+    RUN_TEST(test_nissan_session_requires_positive_exact_echo_before_any_did);
+    RUN_TEST(test_nissan_groups_cover_all_candidates_once_and_leave_raw_units_unchanged);
+    RUN_TEST(test_nissan_open_refusal_or_timeout_never_reads_dids_or_retries_session);
+    RUN_TEST(test_nissan_terminal_session_nrc_cannot_be_overridden_by_late_positive);
+    RUN_TEST(test_nissan_control_refusal_does_not_claim_oil_is_absent);
+    RUN_TEST(test_nissan_probe_lengths_ecu_and_terminal_nrc_are_checked);
+    RUN_TEST(test_nissan_pending_window_is_bounded_for_session_and_probe);
+    RUN_TEST(test_nissan_close_failure_blocks_further_groups_but_standard_polling_survives);
+    RUN_TEST(test_nissan_cancel_is_best_effort_and_respects_spacing);
+    RUN_TEST(test_nissan_cancel_close_and_immediate_log_restart_share_one_request_budget);
+    RUN_TEST(test_nissan_send_failures_do_not_fabricate_an_open_session_or_leave_it_unclosed);
+    RUN_TEST(test_nissan_deadline_wrap_and_broadcast_interleaving_do_not_extend_session);
     RUN_TEST(test_nissan_probes_are_opt_in_and_require_engine_ecu_support);
     return UNITY_END();
 }

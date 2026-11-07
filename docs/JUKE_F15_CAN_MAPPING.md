@@ -2,6 +2,8 @@
 
 > **Languages:** [Français](JUKE_F15_CAN_MAPPING.fr.md) | **English**
 
+> **Current implementation, 7 November 2026:** see the [F15 → DUDU boot-trip and units contract](F15_DUDU_BOOT_TRIP_MAPPING.md). It supersedes the older active-preset descriptions below: speed uses `0x280`, DTE uses `0x2DE`, the incorrect exterior source is removed, oil is explicitly provisional, and consumption averages cover one boot. Historical capture statistics and comparisons below remain tied to their stated revisions.
+
 Knowledge as of **15 October 2026**. Owner's vehicle: Juke F15 phase 1,
 MR16DDT engine, manual transmission. The logs do not identify the market,
 exact ECU versions or JSON actually loaded into LittleFS. The **baseline

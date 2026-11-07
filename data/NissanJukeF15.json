@@ -45,7 +45,8 @@
           "byteOrder": "BE",
           "dataType": "UINT16",
           "formula": "SCALE",
-          "params": [1, 8, 0]
+          "params": [1, 8, 0],
+          "invalidRawValues": [65535]
         },
         {
           "target": "BRAKE_PEDAL",
@@ -59,7 +60,7 @@
       ]
     },
     {
-      "canId": "0x284",
+      "canId": "0x280",
       "fields": [
         {
           "target": "VEHICLE_SPEED",
@@ -68,7 +69,8 @@
           "byteOrder": "BE",
           "dataType": "UINT16",
           "formula": "SCALE",
-          "params": [1, 100, 0]
+          "params": [1, 100, 0],
+          "invalidRawValues": [65535]
         }
       ]
     },
@@ -108,20 +110,6 @@
       ]
     },
     {
-      "canId": "0x540",
-      "fields": [
-        {
-          "target": "TEMPERATURE",
-          "startByte": 0,
-          "byteCount": 1,
-          "byteOrder": "BE",
-          "dataType": "UINT8",
-          "formula": "SCALE",
-          "params": [1, 1, -40]
-        }
-      ]
-    },
-    {
       "canId": "0x551",
       "fields": [
         {
@@ -131,7 +119,8 @@
           "byteOrder": "BE",
           "dataType": "UINT8",
           "formula": "SCALE",
-          "params": [1, 1, -40]
+          "params": [1, 1, -40],
+          "invalidRawValues": [255]
         },
         {
           "target": "FUEL_COUNTER_RAW",
@@ -239,7 +228,7 @@
       ]
     },
     {
-      "canId": "0x54C",
+      "canId": "0x2DE",
       "fields": [
         {
           "target": "DTE",
@@ -248,9 +237,26 @@
           "byteOrder": "BE",
           "dataType": "UINT16",
           "formula": "SCALE",
-          "params": [100, 338, 0]
+          "params": [1, 10, 0],
+          "invalidRawValues": [65535]
+        }
+      ]
+    },
+    {
+      "canId": "0x580",
+      "fields": [
+        {
+          "target": "OIL_TEMP",
+          "startByte": 4,
+          "byteCount": 1,
+          "byteOrder": "BE",
+          "dataType": "UINT8",
+          "formula": "SCALE",
+          "params": [1, 1, -40],
+          "estimated": true
         }
       ]
     }
-  ]
+  ],
+  "radioReceiver": "DUDU"
 }

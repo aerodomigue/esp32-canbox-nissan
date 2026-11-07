@@ -185,7 +185,7 @@ void loop() {
         }
     } else {
         // Manufacturer DIDs must stay opt-in to this known profile, not every vehicle.
-        obdCalibration.setNissanProbesEnabled(strcmp(canProcessor.getProfileName(), "Nissan Juke F15") == 0);
+        obdCalibration.setNissanProbesEnabled(strcmp(canProcessor.getProfileName(), "Nissan Juke F15") == 0, millis());
         obdCalibration.setEnabled(isCanLogEnabled(), millis());
         // REAL MODE: Read from CAN bus
         CanFrame rxFrame = {};

@@ -6,7 +6,8 @@ This guide describes the current implementation and its remaining protocol
 limitations. Consumption uses the documented three-byte `0x22` and 13-byte
 `0x23` payloads. Door command `0x24` keeps its documented two-byte payload.
 OBD calibration runs on the USB logging path and does not replace the preset's
-values sent over UART.
+values sent over UART. See the [F15 boot-trip mapping guide](../F15_DUDU_BOOT_TRIP_MAPPING.md)
+for vehicle sources, confidence and the explicit `radioReceiver: "DUDU"` contract.
 
 ## Commands Summary
 
@@ -17,20 +18,22 @@ values sent over UART.
 | 0x23 | Current Trip / Historical Fuel Consumption | 13 | 5000ms |
 | 0x24 | Door Status + IG Proxy | 2 | 250ms |
 | 0x28 | Outside Temperature | 12 | 5000ms |
-| 0x7D / 0x09 | Engine coolant temperature | 3 | 5000ms, fresh source only |
+| 0x7D / 0x09 | Coolant + oil (DUDU/shared), coolant only (legacy FYT) | 4 / 3 | 5000ms, fresh sources only |
 | 0x29 | Steering Wheel Angle | 2 | 200ms |
 | 0x7D/01 | Lights & Indicators | 2 | 200ms |
-| 0x7D/03 | Vehicle Speed | 5 | 500ms |
-| 0x7D/04 | Odometer | 12 | 10000ms |
+| 0x7D/03 | Speed + boot average speed + metric unit | 6 | 500ms |
+| 0x7D/04 | Odometer + two virtual boot-trip mirrors | 12 | 10000ms |
 | 0x7D/0A | Engine RPM | 3 | 333ms |
 
 `0x22` requires an available consumption value in the stated UART units.
 The Juke preset's `fuelConsumption` configuration enables an experimental
 conversion from the `0x551 B1` counter and vehicle speed. Its provisional
 80 mm³ per increment factor is not calibrated for the Juke MR16DDT.
-`0x23` sends a current-trip value when available, or `0xFFFF` while a derived
-trip is unavailable. Mock mode retains synthetic consumption values with
-the same documented packet formats.
+`0x23` sends the average since device boot only when available. Neither current
+consumption value uses `0xFFFF` as a universal unavailable marker: DUDU displays
+instantaneous `FFFF` as 6553.5 and ignores an average `FFFF`, while FYT maps
+both to zero. Invalid current consumption is withheld; five historical slots
+remain `FFFF`. Mock mode retains synthetic values in the same wire units.
 
 ---
 
@@ -199,18 +202,24 @@ Byte 2: RPM × 4 MSB
 | Field | Value |
 | --- | --- |
 | **Update Rate** | 500ms |
-| **Payload Length** | 5 bytes |
+| **Payload Length** | 6 bytes |
 
-**Payload Structure:**
-```
-Byte 0: Sub-command (0x03)
-Byte 1: Speed × 100 LSB
-Byte 2: Speed × 100 MSB
-Byte 3: Average speed LSB, currently 0x00 (unavailable)
-Byte 4: Average speed MSB, currently 0x00 (unavailable)
+```text
+D0: 03
+D1..D2: speed U16LE in 0.01 km/h
+D3..D4: boot average speed U16LE in 0.01 km/h
+D5: 00, explicit metric unit for DUDU
 ```
 
-**Example:** 45 km/h → 45 × 100 = 4500 → 0x94, 0x11
+The F15 preset decodes `0x280 B4..B5 / 100` and preserves fractional speed
+internally. The previous LEN5 packet omitted D5, making DUDU consume the
+checksum as a unit byte. Example: 93.21 km/h and 56.18 km/h average encode as
+`2E 7D 06 03 69 24 F2 15 00 E5`. DUDU truncates these displays to integer km/h.
+
+Only fresh speed is sent. With explicit DUDU selection, an incomplete boot
+trip uses average `FFFF`: the original DUDU decoder ignores that field and
+retains its old average while updating current speed. This is not a clearing
+marker and is not applied to generic FYT profiles, which require a known mean.
 
 ---
 
@@ -229,11 +238,18 @@ Byte 2: Odometer Middle byte
 Byte 3: Odometer MSB
 Byte 4: 0xF2 (existing constant, meaning unverified)
 Byte 5: 0x08 (existing constant, meaning unverified)
-Bytes 6-8: Trip 1, currently 0x00 (unavailable)
-Bytes 9-11: Trip 2, currently 0x00 (unavailable)
+Bytes 6-8: Virtual Trip A, U24LE in 0.1 km
+Bytes 9-11: Virtual Trip B, U24LE in 0.1 km (same boot-trip value)
 ```
 
 ---
+
+Both trip slots explicitly mirror distance integrated since device boot in
+RAM. They are not the independent Nissan Trip A/B counters. The complete
+packet requires a fresh odometer and a complete boot trip. DUDU may retain the
+previous odometer when an incomplete trip prevents this compound packet from
+being sent; no safe per-trip unavailable sentinel is known. DUDU truncates its
+Trip A/B display to whole kilometres even though the wire uses 0.1 km.
 
 ### 4. Outside Temperature (Command 0x28)
 
@@ -253,39 +269,55 @@ Bytes 6-11: 0x00 (reserved)
 
 The previous coolant write in D0 has been removed: FYT `j0/c3` interprets
 that byte as climate status bits. It never represented engine temperature.
-The existing ambient conversion remains unchanged; values outside its
-one-byte range still wrap. Its F15 CAN source is not validated.
+The conversion is unchanged, but unrepresentable/sentinel values are rejected
+before encoding instead of wrapping. Transmission requires a configured fresh
+source. The incorrect F15 `0x540` mapping has been removed, so this packet is
+not sent by the F15 profile. No replacement ambient value or artificial HVAC
+state is invented from the single 14 °C photographed reference.
 
-### 4b. Engine Coolant Temperature (Command 0x7D, Sub-command 0x09)
+### 4b. Coolant and Oil (Command 0x7D, Sub-command 0x09)
 
-Payload: **`09 00 TT`**, with `TT = coolant_C + 40` (unsigned byte).
-For **85°C**, the complete frame is **`2E 7D 03 09 00 7D F9`**.
-Byte positions here are zero based: D0 = subcommand, D1 = unused by the
-audited decoder, D2 = temperature. This is a three-byte payload, not a
-copy of the ambiguously numbered four/five-byte examples on the forum.
+The shared payload is **`09 CC CC OO`**, LEN4, with `CC = coolant_C + 40`
+and `OO = oil_C + 40`; both are U8. Example: coolant 80 °C and oil 90 °C
+produce **`2E 7D 04 09 78 78 82 03`**.
 
-Verified by executing the arithmetic/control flow of `j0/c3.V2` from
-[`com.syu.ms` 26.0507](https://github.com/PimpinPumpkin/fyt7862-mods/blob/4c545e945a1ef6e2faadae29d9a95e9c714822ca/artifacts/apps/com.syu.ms.apk)
-(APK SHA256 `6892e90067437c2a97cfb8e75396edade5d2a1772fd0ef7681d81c28f64fdbdc`).
-It reads `B[start+4]`, masks to 255, subtracts 40 and emits callback
-`1049 [2, temperature_C]` (bytecode offsets `0x2c08`–`0x2c38`).
-All 256 possible values round-trip, including values above 127°C; firmware
-storage is now `int16_t`. This verifies decoder behavior, not a hardware
-test of the owner's installed DUDU build.
+| Consumer | Coolant | Oil |
+| --- | --- | --- |
+| Classic FYT `j0/c3` | D2 − 40 °C | Not read in this branch |
+| Supplied DUDU Base Toyota `m3` | D1 − 40 °C; raw0 ignored | D3 − 40 °C |
 
-F15 input remains `0x551 B0−40`. A received, in-range sample is required;
-the firmware sends every five seconds only while the latest sample is
-less than two seconds old. Availability clears on a successful profile
-load/reset. Invalid or missing input is not replaced by 0°C. No unavailable
-sentinel is established; when transmission stops, the head unit may retain
-its last displayed value.
+The sender duplicates coolant to serve both consumers. It requires **both
+sources received and less than two seconds old**. No oil unavailable byte is
+implemented by DUDU: raw0 means −40 °C and raw255 means215 °C. Oil must not be
+replaced with coolant or an invented zero. If either source is absent/stale,
+DUDU receives no temperature packet and may retain its previous values.
 
-The [DUDU discussion](https://forum.dudu-auto.com/d/1751-status-bar-from-canbus-please?page=2)
-confirms Toyota coolant integration and describes selecting
-**Peripherals → OBD → system integration** on compatible builds.
-The same discussion mentions oil temperature, but this audited decoder
-does **not** read or publish an oil field in `0x7D/0x09`. No oil value is
-sent. See the [F15 research and capture evidence](../JUKE_F15_CAN_MAPPING.md#engine-temperatures-to-the-head-unit).
+F15 coolant remains the OBD-correlated `0x551 B0 − 40`. Oil is the explicitly
+selected **provisional** `0x580 B4 − 40` candidate. Its dynamics are coherent
+with the captures, but physical identity and calibration remain unconfirmed;
+`SYS DATA` marks its estimated status. UART itself has no provisional flag.
+
+A fresh DUDU `m3` decoder initializes its wire-unit flag to Celsius. The flag
+can be changed by `0x28 D4 bit0`; `7D/09` does not reset it. If the receiver
+retained Fahrenheit from an earlier box, restart DUDU or reinitialize the RAV4
+profile before checking temperatures. Sending a fabricated `0x28` merely to
+force Celsius would also overwrite unrelated climate states, so it is avoided.
+Temperature-card visibility depends separately on the installed RAV4 profile.
+
+**Historical FYT-only path:** the former LEN3 payload `09 00 CC` was verified
+against [`com.syu.ms`26.0507](https://github.com/PimpinPumpkin/fyt7862-mods/blob/4c545e945a1ef6e2faadae29d9a95e9c714822ca/artifacts/apps/com.syu.ms.apk),
+SHA256 `6892e90067437c2a97cfb8e75396edade5d2a1772fd0ef7681d81c28f64fdbdc`.
+`j0/c3.V2` reads unsigned D2, subtracts40 and emits `1049 [2, temperature_C]`.
+That observation did not prove compatibility with the separate DUDU parser:
+DUDU reads its retained checksum as the missing D3 oil byte. With coolant80 °C,
+`2E 7D 03 09 00 78 FE` therefore produced a false214 °C oil reading. The updated
+sender never sends this LEN3 form to an explicit DUDU receiver. It remains
+available only for legacy non-DUDU profiles that have coolant but no oil source.
+
+Both-byte encodings and receiver offsets are software-verified; this does not
+establish every physical sensor or guarantee display in every head-unit layout.
+See the [supplied-OS UART reference](../protocols/raise-toyota-rav4/README.md)
+and [F15 source evidence](../JUKE_F15_CAN_MAPPING.md#engine-temperatures-to-the-head-unit).
 
 ---
 
@@ -349,7 +381,8 @@ Bytes 11–12: Historical trip 5, uint16 BE
 
 **Formula:** `consumption_L100km = (Byte1 << 8 | Byte2) / 10.0`
 
-**Invalid value:** `0xFFFF` independently marks each unavailable trip.
+**Historical unavailable value:** each history slot may be `0xFFFF`. Current
+`0xFFFF` is not a shared unavailable/clear value for FYT and DUDU.
 
 **Example:** 8.2 L/100km → 82 → `0x0052`, with five unknown historical trips:
 `02 00 52 FF FF FF FF FF FF FF FF FF FF`.
@@ -359,14 +392,19 @@ Bytes 11–12: Historical trip 5, uint16 BE
 - The payload follows Raise V2.21 page 5. The former three-byte implementation
   omitted required historical fields and has been replaced.
 - The Juke conversion calculates current-trip consumption from total fuel
-  divided by total distance. This is a session estimate using the same
-  provisional factor as instantaneous consumption, not the Nissan cluster's
-  stored average. It does not restore the unvalidated `0x580 B4` mapping.
+  divided by total distance **since this device boot**. This RAM-only estimate
+  uses the same provisional factor as instantaneous consumption, includes fuel
+  consumed while stationary, and requires at least100 m. It is not the Nissan
+  cluster's historical average. The oil candidate `0x580 B4` is never used as fuel.
 - `RadioSend.cpp` only encodes the supplied average. It does not calculate or
   persist trips; all five historical values are `0xFFFF`.
-- When derived consumption is enabled but its average is unavailable,
-  the current-trip value is also `0xFFFF`. Profiles without derived
-  consumption and without an available direct source emit no `0x23` packet.
+- Unknown, stale or incomplete current averages produce no `0x23` packet.
+  DUDU ignores current `FFFF`, retaining its previous mean; FYT converts it
+  to zero. Neither behavior is a universal clearing contract.
+- `LOG ON`/`LOG OFF` and identical JSON reloads do not reset this boot trip.
+  A missing source interval or changed fuel/source calibration invalidates the
+  full-boot mean rather than silently starting a shorter trip. Instantaneous
+  output can recover. A device reboot starts a new trip; no history is persisted.
 - The specification gates current-trip consumption display on IG ON. The
   firmware supplies the RPM-derived IG proxy described under `0x24`.
 
@@ -388,7 +426,7 @@ not the accuracy of the source CAN value or acceptance by DUDU7.
 ```
 Byte 0: Average Speed MSB (0.1 km/h units)
 Byte 1: Average Speed LSB
-Byte 2: Elapsed Time MSB (seconds)
+Byte 2: Elapsed Time MSB (MINUTES)
 Byte 3: Elapsed Time LSB
 Byte 4: Range MSB (km)
 Byte 5: Range LSB
@@ -397,10 +435,24 @@ Byte 6: Unit (0x02 = km)
 
 **Formulas:**
 - `average_speed_kmh = (Byte0 << 8 | Byte1) / 10.0`
-- `elapsed_time_sec = (Byte2 << 8 | Byte3)`
+- `elapsed_time_minutes = (Byte2 << 8 | Byte3)`
 - `range_km = (Byte4 << 8) | Byte5`
 
-**Example:** 45.0 km/h avg, 3600s elapsed, 540 km range → Payload: `01 C2 0E 10 02 1C 02`
+**Example:** 45.0 km/h average,60 minutes elapsed,540 km range →
+payload `01 C2 00 3C 02 1C 02`.
+
+Average speed is integrated distance divided by boot uptime, including stops.
+Global `elapsedTime` is32-bit seconds; the sender divides by60 and saturates at
+65534minutes rather than wrapping. FYT interprets this field as minutes; the
+supplied DUDU `m3` ignores it, so correct encoding does not promise a duration
+card in that UI.
+
+The F15 DTE source is `0x2DE B6..B7 U16BE / 10`, replacing incorrect `0x54C`.
+The compound packet requires fresh DTE and a complete boot mean for classic
+FYT. Explicit DUDU permits `FFFF` for one missing companion: its original
+parser ignores average speed ≥300 km/h or DTE ≥3000 km, preserving that field's
+last value while updating the known companion. This is not a clear operation.
+No unknown F15 DTE is substituted with zero.
 
 ---
 
@@ -435,13 +487,14 @@ Doors      ■───────────────────■──
 └─────────────┘      └──────────────┘      └─────────────┘
   currentSteer         Formats data         Displays:
   engineRPM            Calculates checksum  - Camera lines
-  vehicleSpeed         Sends frames         - RPM gauge
+  speedCentiKmh        Sends frames         - RPM gauge
   currentOdo                                - Speedometer
   currentDoors                              - Door status
-  tempExt                                   - Temperature
+  coolantTemp/oilTemperatureC                - Temperatures
+  tempExt (valid source only)
   dteValue                                  - Remaining range
   averageSpeed                              - Average speed
-  elapsedTime                               - Trip time
+  elapsedTime                               - Trip minutes (FYT; ignored by DUDU m3)
   fuelConsumptionInst                       - Instant consumption
   fuelConsumptionAvg                        - Average consumption
   headlightsOn                              - Lights status
@@ -454,12 +507,14 @@ Doors      ■───────────────────■──
 
 ## Debug Notes
 
-The protocol does not require a handshake - data is sent proactively. Any incoming data from the head unit is discarded.
+The firmware sends data periodically. Incoming UART requests are currently
+drained; request/reply or a negotiation handshake is not implemented.
 
 `LOG ON` separately enables timestamped raw CAN logging and read-only OBD
-service 01 references on USB; OBD diagnostic lines start with the exact
-`ODB` prefix. `LOG OFF` stops new requests. Mock mode and OTA suspend OBD
-polling. These references do not update GlobalData or the UART packets.
+service01 references and bounded F15 manufacturer-session experiments on USB;
+OBD diagnostic lines start with the exact `ODB` prefix. `LOG OFF`, mock mode
+and OTA stop polling and perform the documented best-effort session close.
+These references do not update GlobalData or the UART packets.
 See the [USB LOG command](../protocols/USB_SERIAL_PROTOCOL.md#log---raw-can-capture-and-obd-reference-polling)
 and [calibration guide](../OBD_CALIBRATION.md) for capture instructions.
 

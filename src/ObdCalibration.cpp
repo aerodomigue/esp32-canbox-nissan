@@ -43,13 +43,18 @@ bool isFast(uint8_t pid) {
 }
 struct NissanProbe { uint16_t did; const char* name; };
 constexpr NissanProbe NISSAN_PROBES[] = {
+    {0x1101, "nissan_coolant_temperature_candidate"},
     {0x111F, "nissan_oil_temperature_candidate"},
     {0x1114, "nissan_fuel_level_raw"},
     {0x1183, "nissan_gear_position_raw"},
     {0x1304, "nissan_clutch_switch_raw"},
 };
-constexpr uint8_t PROBE_COUNT = sizeof(NISSAN_PROBES) / sizeof(NISSAN_PROBES[0]);
-constexpr uint32_t PROBE_INTERVAL_MS = 10000;
+struct NissanGroup { uint8_t first; uint8_t count; };
+constexpr NissanGroup NISSAN_GROUPS[] = {{0, 2}, {2, 2}, {4, 1}};
+constexpr uint8_t GROUP_COUNT = sizeof(NISSAN_GROUPS) / sizeof(NISSAN_GROUPS[0]);
+constexpr uint32_t GROUP_INTERVAL_MS = 10000;
+// Close before a stalled scheduler can implicitly extend a proprietary session.
+constexpr uint32_t GROUP_READ_LIMIT_MS = 2000;
 const Parameter* parameter(uint8_t pid) {
     for (const auto& entry : PARAMETERS) if (entry.pid == pid) return &entry;
     return nullptr;
@@ -70,25 +75,54 @@ void ObdCalibration::log(const char* format, ...) {
 }
 
 void ObdCalibration::setEnabled(bool enabled, uint32_t now) {
+    _lastNow = now;
     if (_enabled == enabled) return;
+    if (!enabled) cancelNissan(now, "disabled");
     _enabled = enabled;
     _pending = false;
     _stage = Stage::Page00;
     _attempts = _pollIndex = _fastIndex = _scheduleSlot = 0;
-    _probeIndex = _disabledProbes = 0;
-    _probeAttempted = _isProbe = false;
-    _lastAttempt = now - REQUEST_INTERVAL_MS;
+    _isProbe = _isSession = false;
+    if (enabled) {
+        _completedGroups = 0;
+        _nissanBlocked = _sessionMayBeOpen = false;
+        _nissanStep = NissanStep::Idle;
+    }
+    // Preserve the global wire-attempt budget across LOG OFF/ON, including a
+    // best-effort 10 81 sent by cancelNissan(). Only the first attempt at boot
+    // bypasses the interval; resetting discovery must not permit a burst.
     for (auto& ecu : _ecus) ecu = Ecu{};
     log("ODB STATE t_ms=%lu enabled=%u status=%s", static_cast<unsigned long>(now),
         enabled ? 1U : 0U, enabled ? "discovery" : "stopped");
 }
 
 void ObdCalibration::setNissanProbesEnabled(bool enabled) {
+    setNissanProbesEnabled(enabled, _lastNow);
+}
+
+void ObdCalibration::setNissanProbesEnabled(bool enabled, uint32_t now) {
+    _lastNow = now;
     if (_nissanProbesEnabled == enabled) return;
+    if (!enabled) cancelNissan(now, "profile_changed");
     _nissanProbesEnabled = enabled;
-    if (_isProbe) _pending = false;
-    _isProbe = _probeAttempted = false;
-    _probeIndex = _disabledProbes = 0;
+    // A profile toggle does not restart groups already attempted during LOG ON.
+}
+
+void ObdCalibration::cancelNissan(uint32_t now, const char* reason) {
+    if (_nissanStep == NissanStep::Idle && !_sessionMayBeOpen) return;
+    const bool mayBeOpen = _sessionMayBeOpen;
+    _pending = false;
+    const bool canClose = mayBeOpen && uint32_t(now - _lastAttempt) >= REQUEST_INTERVAL_MS;
+    if (canClose) requestSession(0x81, now);
+    log("ODB SESSION_STATE t_ms=%lu status=cancelled reason=%s state=%s close=%s",
+        static_cast<unsigned long>(now), reason, mayBeOpen ? "unknown" : "not_opened",
+        canClose ? (_pending ? "queued_unconfirmed" : "tx_failed") :
+                   (mayBeOpen ? "request_interval" : "not_needed"));
+    _pending = false;
+    _isProbe = _isSession = false;
+    _sessionMayBeOpen = false;
+    _nissanStep = NissanStep::Idle;
+    _nissanBlocked = true;
 }
 
 bool ObdCalibration::supports(uint8_t ecu, uint8_t pid) const {
@@ -110,6 +144,7 @@ void ObdCalibration::request(uint8_t pid, uint16_t id, uint32_t now) {
     frame.data[0] = 2;
     frame.data[1] = 1;
     frame.data[2] = pid;
+    _hasAttempt = true;
     _lastAttempt = now;
     ++_sequence;
     const bool queued = _send && _send(frame, _context);
@@ -117,7 +152,7 @@ void ObdCalibration::request(uint8_t pid, uint16_t id, uint32_t now) {
         static_cast<unsigned long>(now), static_cast<unsigned long>(_sequence), id, pid,
         queued ? "queued" : "failed", pid);
     if (!queued) return;
-    _isProbe = false;
+    _isProbe = _isSession = false;
     _pid = pid;
     _requestId = id;
     _sentAt = now;
@@ -126,21 +161,16 @@ void ObdCalibration::request(uint8_t pid, uint16_t id, uint32_t now) {
 }
 
 void ObdCalibration::finish(uint32_t now) {
-    if (!_responses || (_isProbe && !_positives && !_probeTerminalNegative)) {
-        if (_isProbe) {
-            log("ODB TIMEOUT t_ms=%lu seq=%lu request_id=0x%03X service=0x22 did=0x%04X elapsed_ms=%lu",
-                static_cast<unsigned long>(now), static_cast<unsigned long>(_sequence),
-                _requestId, NISSAN_PROBES[_activeProbe].did,
-                static_cast<unsigned long>(uint32_t(now - _sentAt)));
-        } else log("ODB TIMEOUT t_ms=%lu seq=%lu request_id=0x%03X pid=0x%02X elapsed_ms=%lu",
+    if (_isProbe || _isSession) {
+        finishNissan(now);
+        return;
+    }
+    if (!_responses) {
+        log("ODB TIMEOUT t_ms=%lu seq=%lu request_id=0x%03X pid=0x%02X elapsed_ms=%lu",
             static_cast<unsigned long>(now), static_cast<unsigned long>(_sequence),
             _requestId, _pid, static_cast<unsigned long>(uint32_t(now - _sentAt)));
     }
     _pending = false;
-    if (_isProbe) {
-        if (!_positives || _probeTerminalNegative) _disabledProbes |= uint8_t(1) << _activeProbe;
-        return;
-    }
     if (_stage == Stage::Page00) {
         if (!_positives) {
             if (++_attempts >= 3) {
@@ -170,10 +200,15 @@ void ObdCalibration::finish(uint32_t now) {
 }
 
 void ObdCalibration::tick(uint32_t now) {
+    _lastNow = now;
     if (!_enabled) return;
     if (_pending) {
         if (uint32_t(now - _sentAt) < RESPONSE_WINDOW_MS) return;
         finish(now);
+    }
+    if (_nissanStep != NissanStep::Idle) {
+        runNissan(now);
+        return;
     }
     if (_stage == Stage::Retry) {
         if (uint32_t(now - _retryAt) < DISCOVERY_RETRY_MS) return;
@@ -181,7 +216,7 @@ void ObdCalibration::tick(uint32_t now) {
         _attempts = 0;
         for (auto& ecu : _ecus) ecu = Ecu{};
     }
-    if (uint32_t(now - _lastAttempt) < REQUEST_INTERVAL_MS) return;
+    if (_hasAttempt && uint32_t(now - _lastAttempt) < REQUEST_INTERVAL_MS) return;
     switch (_stage) {
         case Stage::Page00: request(0x00, 0x7DF, now); return;
         case Stage::Page20: request(0x20, 0x7DF, now); return;
@@ -219,43 +254,123 @@ bool ObdCalibration::poll(bool fast, bool skipFast, uint32_t now) {
 }
 
 bool ObdCalibration::pollProbe(uint32_t now) {
-    if (!_nissanProbesEnabled || !_ecus[0].valid[0] ||
-        (_probeAttempted && uint32_t(now - _lastProbeAttempt) < PROBE_INTERVAL_MS)) return false;
-    for (uint8_t n = 0; n < PROBE_COUNT; ++n) {
-        const uint8_t index = _probeIndex;
-        _probeIndex = (_probeIndex + 1) % PROBE_COUNT;
-        if (_disabledProbes & (uint8_t(1) << index)) continue;
-        const auto& probe = NISSAN_PROBES[index];
-        CanFrame frame = {};
-        frame.identifier = 0x7E0;
-        frame.data_length_code = 8;
-        frame.data[0] = 3;
-        frame.data[1] = 0x22;
-        frame.data[2] = probe.did >> 8;
-        frame.data[3] = probe.did & 0xFF;
-        _lastAttempt = _lastProbeAttempt = now;
-        _probeAttempted = true;
-        ++_sequence;
-        const bool queued = _send && _send(frame, _context);
-        log("ODB TX t_ms=%lu seq=%lu can_id=0x7E0 service=0x22 did=0x%04X status=%s data=03 22 %02X %02X 00 00 00 00",
-            static_cast<unsigned long>(now), static_cast<unsigned long>(_sequence),
-            probe.did, queued ? "queued" : "failed", frame.data[2], frame.data[3]);
-        if (queued) {
-            _isProbe = true;
-            _activeProbe = index;
-            _requestId = 0x7E0;
-            _sentAt = now;
-            _responses = _positives = _negatives = 0;
-            _probeTerminalNegative = false;
-            _probeLastNrc = 0;
-            _pending = true;
-        }
+    if (!_nissanProbesEnabled || _nissanBlocked || !_ecus[0].valid[0] ||
+        (_completedGroups && uint32_t(now - _lastGroupAttempt) < GROUP_INTERVAL_MS)) return false;
+    for (uint8_t index = 0; index < GROUP_COUNT; ++index) {
+        if (_completedGroups & (uint8_t(1) << index)) continue;
+        _nissanGroup = index;
+        _completedGroups |= uint8_t(1) << index;
+        _lastGroupAttempt = _groupStarted = now;
+        _nissanStep = NissanStep::Open;
+        requestSession(0xC0, now);
         return true;
     }
     return false;
 }
 
+void ObdCalibration::requestSession(uint8_t command, uint32_t now) {
+    CanFrame frame = {};
+    frame.identifier = 0x7E0;
+    frame.data_length_code = 8;
+    frame.data[0] = 2; frame.data[1] = 0x10; frame.data[2] = command;
+    _hasAttempt = true;
+    _lastAttempt = now;
+    ++_sequence;
+    const bool queued = _send && _send(frame, _context);
+    log("ODB TX t_ms=%lu seq=%lu can_id=0x7E0 service=0x10 subfunction=0x%02X status=%s data=02 10 %02X 00 00 00 00 00",
+        static_cast<unsigned long>(now), static_cast<unsigned long>(_sequence), command,
+        queued ? "queued" : "failed", command);
+    _isSession = true; _isProbe = false;
+    _sessionCommand = command;
+    _requestId = 0x7E0;
+    _sentAt = now;
+    _responses = _positives = _negatives = 0;
+    _probeTerminalNegative = false; _probeLastNrc = 0;
+    _pending = queued;
+    if (queued && command == 0xC0) _sessionMayBeOpen = true;
+    if (!queued) {
+        if (command == 0x81) {
+            _nissanBlocked = true;
+            log("ODB SESSION_STATE t_ms=%lu status=close_failed state=unknown",
+                static_cast<unsigned long>(now));
+        }
+        _sessionMayBeOpen = false;
+        _nissanStep = NissanStep::Idle;
+        _isSession = false;
+    }
+}
+
+void ObdCalibration::requestProbe(uint8_t index, uint32_t now) {
+    const auto& probe = NISSAN_PROBES[index];
+    CanFrame frame = {};
+    frame.identifier = 0x7E0;
+    frame.data_length_code = 8;
+    frame.data[0] = 3; frame.data[1] = 0x22;
+    frame.data[2] = probe.did >> 8; frame.data[3] = probe.did;
+    _hasAttempt = true;
+    _lastAttempt = now;
+    ++_sequence;
+    const bool queued = _send && _send(frame, _context);
+    log("ODB TX t_ms=%lu seq=%lu can_id=0x7E0 service=0x22 did=0x%04X status=%s data=03 22 %02X %02X 00 00 00 00",
+        static_cast<unsigned long>(now), static_cast<unsigned long>(_sequence), probe.did,
+        queued ? "queued" : "failed", frame.data[2], frame.data[3]);
+    _isProbe = true; _isSession = false; _activeProbe = index;
+    _requestId = 0x7E0; _sentAt = now;
+    _responses = _positives = _negatives = 0;
+    _probeTerminalNegative = false; _probeLastNrc = 0;
+    _pending = queued;
+    if (!queued) { _isProbe = false; _nissanStep = NissanStep::Close; }
+}
+
+void ObdCalibration::finishNissan(uint32_t now) {
+    if (!_positives && !_probeTerminalNegative) {
+        if (_isSession) log("ODB TIMEOUT t_ms=%lu seq=%lu request_id=0x7E0 service=0x10 subfunction=0x%02X elapsed_ms=%lu",
+            static_cast<unsigned long>(now), static_cast<unsigned long>(_sequence), _sessionCommand,
+            static_cast<unsigned long>(uint32_t(now - _sentAt)));
+        else log("ODB TIMEOUT t_ms=%lu seq=%lu request_id=0x7E0 service=0x22 did=0x%04X elapsed_ms=%lu",
+            static_cast<unsigned long>(now), static_cast<unsigned long>(_sequence),
+            NISSAN_PROBES[_activeProbe].did, static_cast<unsigned long>(uint32_t(now - _sentAt)));
+    }
+    _pending = false;
+    if (_isSession) {
+        const bool accepted = _positives && !_probeTerminalNegative;
+        if (_sessionCommand == 0xC0) {
+            _nissanStep = accepted ? NissanStep::First : NissanStep::Close;
+            if (!accepted) _nissanBlocked = true;
+        } else {
+            _nissanStep = NissanStep::Idle;
+            _sessionMayBeOpen = false;
+            if (!accepted) {
+                _nissanBlocked = true;
+                log("ODB SESSION_STATE t_ms=%lu status=close_unconfirmed state=unknown",
+                    static_cast<unsigned long>(now));
+            }
+        }
+    } else {
+        _nissanStep = _nissanStep == NissanStep::First && NISSAN_GROUPS[_nissanGroup].count == 2
+            ? NissanStep::Second : NissanStep::Close;
+    }
+    _isSession = _isProbe = false;
+}
+
+void ObdCalibration::runNissan(uint32_t now) {
+    if (_hasAttempt && uint32_t(now - _lastAttempt) < REQUEST_INTERVAL_MS) return;
+    if (_nissanStep != NissanStep::Close && uint32_t(now - _groupStarted) >= GROUP_READ_LIMIT_MS) {
+        _nissanStep = NissanStep::Close;
+        log("ODB SESSION_STATE t_ms=%lu status=read_deadline state=unknown",
+            static_cast<unsigned long>(now));
+    }
+    const auto& group = NISSAN_GROUPS[_nissanGroup];
+    switch (_nissanStep) {
+        case NissanStep::First: requestProbe(group.first, now); break;
+        case NissanStep::Second: requestProbe(group.first + 1, now); break;
+        case NissanStep::Close: requestSession(0x81, now); break;
+        default: break;
+    }
+}
+
 void ObdCalibration::receive(const CanFrame& frame, uint32_t now) {
+    _lastNow = now;
     if (!_enabled || !_pending || uint32_t(now - _sentAt) >= RESPONSE_WINDOW_MS ||
         frame.extd || frame.rtr || frame.data_length_code != 8 ||
         frame.identifier < 0x7E8 || frame.identifier > 0x7EF ||
@@ -264,16 +379,19 @@ void ObdCalibration::receive(const CanFrame& frame, uint32_t now) {
     const uint8_t length = frame.data[0] & 0x0F;
     const uint8_t ecu = frame.identifier - 0x7E8;
     const uint8_t mask = uint8_t(1) << ecu;
-    if (length == 3 && frame.data[1] == 0x7F && frame.data[2] == (_isProbe ? 0x22 : 0x01)) {
+    if (length == 3 && frame.data[1] == 0x7F && frame.data[2] == (_isSession ? 0x10 : _isProbe ? 0x22 : 0x01)) {
         if (_negatives & mask) {
-            if (!_isProbe || _probeLastNrc == frame.data[3]) return;
+            if ((!_isProbe && !_isSession) || _probeLastNrc == frame.data[3]) return;
         }
         _negatives |= mask;
         _responses |= mask;
-        if (_isProbe) {
+        if (_isProbe || _isSession) {
             _probeLastNrc = frame.data[3];
             if (frame.data[3] != 0x78) _probeTerminalNegative = true;
-            log("ODB NEGATIVE t_ms=%lu seq=%lu request_id=0x%03X ecu=0x%03lX service=0x22 did=0x%04X nrc=0x%02X",
+            if (_isSession) log("ODB NEGATIVE t_ms=%lu seq=%lu request_id=0x7E0 ecu=0x%03lX service=0x10 subfunction=0x%02X nrc=0x%02X",
+                static_cast<unsigned long>(now), static_cast<unsigned long>(_sequence),
+                static_cast<unsigned long>(frame.identifier), _sessionCommand, frame.data[3]);
+            else log("ODB NEGATIVE t_ms=%lu seq=%lu request_id=0x%03X ecu=0x%03lX service=0x22 did=0x%04X nrc=0x%02X",
                 static_cast<unsigned long>(now), static_cast<unsigned long>(_sequence),
                 _requestId, static_cast<unsigned long>(frame.identifier), NISSAN_PROBES[_activeProbe].did,
                 frame.data[3]);
@@ -282,17 +400,28 @@ void ObdCalibration::receive(const CanFrame& frame, uint32_t now) {
             _requestId, static_cast<unsigned long>(frame.identifier), _pid, frame.data[3]);
         return;
     }
+    if (_isSession) {
+        if (_probeTerminalNegative || length < 2 || length > 7 || frame.data[1] != 0x50 ||
+            frame.data[2] != _sessionCommand || (_positives & mask)) return;
+        log("ODB SESSION_RX t_ms=%lu seq=%lu request_id=0x7E0 ecu=0x%03lX service=0x10 subfunction=0x%02X status=%s length=%u latency_ms=%lu",
+            static_cast<unsigned long>(now), static_cast<unsigned long>(_sequence),
+            static_cast<unsigned long>(frame.identifier), _sessionCommand,
+            _sessionCommand == 0xC0 ? "opened" : "closed", unsigned(length),
+            static_cast<unsigned long>(uint32_t(now - _sentAt)));
+        _positives |= mask; _responses |= mask;
+        return;
+    }
     if (_isProbe) {
         const auto& probe = NISSAN_PROBES[_activeProbe];
         if (_probeTerminalNegative || length != 4 || frame.data[1] != 0x62 ||
             frame.data[2] != (probe.did >> 8) || frame.data[3] != (probe.did & 0xFF) ||
             (_positives & mask)) return;
         const uint8_t raw = frame.data[4];
-        const bool oil = probe.did == 0x111F;
+        const bool temperature = probe.did == 0x111F || probe.did == 0x1101;
         log("ODB PROBE_RX t_ms=%lu seq=%lu request_id=0x%03X ecu=0x%03lX service=0x22 did=0x%04X name=%s raw=0x%02X value=%.3f unit=%s latency_ms=%lu",
             static_cast<unsigned long>(now), static_cast<unsigned long>(_sequence),
             _requestId, static_cast<unsigned long>(frame.identifier), probe.did, probe.name,
-            raw, oil ? double(int(raw) - 50) : double(raw), oil ? "degC" : "raw",
+            raw, temperature ? double(int(raw) - 50) : double(raw), temperature ? "degC" : "raw",
             static_cast<unsigned long>(uint32_t(now - _sentAt)));
         _positives |= mask;
         _responses |= mask;

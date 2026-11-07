@@ -122,6 +122,7 @@ void test_fractional_speed_survives_distance_integration_and_rounding() {
     auto config = enabledConfig();
     config.minSpeedKmh = 0.0;
     config.minAverageDistanceM = 0.001;
+    estimator = FuelConsumptionEstimator(); // A separate device boot.
     estimator.configure(config);
     start(estimator, 0.01);
     drive(estimator, 0.01, 0, 10);
@@ -222,7 +223,7 @@ void test_below_display_speed_keeps_consumed_volume() {
     closeTo(1.99 / 3.6, estimator.totalDistanceM());
 }
 
-void test_tick_invalidates_fuel_and_distance_when_entire_bus_falls_silent() {
+void test_bus_silence_preserves_totals_but_invalidates_complete_boot_average() {
     FuelConsumptionEstimator estimator;
     estimator.configure(enabledConfig());
     start(estimator, 36);
@@ -232,8 +233,9 @@ void test_tick_invalidates_fuel_and_distance_when_entire_bus_falls_silent() {
     estimator.tick(10501);
     TEST_ASSERT_FALSE(estimator.instantaneousValid());
     TEST_ASSERT_FALSE(estimator.averageValid());
-    closeTo(0, estimator.totalFuelMm3());
-    closeTo(0, estimator.totalDistanceM());
+    TEST_ASSERT_FALSE(estimator.tripComplete());
+    closeTo(8000, estimator.totalFuelMm3());
+    closeTo(100, estimator.totalDistanceM());
 }
 
 void test_speed_loss_cannot_mix_partial_fuel_with_stale_distance() {
@@ -244,14 +246,17 @@ void test_speed_loss_cannot_mix_partial_fuel_with_stale_distance() {
     for (unsigned i = 1; i <= 6; ++i) estimator.onCounter(100 + i, 10000 + i * 100);
     TEST_ASSERT_FALSE(estimator.instantaneousValid());
     TEST_ASSERT_FALSE(estimator.averageValid());
-    closeTo(0, estimator.totalFuelMm3());
-    closeTo(0, estimator.totalDistanceM());
+    TEST_ASSERT_FALSE(estimator.tripComplete());
+    closeTo(8400, estimator.totalFuelMm3());
+    closeTo(105, estimator.totalDistanceM());
     estimator.onSpeed(36, 10650);
     estimator.onCounter(107, 10700); // New aligned baseline, no missing fuel.
-    closeTo(0, estimator.totalFuelMm3());
+    closeTo(8400, estimator.totalFuelMm3());
     drive(estimator, 36, 10700, 10, 107);
     TEST_ASSERT_EQUAL_UINT16(80, estimator.instantaneous());
-    closeTo(10, estimator.totalDistanceM());
+    closeTo(9200, estimator.totalFuelMm3());
+    closeTo(115, estimator.totalDistanceM());
+    TEST_ASSERT_FALSE(estimator.averageValid());
 }
 
 void test_counter_loss_cannot_keep_distance_from_a_previous_session() {
@@ -262,12 +267,13 @@ void test_counter_loss_cannot_keep_distance_from_a_previous_session() {
     for (unsigned i = 1; i <= 6; ++i) estimator.onSpeed(36, 10000 + i * 100);
     TEST_ASSERT_FALSE(estimator.instantaneousValid());
     TEST_ASSERT_FALSE(estimator.averageValid());
-    closeTo(0, estimator.totalDistanceM());
+    closeTo(100, estimator.totalDistanceM());
     estimator.onCounter(200, 10600); // Unknown gap is not 100 consumed ticks.
-    closeTo(0, estimator.totalFuelMm3());
+    closeTo(8000, estimator.totalFuelMm3());
     drive(estimator, 36, 10600, 10, 200);
-    closeTo(800, estimator.totalFuelMm3());
-    closeTo(10, estimator.totalDistanceM());
+    closeTo(8800, estimator.totalFuelMm3());
+    closeTo(110, estimator.totalDistanceM());
+    TEST_ASSERT_FALSE(estimator.averageValid());
 }
 
 void test_implausible_counter_jump_rebases_without_fabricating_volume() {
@@ -312,7 +318,9 @@ void test_tick_budget_rejects_excessive_sustained_rate() {
     closeTo(41 * 80, estimator.totalFuelMm3());
     estimator.onSpeed(36, 200);
     estimator.onCounter(82, 200); // A further 41 cannot fit the 400 ticks/s rate.
-    closeTo(0, estimator.totalFuelMm3());
+    closeTo(41 * 80, estimator.totalFuelMm3());
+    closeTo(1, estimator.totalDistanceM());
+    TEST_ASSERT_FALSE(estimator.tripComplete());
     TEST_ASSERT_FALSE(estimator.instantaneousValid());
 }
 
@@ -344,7 +352,7 @@ void test_speed_changes_integrate_previous_speed_over_matching_counter_interval(
     closeTo(80, estimator.totalFuelMm3());
 }
 
-void test_reconfigure_resets_old_calibration_and_session() {
+void test_changed_calibration_preserves_totals_and_invalidates_boot_average() {
     FuelConsumptionEstimator estimator;
     estimator.configure(enabledConfig());
     start(estimator, 36);
@@ -354,12 +362,166 @@ void test_reconfigure_resets_old_calibration_and_session() {
     estimator.configure(config);
     TEST_ASSERT_FALSE(estimator.instantaneousValid());
     TEST_ASSERT_FALSE(estimator.averageValid());
-    closeTo(0, estimator.totalFuelMm3());
+    TEST_ASSERT_TRUE(estimator.hasStarted());
+    TEST_ASSERT_FALSE(estimator.tripComplete());
+    closeTo(8000, estimator.totalFuelMm3());
+    closeTo(100, estimator.totalDistanceM());
     start(estimator, 36, 0, 20000);
     drive(estimator, 36, 20000, 100);
     TEST_ASSERT_EQUAL_UINT16(104, estimator.instantaneous());
+    TEST_ASSERT_FALSE(estimator.averageValid());
+    closeTo(18370, estimator.totalFuelMm3());
+    closeTo(200, estimator.totalDistanceM());
+}
+
+void test_identical_reload_preserves_window_baseline_and_boot_totals() {
+    FuelConsumptionEstimator estimator;
+    estimator.configure(enabledConfig());
+    start(estimator, 36, 250);
+    drive(estimator, 36, 0, 5, 250);
+    estimator.onSpeed(72, 550); // 0.5 m pending, not yet matched with fuel.
+    TEST_ASSERT_TRUE(estimator.configure(enabledConfig()));
+    TEST_ASSERT_TRUE(estimator.hasStarted());
+    TEST_ASSERT_TRUE(estimator.tripComplete());
+    closeTo(5, estimator.totalDistanceM());
+    closeTo(400, estimator.totalFuelMm3());
+    estimator.onCounter(0, 600); // 255 -> 0 must retain its old baseline.
+    closeTo(6.5, estimator.totalDistanceM());
+    closeTo(480, estimator.totalFuelMm3());
+    drive(estimator, 72, 600, 4);
+    // The original 1 s window survives reload, including its first 500 ms.
+    TEST_ASSERT_TRUE(estimator.instantaneousValid());
+    closeTo(14.5, estimator.totalDistanceM());
+    closeTo(800, estimator.totalFuelMm3());
+    TEST_ASSERT_EQUAL_UINT16(55, estimator.instantaneous());
+}
+
+void test_multiple_reload_cycles_keep_one_weighted_boot_average_with_idle_fuel() {
+    FuelConsumptionEstimator estimator;
+    estimator.configure(enabledConfig());
+    start(estimator, 0);
+    drive(estimator, 0, 0, 20); // Idle fuel before any distance.
+    TEST_ASSERT_TRUE(estimator.configure(enabledConfig()));
+    estimator.onSpeed(36, 2000);
+    drive(estimator, 36, 2000, 100, 20);
+    TEST_ASSERT_EQUAL_UINT16(96, estimator.average());
+    TEST_ASSERT_TRUE(estimator.configure(enabledConfig()));
+    estimator.onSpeed(72, 12000);
+    drive(estimator, 72, 12000, 100, 120);
+    closeTo(17600, estimator.totalFuelMm3());
+    closeTo(300, estimator.totalDistanceM());
+    // Ratio of trip totals, not mean of 9.6 and 4.0 L/100km.
+    TEST_ASSERT_EQUAL_UINT16(59, estimator.average());
+    TEST_ASSERT_EQUAL_UINT16(40, estimator.instantaneous());
+    TEST_ASSERT_TRUE(estimator.averageValid());
+    TEST_ASSERT_TRUE(estimator.tripComplete());
+}
+
+void test_recovered_instantaneous_cannot_restore_missing_boot_average() {
+    FuelConsumptionEstimator estimator;
+    estimator.configure(enabledConfig());
+    start(estimator, 36);
+    drive(estimator, 36, 0, 100);
+    estimator.tick(10501);
+    estimator.configure(enabledConfig()); // Reload cannot erase the gap.
+    start(estimator, 36, 150, 20000);
+    drive(estimator, 36, 20000, 100, 150);
+    closeTo(16000, estimator.totalFuelMm3());
+    closeTo(200, estimator.totalDistanceM());
+    TEST_ASSERT_TRUE(estimator.instantaneousValid());
+    TEST_ASSERT_EQUAL_UINT16(80, estimator.instantaneous());
+    TEST_ASSERT_FALSE(estimator.averageValid());
+    TEST_ASSERT_FALSE(estimator.tripComplete());
+
+    FuelConsumptionEstimator nextBoot;
+    TEST_ASSERT_FALSE(nextBoot.hasStarted());
+    TEST_ASSERT_TRUE(nextBoot.tripComplete());
+    closeTo(0, nextBoot.totalFuelMm3());
+    closeTo(0, nextBoot.totalDistanceM());
+    nextBoot.configure(enabledConfig());
+    start(nextBoot, 36, 200);
+    drive(nextBoot, 36, 0, 100, 200);
+    TEST_ASSERT_TRUE(nextBoot.averageValid());
+    TEST_ASSERT_EQUAL_UINT16(80, nextBoot.average());
+}
+
+void test_source_or_mock_interruption_drops_only_unpaired_interval() {
+    FuelConsumptionEstimator estimator;
+    estimator.configure(enabledConfig());
+    estimator.markDiscontinuity(); // No data yet: no measured trip to lose.
+    TEST_ASSERT_FALSE(estimator.hasStarted());
+    TEST_ASSERT_TRUE(estimator.tripComplete());
+    start(estimator, 36);
+    drive(estimator, 36, 0, 100);
+    estimator.onSpeed(72, 10050); // Unpaired distance must not cross modes.
+    estimator.markDiscontinuity();
+    closeTo(8000, estimator.totalFuelMm3());
+    closeTo(100, estimator.totalDistanceM());
+    TEST_ASSERT_FALSE(estimator.instantaneousValid());
+    TEST_ASSERT_FALSE(estimator.averageValid());
+    TEST_ASSERT_FALSE(estimator.tripComplete());
+    start(estimator, 36, 170, 11000);
+    drive(estimator, 36, 11000, 10, 170);
+    closeTo(8800, estimator.totalFuelMm3());
+    closeTo(110, estimator.totalDistanceM());
+    TEST_ASSERT_EQUAL_UINT16(80, estimator.instantaneous());
+    TEST_ASSERT_TRUE(estimator.instantaneousValid());
+    TEST_ASSERT_FALSE(estimator.averageValid());
+}
+
+void test_calibration_changes_before_first_sample_do_not_poison_boot_average() {
+    FuelConsumptionEstimator estimator;
+    estimator.configure(enabledConfig());
+    auto config = enabledConfig();
+    config.mm3PerTick = 103.7;
+    estimator.configure(config);
+    TEST_ASSERT_FALSE(estimator.hasStarted());
+    TEST_ASSERT_TRUE(estimator.tripComplete());
+    start(estimator, 36);
+    drive(estimator, 36, 0, 100);
+    TEST_ASSERT_TRUE(estimator.averageValid());
     TEST_ASSERT_EQUAL_UINT16(104, estimator.average());
-    closeTo(10370, estimator.totalFuelMm3());
+}
+
+void test_disable_and_reenable_cannot_silently_create_a_new_boot_trip() {
+    FuelConsumptionEstimator estimator;
+    estimator.configure(enabledConfig());
+    start(estimator, 36);
+    drive(estimator, 36, 0, 100);
+    auto disabled = enabledConfig();
+    disabled.enabled = false;
+    estimator.configure(disabled);
+    start(estimator, 72, 150, 12000);
+    drive(estimator, 72, 12000, 100, 150);
+    closeTo(8000, estimator.totalFuelMm3());
+    closeTo(100, estimator.totalDistanceM());
+    TEST_ASSERT_FALSE(estimator.averageValid());
+    TEST_ASSERT_FALSE(estimator.tripComplete());
+    estimator.configure(enabledConfig());
+    start(estimator, 36, 20, 25000);
+    drive(estimator, 36, 25000, 100, 20);
+    closeTo(16000, estimator.totalFuelMm3());
+    closeTo(200, estimator.totalDistanceM());
+    TEST_ASSERT_TRUE(estimator.instantaneousValid());
+    TEST_ASSERT_FALSE(estimator.averageValid());
+}
+
+void test_counter_reset_preserves_history_and_permanently_marks_boot_incomplete() {
+    FuelConsumptionEstimator estimator;
+    estimator.configure(enabledConfig());
+    start(estimator, 36);
+    drive(estimator, 36, 0, 100);
+    estimator.onSpeed(36, 10100);
+    estimator.onCounter(90, 10100); // 246 modulo ticks: apparent ECU reset.
+    closeTo(8000, estimator.totalFuelMm3());
+    closeTo(100, estimator.totalDistanceM());
+    TEST_ASSERT_FALSE(estimator.tripComplete());
+    start(estimator, 36, 91, 10200);
+    drive(estimator, 36, 10200, 100, 91);
+    closeTo(16000, estimator.totalFuelMm3());
+    closeTo(200, estimator.totalDistanceM());
+    TEST_ASSERT_TRUE(estimator.instantaneousValid());
+    TEST_ASSERT_FALSE(estimator.averageValid());
 }
 
 void test_saturation_reserves_ffff_and_does_not_wrap_output() {
@@ -383,12 +545,15 @@ void test_invalid_speed_and_numeric_overflow_invalidate_instead_of_publishing_na
     drive(estimator, 36, 0, 10);
     estimator.onSpeed(std::numeric_limits<double>::quiet_NaN(), 1100);
     TEST_ASSERT_FALSE(estimator.instantaneousValid());
-    closeTo(0, estimator.totalDistanceM());
+    closeTo(10, estimator.totalDistanceM());
+    closeTo(800, estimator.totalFuelMm3());
+    TEST_ASSERT_FALSE(estimator.tripComplete());
     start(estimator, 36, 0, 2000);
     estimator.onSpeed(-1, 2100);
     TEST_ASSERT_FALSE(estimator.instantaneousValid());
     auto config = enabledConfig();
     config.mm3PerTick = std::numeric_limits<double>::max();
+    estimator = FuelConsumptionEstimator(); // Independent overflow scenario.
     estimator.configure(config);
     start(estimator, 36);
     estimator.onSpeed(36, 100);
@@ -411,7 +576,7 @@ int main(int, char**) {
     RUN_TEST(test_starting_stationary_never_divides_by_zero_or_discards_idle_fuel);
     RUN_TEST(test_fuel_cut_while_moving_is_a_valid_zero);
     RUN_TEST(test_below_display_speed_keeps_consumed_volume);
-    RUN_TEST(test_tick_invalidates_fuel_and_distance_when_entire_bus_falls_silent);
+    RUN_TEST(test_bus_silence_preserves_totals_but_invalidates_complete_boot_average);
     RUN_TEST(test_speed_loss_cannot_mix_partial_fuel_with_stale_distance);
     RUN_TEST(test_counter_loss_cannot_keep_distance_from_a_previous_session);
     RUN_TEST(test_implausible_counter_jump_rebases_without_fabricating_volume);
@@ -419,7 +584,14 @@ int main(int, char**) {
     RUN_TEST(test_tick_budget_rejects_excessive_sustained_rate);
     RUN_TEST(test_millisecond_wrap_preserves_elapsed_time_and_timeout);
     RUN_TEST(test_speed_changes_integrate_previous_speed_over_matching_counter_interval);
-    RUN_TEST(test_reconfigure_resets_old_calibration_and_session);
+    RUN_TEST(test_changed_calibration_preserves_totals_and_invalidates_boot_average);
+    RUN_TEST(test_identical_reload_preserves_window_baseline_and_boot_totals);
+    RUN_TEST(test_multiple_reload_cycles_keep_one_weighted_boot_average_with_idle_fuel);
+    RUN_TEST(test_recovered_instantaneous_cannot_restore_missing_boot_average);
+    RUN_TEST(test_source_or_mock_interruption_drops_only_unpaired_interval);
+    RUN_TEST(test_calibration_changes_before_first_sample_do_not_poison_boot_average);
+    RUN_TEST(test_disable_and_reenable_cannot_silently_create_a_new_boot_trip);
+    RUN_TEST(test_counter_reset_preserves_history_and_permanently_marks_boot_incomplete);
     RUN_TEST(test_saturation_reserves_ffff_and_does_not_wrap_output);
     RUN_TEST(test_invalid_speed_and_numeric_overflow_invalidate_instead_of_publishing_nan);
     return UNITY_END();

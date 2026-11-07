@@ -19,6 +19,7 @@
 #include "RadioSend.h"
 
 extern void setup();
+extern void resetObdForNewBoot();
 extern void loop();
 extern CanConfigProcessor canProcessor;
 extern ObdCalibration obdCalibration;
@@ -111,6 +112,7 @@ void setUp() {
     testProcessCommand("OTA ABORT");
     testProcessCommand("LOG OFF");
     Serial.reset();
+    resetObdForNewBoot();
     canProcessor = CanConfigProcessor{};
     FakeNvs::reset();
     configInit();
@@ -233,18 +235,36 @@ void test_obd_reference_sys_data_and_partial_command_keep_complete_lines() {
     loop();
     StreamingSimulation::advance(499);
     loop();
+    TEST_ASSERT_EQUAL_HEX8(0x10, ESP32Can.transmitted.back().data[1]);
+    TEST_ASSERT_EQUAL_HEX8(0xC0, ESP32Can.transmitted.back().data[2]);
+    StreamingSimulation::advance(1);
+    TEST_ASSERT_TRUE(ESP32Can.enqueue(frame(0x7E8, {2, 0x50, 0xC0, 0, 0, 0, 0, 0})));
+    TEST_ASSERT_TRUE(ESP32Can.enqueue(frame(0x182, {0x11, 0x22})));
+    loop();
+    TEST_ASSERT_EQUAL_UINT32(1, countPrefix(Serial.captured, "ODB SESSION_RX "));
+    TEST_ASSERT_TRUE(hasLine(Serial.captured, "ODB RAW_RX 0x7E8 [8]: 02 50 C0 00 00 00 00 00 | t_ms=2501 ext=0 rtr=0"));
+    TEST_ASSERT_TRUE(hasLine(Serial.captured, "RX 0x182 [2]: 11 22 | t_ms=2501 ext=0 rtr=0"));
+    StreamingSimulation::advance(499);
+    loop();
     TEST_ASSERT_EQUAL_HEX8(0x22, ESP32Can.transmitted.back().data[1]);
-    TEST_ASSERT_EQUAL_HEX8(0x11, ESP32Can.transmitted.back().data[2]);
+    TEST_ASSERT_EQUAL_HEX8(0x01, ESP32Can.transmitted.back().data[3]);
+    StreamingSimulation::advance(1);
+    TEST_ASSERT_TRUE(ESP32Can.enqueue(frame(0x7E8, {4, 0x62, 0x11, 0x01, 0x64, 0, 0, 0})));
+    loop();
+    TEST_ASSERT_EQUAL_UINT32(1, countPrefix(Serial.captured, "ODB PROBE_RX "));
+    StreamingSimulation::advance(499);
+    loop();
     TEST_ASSERT_EQUAL_HEX8(0x1F, ESP32Can.transmitted.back().data[3]);
     StreamingSimulation::advance(1);
     TEST_ASSERT_TRUE(ESP32Can.enqueue(frame(0x7E8, {4, 0x62, 0x11, 0x1F, 0x64, 0, 0, 0})));
-    TEST_ASSERT_TRUE(ESP32Can.enqueue(frame(0x182, {0x11, 0x22})));
     loop();
-    TEST_ASSERT_EQUAL_UINT16(159, engineRPM);
-    TEST_ASSERT_EQUAL_UINT32(1, countPrefix(Serial.captured, "ODB PROBE_RX "));
     TEST_ASSERT_TRUE(Serial.captured.find("name=nissan_oil_temperature_candidate raw=0x64 value=50.000 unit=degC") != std::string::npos);
-    TEST_ASSERT_TRUE(hasLine(Serial.captured, "ODB RAW_RX 0x7E8 [8]: 04 62 11 1F 64 00 00 00 | t_ms=2501 ext=0 rtr=0"));
-    TEST_ASSERT_TRUE(hasLine(Serial.captured, "RX 0x182 [2]: 11 22 | t_ms=2501 ext=0 rtr=0"));
+    StreamingSimulation::advance(499);
+    loop();
+    TEST_ASSERT_EQUAL_HEX8(0x81, ESP32Can.transmitted.back().data[2]);
+    StreamingSimulation::advance(1);
+    TEST_ASSERT_TRUE(ESP32Can.enqueue(frame(0x7E8, {2, 0x50, 0x81, 0, 0, 0, 0, 0})));
+    loop();
     StreamingSimulation::advance(499);
     loop();
     TEST_ASSERT_EQUAL_HEX8(0x0C, ESP32Can.transmitted.back().data[2]);
@@ -252,16 +272,16 @@ void test_obd_reference_sys_data_and_partial_command_keep_complete_lines() {
     TEST_ASSERT_TRUE(ESP32Can.enqueue(frame(0x7E8, {0x04, 0x41, 0x0C, 0x0A, 0x0C, 0x00, 0x00, 0x00})));
     loop();
     TEST_ASSERT_EQUAL_UINT16(159, engineRPM);  // 643 rpm OBD reference is kept separate.
-    const std::regex reference("^ODB RX t_ms=3001 seq=[0-9]+ request_id=0x7E0 ecu=0x7E8 pid=0x0C name=rpm value=643\\.000 unit=rpm latency_ms=1$");
+    const std::regex reference("^ODB RX t_ms=4501 seq=[0-9]+ request_id=0x7E0 ecu=0x7E8 pid=0x0C name=rpm value=643\\.000 unit=rpm latency_ms=1$");
     bool matched = false;
     for (const auto& line : lines(Serial.captured)) matched |= std::regex_match(line, reference);
     TEST_ASSERT_TRUE(matched);
-    TEST_ASSERT_TRUE(hasLine(Serial.captured, "ODB RAW_RX 0x7E8 [8]: 04 41 0C 0A 0C 00 00 00 | t_ms=3001 ext=0 rtr=0"));
+    TEST_ASSERT_TRUE(hasLine(Serial.captured, "ODB RAW_RX 0x7E8 [8]: 04 41 0C 0A 0C 00 00 00 | t_ms=4501 ext=0 rtr=0"));
     Serial.clearOutput();
     Serial.inject("SYS DA");
     TEST_ASSERT_TRUE(ESP32Can.enqueue(frame(0x182, {0x11, 0x22})));
     loop();
-    TEST_ASSERT_TRUE(hasLine(Serial.captured, "RX 0x182 [2]: 11 22 | t_ms=3001 ext=0 rtr=0"));
+    TEST_ASSERT_TRUE(hasLine(Serial.captured, "RX 0x182 [2]: 11 22 | t_ms=4501 ext=0 rtr=0"));
     TEST_ASSERT_TRUE(Serial.captured.find("SYS DA") == std::string::npos);
     Serial.inject("TA\n");
     loop();
@@ -348,11 +368,7 @@ void test_juke_raw_fuel_without_fresh_speed_keeps_logs_and_clears_radio_average(
     StreamingSimulation::advance(6000);
     loop();
     TEST_ASSERT_EQUAL_UINT32(0, radioCommandCount(0x22));
-    TEST_ASSERT_EQUAL_UINT32(1, radioCommandCount(0x23));
-    const auto average = lastRadioPayload(0x23);
-    TEST_ASSERT_EQUAL_UINT32(13, average.size());
-    TEST_ASSERT_EQUAL_HEX8(0x02, average[0]);
-    for (size_t i = 1; i < average.size(); ++i) TEST_ASSERT_EQUAL_HEX8(0xFF, average[i]);
+    TEST_ASSERT_EQUAL_UINT32(0, radioCommandCount(0x23));
     TEST_ASSERT_GREATER_THAN_UINT32(0, radioCommandCount(0x7D));
     assertRawLinesComplete(Serial.captured);
 }
@@ -693,7 +709,7 @@ void test_mock_consumption_is_available_and_profile_reload_clears_it() {
     StreamingSimulation::advance(6000);
     processRadioUpdates();
     TEST_ASSERT_EQUAL_UINT32(0, radioCommandCount(0x22));
-    TEST_ASSERT_EQUAL_UINT32(1, radioCommandCount(0x23));
+    TEST_ASSERT_EQUAL_UINT32(0, radioCommandCount(0x23));
 }
 
 void test_fuel_conversion_reaches_radio_without_changing_raw_or_obd_streams() {
@@ -703,7 +719,7 @@ void test_fuel_conversion_reaches_radio_without_changing_raw_or_obd_streams() {
     // 36.50 km/h, ten 80 mm3 increments/s, across a modulo-256 wrap.
     for (unsigned i = 0; i <= 150; ++i) {
         if (i) StreamingSimulation::advance(100);
-        TEST_ASSERT_TRUE(ESP32Can.enqueue(frame(0x284, {0, 0, 0, 0, 0x0E, 0x42, 0, 0})));
+        TEST_ASSERT_TRUE(ESP32Can.enqueue(frame(0x280, {0, 0, 0, 0, 0x0E, 0x42, 0, 0})));
         TEST_ASSERT_TRUE(ESP32Can.enqueue(frame(0x551, {0x67, static_cast<uint8_t>(250 + i), 0, 0x80, 0xFF, 2, 0x80, 0xFF})));
         loop();
     }
@@ -733,9 +749,65 @@ void test_fuel_conversion_reaches_radio_without_changing_raw_or_obd_streams() {
     TEST_ASSERT_FALSE(canAuxData.fuelConsumptionInstValid);
     TEST_ASSERT_FALSE(canAuxData.fuelConsumptionAvgValid);
     TEST_ASSERT_EQUAL_UINT32(0, radioCommandCount(0x22));
-    const auto staleAverage = lastRadioPayload(0x23);
-    TEST_ASSERT_EQUAL_UINT32(13, staleAverage.size());
-    for (size_t i = 1; i < staleAverage.size(); ++i) TEST_ASSERT_EQUAL_HEX8(0xFF, staleAverage[i]);
+    TEST_ASSERT_EQUAL_UINT32(0, radioCommandCount(0x23));
+}
+
+void test_f15_temperature_range_speed_and_boot_trip_reach_real_uart() {
+    // Normalize the production scheduler's persistent timers independently of
+    // earlier tests, before the first speed sample starts the virtual trip.
+    StreamingSimulation::advance(10000); loop(); RadioSerial.clear();
+    for (unsigned i = 0; i <= 200; ++i) {
+        if (i) StreamingSimulation::advance(100);
+        TEST_ASSERT_TRUE(ESP32Can.enqueue(frame(0x280, {0, 0, 0, 0, 0x0E, 0x10, 0, 0})));
+        TEST_ASSERT_TRUE(ESP32Can.enqueue(frame(0x551, {125, static_cast<uint8_t>(i), 0, 0, 0, 0, 0, 0})));
+        TEST_ASSERT_TRUE(ESP32Can.enqueue(frame(0x580, {0, 0, 0, 0, 135, 0, 0, 0})));
+        TEST_ASSERT_TRUE(ESP32Can.enqueue(frame(0x2DE, {0, 0, 0, 0, 0, 0, 0x05, 0xFD})));
+        TEST_ASSERT_TRUE(ESP32Can.enqueue(frame(0x5C5, {0, 0x03, 0xC6, 0xCA})));
+        loop();
+    }
+    TEST_ASSERT_TRUE(canAuxData.duduReceiver);
+    TEST_ASSERT_TRUE(canAuxData.bootTripValid);
+    TEST_ASSERT_EQUAL_UINT32(2, canAuxData.bootTripDistanceDeciKm);
+    TEST_ASSERT_EQUAL_UINT32(32, elapsedTime);
+    TEST_ASSERT_EQUAL_UINT16(225, averageSpeed); //200m /32s, including time before first speed.
+    TEST_ASSERT_EQUAL_UINT16(3600, canAuxData.speedCentiKmh);
+    bool temperature = false, speed = false, odometer = false;
+    for (size_t at = 0; at < RadioSerial.captured.size();) {
+        const uint8_t command = RadioSerial.captured[at+1];
+        const size_t length = RadioSerial.captured[at+2];
+        const auto* data = RadioSerial.captured.data()+at+3;
+        if (command == 0x7D && data[0] == 0x09) {
+            TEST_ASSERT_EQUAL_UINT32(4, length);
+            const uint8_t expected[] = {9,125,125,135};
+            TEST_ASSERT_EQUAL_HEX8_ARRAY(expected,data,4);
+            temperature = true;
+        } else if (command == 0x7D && data[0] == 0x03) {
+            TEST_ASSERT_EQUAL_UINT32(6, length);
+            TEST_ASSERT_EQUAL_UINT16(3600,data[1]+uint16_t(data[2])*256);
+            TEST_ASSERT_EQUAL_UINT8(0,data[5]);
+            speed = true;
+        } else if (command == 0x7D && data[0] == 0x04) {
+            TEST_ASSERT_EQUAL_UINT32(12,length);
+            TEST_ASSERT_EQUAL_UINT32(247498,data[1]+uint32_t(data[2])*256+uint32_t(data[3])*65536);
+            TEST_ASSERT_EQUAL_HEX8_ARRAY(data+6,data+9,3);
+            odometer = true;
+        }
+        // No unvalidated climate source or fake handbrake/seatbelt packet.
+        TEST_ASSERT_NOT_EQUAL(0x28,command);
+        if (command == 0x7D) TEST_ASSERT_NOT_EQUAL(6,data[0]);
+        at += length+4;
+    }
+    TEST_ASSERT_TRUE(temperature); TEST_ASSERT_TRUE(speed); TEST_ASSERT_TRUE(odometer);
+    const auto range = lastRadioPayload(0x21);
+    const uint8_t expectedRange[] = {0,225,0,0,0,153,2}; //22.5km/h at32s,0min,153km.
+    TEST_ASSERT_EQUAL_UINT32(7,range.size());
+    TEST_ASSERT_EQUAL_HEX8_ARRAY(expectedRange,range.data(),7);
+    Serial.clearOutput();
+    Serial.inject("SYS DATA\n"); loop(); flushConsole();
+    TEST_ASSERT_TRUE(hasLine(Serial.captured,"Oil: 95 C"));
+    TEST_ASSERT_TRUE(hasLine(Serial.captured,"OilValid: 1"));
+    TEST_ASSERT_TRUE(hasLine(Serial.captured,"OilEstimated: 1"));
+    TEST_ASSERT_TRUE(hasLine(Serial.captured,"TempValid: 0"));
 }
 
 void test_fuel_configuration_flags_survive_can_commands_and_clear_in_mock() {
@@ -1194,6 +1266,7 @@ int main() {
     RUN_TEST(test_f15_steering_reaches_rav4_with_profile_calibration);
     RUN_TEST(test_mock_consumption_is_available_and_profile_reload_clears_it);
     RUN_TEST(test_fuel_conversion_reaches_radio_without_changing_raw_or_obd_streams);
+    RUN_TEST(test_f15_temperature_range_speed_and_boot_trip_reach_real_uart);
     RUN_TEST(test_fuel_configuration_flags_survive_can_commands_and_clear_in_mock);
     RUN_TEST(test_sys_data_indicators_match_left_right_and_hazard_can_frames);
     RUN_TEST(test_sys_data_indicators_expire_at_configured_timeout_without_new_can);

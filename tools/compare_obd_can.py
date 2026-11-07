@@ -70,6 +70,8 @@ class Candidate:
         raw &= (1 << bits) - 1
         if raw & (1 << (bits - 1)):
             raw -= 1 << bits
+        if raw in field.get("invalidRawValues", []):
+            raise ValueError("preset marks this raw value unavailable")
         params = field.get("params", [])
         formula = field.get("formula", "NONE")
         if formula == "SCALE":
@@ -83,11 +85,20 @@ class Candidate:
             value = raw
         # Match production GlobalData assignment for the comparable numeric fields.
         if self.target == "ENGINE_RPM":
-            value &= 0xFFFF
-        elif self.target in {"VEHICLE_SPEED", "FUEL_LEVEL"}:
+            if not 0 <= value < 15000:
+                raise ValueError("RPM outside production bounds")
+        elif self.target == "VEHICLE_SPEED":
+            if not 0 <= value < 300:
+                raise ValueError("speed outside production bounds")
+            value = min(value, 255)
+        elif self.target == "FUEL_LEVEL":
             value &= 0xFF
-        elif self.target in {"COOLANT_TEMP", "TEMPERATURE"}:
-            value = (value + 128) % 256 - 128
+        elif self.target in {"COOLANT_TEMP", "OIL_TEMP"}:
+            if not -40 <= value <= 215:
+                raise ValueError("temperature outside production bounds")
+        elif self.target == "TEMPERATURE":
+            if not -40 <= value <= 87:
+                raise ValueError("outside temperature outside production bounds")
         elif self.target == "VOLTAGE":
             return value * 0.1
         return float(value)
@@ -199,7 +210,7 @@ def alternatives() -> list[Candidate]:
 
 TARGETS = {
     "ENGINE_RPM": (0x0C, "rpm"), "VEHICLE_SPEED": (0x0D, "km/h"),
-    "COOLANT_TEMP": (0x05, "C"), "VOLTAGE": (0x42, "V"),
+    "COOLANT_TEMP": (0x05, "C"), "OIL_TEMP": (0x5C, "C"), "VOLTAGE": (0x42, "V"),
     "TEMPERATURE": (0x46, "C"), "FUEL_LEVEL": (0x2F, "L"),
 }
 

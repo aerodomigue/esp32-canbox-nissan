@@ -1146,6 +1146,22 @@ static void handleSysCommand(const char* args) {
         Console.printf("FuelConsValid: INST=%d AVG=%d\n",
             canAuxData.fuelConsumptionInstValid, canAuxData.fuelConsumptionAvgValid);
         Console.printf("FuelConsEstimated: %d\n", canAuxData.fuelConsumptionEstimated);
+        const uint32_t observedAt = millis();
+        const auto fresh = [observedAt](bool valid, uint32_t at) {
+            return valid && uint32_t(observedAt - at) < CanAuxData::SOURCE_TIMEOUT_MS;
+        };
+        Console.printf("TempValid: %d\n", fresh(canAuxData.outsideValid, canAuxData.outsideReceivedAt));
+        Console.printf("Coolant: %d C\n", coolantTemp);
+        Console.printf("CoolantValid: %d\n", fresh(canAuxData.coolantValid, canAuxData.coolantReceivedAt));
+        Console.printf("Oil: %d C\n", canAuxData.oilTemperatureC);
+        Console.printf("OilValid: %d\n", fresh(canAuxData.oilValid, canAuxData.oilReceivedAt));
+        Console.printf("OilEstimated: %d\n", canAuxData.oilEstimated);
+        Console.printf("DTEValid: %d\n", fresh(canAuxData.dteValid, canAuxData.dteReceivedAt));
+        Console.printf("BootTripValid: %d\n", canAuxData.bootTripValid);
+        Console.printf("BootTripDistance: %lu 0.1km\n", static_cast<unsigned long>(canAuxData.bootTripDistanceDeciKm));
+        Console.printf("BootTripElapsed: %lu s\n", static_cast<unsigned long>(elapsedTime));
+        Console.printf("BootTripAverageSpeed: %u 0.1km/h\n", averageSpeed);
+        Console.printf("FuelBootTripComplete: %d\n", canAuxData.fuelBootTripComplete);
         if (canAuxData.handbrakeValid) Console.printf("Handbrake: %d\n", canAuxData.handbrake);
         else Console.println("Handbrake: unknown");
         if (canAuxData.brakePedalValid) Console.printf("Brake: %d\n", canAuxData.brakePedal);

@@ -11,3 +11,8 @@
 #include "../../src/MockDataGenerator.cpp"
 #include "../../src/RadioSend.cpp"
 #include "../../src/UsbConsole.cpp"
+
+// A new simulated boot resets scheduler history as well as public data.
+void resetObdForNewBoot() {
+    obdCalibration = ObdCalibration(sendObdReference, printObdReference);
+}

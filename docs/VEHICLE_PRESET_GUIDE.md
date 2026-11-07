@@ -16,6 +16,7 @@ A vehicle preset is a JSON file that tells the ESP32 how to decode CAN frames fr
 {
   "name": "Make Model Year",
   "isMock": false,
+  "radioReceiver": "FYT",
   "vehicleParams": {
     "steerScale": 300,
     "steerOffset": 100,
@@ -36,7 +37,9 @@ A vehicle preset is a JSON file that tells the ESP32 how to decode CAN frames fr
           "byteOrder": "BE",
           "dataType": "UINT16",
           "formula": "SCALE",
-          "params": [1, 8, 0]
+          "params": [1, 8, 0],
+          "invalidRawValues": [65535],
+          "estimated": false
         }
       ]
     }
@@ -54,6 +57,7 @@ A vehicle preset is a JSON file that tells the ESP32 how to decode CAN frames fr
 |-------|------|-------------|
 | `name` | string | Vehicle name (displayed in logs) |
 | `isMock` | boolean | `true` = simulate data, `false` = read real CAN |
+| `radioReceiver` | string (optional) | `"FYT"` (default) or `"DUDU"`; selects receiver-specific unavailable-value handling, not the vehicle CAN mapping |
 | `vehicleParams` | object (optional) | Calibration overrides for this model — see [Vehicle Parameters](#vehicle-parameters-vehicleparams) |
 | `fuelConsumption` | object (optional) | Derive radio consumption from a raw counter and speed — see [Counter-based fuel consumption](#counter-based-fuel-consumption-fuelconsumption) |
 | `frames` | array | List of CAN frames to decode |
@@ -76,6 +80,23 @@ A vehicle preset is a JSON file that tells the ESP32 how to decode CAN frames fr
 | `dataType` | string | How to interpret bytes (see [Data Types](#data-types)) |
 | `formula` | string | Conversion formula (see [Formulas](#formulas)) |
 | `params` | array | Formula parameters |
+| `invalidRawValues` | array of int32 (optional) | Exact extracted raw values to reject before formula conversion; omitted/empty means no additional exclusion |
+| `estimated` | boolean (optional) | Mark a decoded source as provisional; defaults to `false`, does not validate or alter its conversion |
+
+### Invalid raw values and provisional sources
+
+`invalidRawValues` compares against the extracted integer after byte order and
+signedness have been interpreted, **before** applying `formula`. It is not a
+list of converted physical values and does not change raw CAN logs. For example,
+`[65535]` rejects `UINT16` raw `0xFFFF`; a signed `INT16` representation of the
+same bits is `-1`, so it must be listed as `[-1]` for that data type. Invalid
+measurements must not refresh a source or be published as real values.
+
+`estimated: true` explicitly preserves a source's provisional status. In the F15
+preset it applies to candidate `OIL_TEMP`, `0x580 B4−40`; coolant is independently
+corroborated. No universal raw oil invalid value is inferred from the coolant
+sentinel. See the [current F15/DUDU contract](F15_DUDU_BOOT_TRIP_MAPPING.md) for
+source confidence, freshness and receiver-specific output restrictions.
 
 ---
 
@@ -142,9 +163,9 @@ no valid file does not. LittleFS is never formatted automatically on mount failu
 These values are stored in NVS but are not currently used for post-processing
 in the CAN decoder or radio encoder. Set conversions in the formula `params`
 of individual frame fields (e.g., `"params": [1, 8, 0]` for Juke RPM and
-`[100, 338, 0]` for its provisional DTE mapping). The Juke preset explicitly
-stores `rpmDiv: 8` and `dteDiv: 338` to mirror those frame divisors, and
-`tankCap: 45` as a legacy compatibility placeholder. This is **not a claim
+`[1, 10, 0]` for `0x2DE B6..B7` DTE). The legacy `dteDiv` value does not
+select or calibrate this mapping. The preset retains `tankCap: 45` as a
+legacy compatibility placeholder. This is **not a claim
 about the car's tank capacity**, nor validation of the DTE formula. These
 three stored parameters do not change RPM, fuel level, consumption or range
 calculations; they must not be applied a second time to the decoded values.
@@ -176,7 +197,7 @@ The steering parameters (`steerScale`, `steerOffset`, `steerInvert`) have **no f
 
 The Juke preset adds this **root-level** object. It enables an experimental
 conversion of modulo-256 counter increments from `0x551 B1` into the
-Raise/Toyota RAV4 radio format. The **80 mm³/increment coefficient is
+Toyota RAV4 UART format used by the selected FYT/DUDU receiver. The **80 mm³/increment coefficient is
 provisional on the Juke MR16DDT**: it comes from a
 [Clio III calibration report](https://x0r.fr/blog/39#comment-396), not a
 Juke measurement. The archived VBOX REF retains its original factor 1;
@@ -209,9 +230,9 @@ not stored in NVS or exposed through `CFG SET`.
 | `source` | Documentary provenance of the coefficient; does not calibrate the signal |
 | `mm3PerTick` | Required finite, positive volume per modulo-256 increment; adjustable after calibration |
 | `windowMs` | Instantaneous consumption calculation window, 100–10000 ms; Juke: 1000 ms |
-| `maxGapMs` | Maximum gap in either source before invalidating and reinitialising the session, 100–1000 ms; Juke: 500 ms |
+| `maxGapMs` | Maximum gap in either source; beyond it, tracking rebases and the full-boot trip becomes incomplete, 100–1000 ms; Juke: 500 ms |
 | `minSpeedKmh` | Below this speed, publish instantaneous 0 with fresh sources; this display convention does not mean zero fuel flow |
-| `minAverageDistanceM` | Minimum session distance for average consumption, 100 m |
+| `minAverageDistanceM` | Minimum boot-trip distance before publishing average consumption; Juke: 100 m |
 | `maxTicksPerSecond` | Plausibility limit on counter progression, 400 increments/s |
 
 An enabled estimator requires exactly one `FUEL_COUNTER_RAW` field
@@ -223,26 +244,31 @@ to keep the plausibility budget below a full counter rollover.
 
 The firmware accumulates `(current - previous) modulo 256` and multiplies
 by `mm3PerTick`. It integrates speed to obtain distance using the fractional
-Juke value `U16BE(0x284 B4,B5)/100` before truncation for dashboard output.
+Juke value `U16BE(0x280 B4,B5)/100` before truncation for dashboard output.
 For nonzero distance, **radio units (0.1 L/100 km) = volume in mm³ / distance
 in metres**. Instantaneous consumption uses the configured window; average
-consumption uses the session since initialisation, including fuel consumed
-while stationary, once its distance threshold is reached.
+consumption covers this device boot, including fuel consumed while stationary,
+once its distance threshold is reached. It is not the Nissan historical average.
 
-Profile reload, reboot, a source gap beyond `maxGapMs`, or an implausible
-increment resets the session. A counter reset that resembles an ordinary
-rollover cannot always be detected. This is not the factory trip average
-and it does not survive a restart. The short parking capture does not
-calibrate the coefficient or establish long-trip accuracy.
+An identical estimator/source reload preserves the counter baseline, window and
+totals. `LOG ON`/`LOG OFF` do not reset them. A source gap beyond `maxGapMs`, invalid
+input, an implausible increment or a changed calibration/source after tracking
+starts preserves acquired totals but permanently marks the boot trip incomplete.
+Instantaneous output can recover; the full-boot average remains unavailable until
+a new boot instead of silently starting a shorter trip. No trip state is saved
+in NVS. A counter reset resembling a normal rollover cannot always be detected.
+The long-trip replay supports dynamic behaviour and distance, but does not
+independently calibrate the provisional fuel-volume coefficient.
 
 `SYS DATA` reports availability through `FuelConsValid` and the provisional
 coefficient through `FuelConsEstimated: 1`. Availability is not a calibration
 claim. The radio receives unit `0x02` and unsigned big-endian values:
-`0x22` has a 3-byte payload; `0x23` has a 13-byte payload with the current
-average and five unavailable history slots (`0xFFFF`). An unavailable
-average is also `0xFFFF`. Stale instantaneous values are not transmitted
-because no invalid marker is documented for `0x22`; an existing radio
-display may therefore retain its previous reading. See
+`0x22` has a 3-byte payload; `0x23` has a 13-byte payload with the boot
+average and five unavailable history slots (`0xFFFF`). An unavailable current
+instantaneous or average value is **not transmitted**: the audited receivers
+do not share a safe clearing sentinel. In particular DUDU would display an
+instantaneous `0xFFFF` as 6553.5. A withheld field may leave its previous value
+visible on the radio. See
 [radio protocol](technical/RADIO_SEND.md) for packet details.
 The radio format has no calibration flag; `FuelConsEstimated` is available
 only in `SYS DATA`.
@@ -269,6 +295,7 @@ Variables that can be updated from CAN data:
 | `VOLTAGE` | Battery voltage | 0.1V |
 | `TEMPERATURE` | Temperature | °C |
 | `COOLANT_TEMP` | Engine coolant temperature | °C |
+| `OIL_TEMP` | Engine oil temperature; F15 candidate remains provisional | °C |
 | `DTE` | Distance to empty | km |
 | `FUEL_CONS_INST` | Instant consumption | 0.1 L/100km |
 | `FUEL_CONS_AVG` | Average consumption | 0.1 L/100km |
@@ -369,8 +396,8 @@ Linear conversion: `result = (value × mult ÷ div) + offset`
 // Temperature: raw - 40
 "params": [1, 1, -40]
 
-// Initial Juke DTE hypothesis: raw * 100 / 338
-"params": [100, 338, 0]
+// Current Juke DTE: U16BE at 0x2DE B6..B7 / 10 km
+"params": [1, 10, 0]
 ```
 
 ### MAP_RANGE
@@ -521,7 +548,10 @@ LOG ON
 Records all received CAN frames with unchanged bytes, DLC and flags, plus
 software `t_ms` timestamps. In real mode, it also starts supported OBD
 service 01 reference queries; diagnostic lines begin with `ODB`. Mock mode
-sends no OBD queries, and OTA pauses polling.
+sends no OBD queries, and OTA pauses polling. The exact real F15 profile also
+attempts the bounded manufacturer-session groups described in the
+[F15/DUDU contract](F15_DUDU_BOOT_TRIP_MAPPING.md#bounded-nissan-diagnostic-experiment).
+Their results remain references; they do not overwrite radio measurements.
 
 Save the complete output without time/color prefixes so the comparison tools
 can read both raw frames and references. Stop with `LOG OFF`. See

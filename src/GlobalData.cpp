@@ -81,8 +81,8 @@ uint16_t fuelConsumptionAvg = 0;
 /** Average speed in 0.1 km/h units - 0 = unknown */
 uint16_t averageSpeed = 0;
 
-/** Elapsed driving time in seconds - 0 = unknown */
-uint16_t elapsedTime = 0;
+/** Elapsed time since device boot in seconds - 0 = unknown */
+uint32_t elapsedTime = 0;
 
 // =============================================================================
 // UTILITY FUNCTIONS

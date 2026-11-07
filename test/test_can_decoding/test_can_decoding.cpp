@@ -61,6 +61,7 @@ static CanFrame makeFrame(uint32_t id, const uint8_t* bytes, uint8_t len) {
 
 void setUp() {
     mockReset();
+    proc = CanConfigProcessor();
     LittleFS.basePath = "data";  // use production config file
     resetGlobalData();
     TEST_ASSERT_TRUE(proc.loadFromJson("/NissanJukeF15.json"));
@@ -69,29 +70,23 @@ void setUp() {
 void tearDown() {}
 
 // =============================================================================
-// TEMPERATURE EXTERNAL — 0x540 byte0, raw-40
-// Validated: dashboard showed 28°C, raw=0x44=68, 68-40=28
+// Unvalidated exterior candidate is intentionally absent from the F15 preset.
 // =============================================================================
 
 void test_temp_ext_28c() {
-    uint8_t d[] = {0x44, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
-    CanFrame f = makeFrame(0x540, d, 8);
-    proc.processFrame(f);
-    TEST_ASSERT_EQUAL_INT8(28, tempExt);
+    uint8_t d[] = {0x44, 0x40, 0, 0, 0, 0, 0, 0};
+    TEST_ASSERT_FALSE(proc.processFrame(makeFrame(0x540, d, 8)));
+    TEST_ASSERT_FALSE(canAuxData.outsideValid);
 }
 
 void test_temp_ext_zero() {
-    uint8_t d[] = {0x28, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
-    CanFrame f = makeFrame(0x540, d, 8);
-    proc.processFrame(f);
-    TEST_ASSERT_EQUAL_INT8(0, tempExt);  // 0x28=40, 40-40=0
+    TEST_ASSERT_FALSE(canAuxData.outsideValid);  // A numeric zero is not evidence.
 }
 
 void test_temp_ext_negative() {
-    uint8_t d[] = {0x1E, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
-    CanFrame f = makeFrame(0x540, d, 8);
-    proc.processFrame(f);
-    TEST_ASSERT_EQUAL_INT8(-10, tempExt);  // 0x1E=30, 30-40=-10
+    uint8_t d[] = {0x1E, 0, 0, 0, 0, 0, 0, 0};
+    TEST_ASSERT_FALSE(proc.processFrame(makeFrame(0x540, d, 8)));
+    TEST_ASSERT_FALSE(canAuxData.outsideValid);
 }
 
 // =============================================================================
@@ -116,7 +111,7 @@ void test_coolant_operating_temp() {
 void test_coolant_complete_byte_range_and_reception_time() {
     TEST_ASSERT_FALSE(canAuxData.coolantValid);
     uint8_t data[8] = {};
-    for (unsigned raw = 0; raw <= 255; ++raw) {
+    for (unsigned raw = 0; raw < 255; ++raw) {
         data[0] = raw;
         TEST_ASSERT_TRUE(proc.processFrame(makeFrame(0x551, data, 8), 1000 + raw));
         TEST_ASSERT_EQUAL_INT16(int(raw) - 40, coolantTemp);
@@ -125,8 +120,8 @@ void test_coolant_complete_byte_range_and_reception_time() {
     }
     // An incomplete frame must not refresh a previous valid observation.
     TEST_ASSERT_FALSE(proc.processFrame(makeFrame(0x551, data, 0), 2000));
-    TEST_ASSERT_EQUAL_INT16(215, coolantTemp);
-    TEST_ASSERT_EQUAL_UINT32(1255, canAuxData.coolantReceivedAt);
+    TEST_ASSERT_EQUAL_INT16(214, coolantTemp);
+    TEST_ASSERT_EQUAL_UINT32(1254, canAuxData.coolantReceivedAt);
 }
 
 void test_coolant_profile_reload_clears_availability() {
@@ -139,43 +134,43 @@ void test_coolant_profile_reload_clears_availability() {
 }
 
 // =============================================================================
-// DISTANCE TO EMPTY — active 0x54C bytes 6-7 BE, raw*100/338
+// DISTANCE TO EMPTY — 0x2DE bytes 6-7 BE, raw/10
 // =============================================================================
 
-void test_dte_305km() {
-    // 1032*100/338 truncates to 305; other byte pairs deliberately disagree.
+void test_dte_103km() {
+    // 1032/10 truncates to 103; other byte pairs deliberately disagree.
     uint8_t d[] = {0x12, 0x34, 0x56, 0x78, 0x9A, 0xBC, 0x04, 0x08};
-    CanFrame f = makeFrame(0x54C, d, 8);
+    CanFrame f = makeFrame(0x2DE, d, 8);
     proc.processFrame(f);
-    TEST_ASSERT_EQUAL_INT16(305, dteValue);
+    TEST_ASSERT_EQUAL_INT16(103, dteValue);
 }
 
 void test_dte_zero() {
     uint8_t d[] = {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
-    CanFrame f = makeFrame(0x54C, d, 8);
+    CanFrame f = makeFrame(0x2DE, d, 8);
     proc.processFrame(f);
     TEST_ASSERT_EQUAL_INT16(0, dteValue);
 }
 
-void test_dte_100km() {
-    // 338*100/338 = 100
+void test_dte_33km() {
+    // 338/10 truncates to 33
     uint8_t d[] = {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x52};
-    CanFrame f = makeFrame(0x54C, d, 8);
+    CanFrame f = makeFrame(0x2DE, d, 8);
     proc.processFrame(f);
-    TEST_ASSERT_EQUAL_INT16(100, dteValue);
+    TEST_ASSERT_EQUAL_INT16(33, dteValue);
 }
 
 void test_dte_unconfigured_source_does_not_overwrite() {
     uint8_t current[] = {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x52};
-    CanFrame currentFrame = makeFrame(0x54C, current, 8);
+    CanFrame currentFrame = makeFrame(0x2DE, current, 8);
     TEST_ASSERT_TRUE(proc.processFrame(currentFrame));
-    TEST_ASSERT_EQUAL_INT16(100, dteValue);
+    TEST_ASSERT_EQUAL_INT16(33, dteValue);
 
     // An unconfigured ID must not overwrite DTE, regardless of its payload.
     uint8_t unconfigured[] = {0x00, 0x00, 0x00, 0x00, 0x00, 0x80, 0x0B, 0xEA};
-    CanFrame unconfiguredFrame = makeFrame(0x2DE, unconfigured, 8);
+    CanFrame unconfiguredFrame = makeFrame(0x54C, unconfigured, 8);
     TEST_ASSERT_FALSE(proc.processFrame(unconfiguredFrame));
-    TEST_ASSERT_EQUAL_INT16(100, dteValue);
+    TEST_ASSERT_EQUAL_INT16(33, dteValue);
 }
 
 // =============================================================================
@@ -205,13 +200,13 @@ void test_rpm_zero() {
 }
 
 // =============================================================================
-// VEHICLE SPEED — 0x284 bytes 4-5 BE, raw/100; bytes 0-3 are wheel signals
+// VEHICLE SPEED — 0x280 bytes 4-5 BE, raw/100; bytes 0-3 are wheel signals
 // =============================================================================
 
 void test_speed_zero() {
     // Wheel words may be nonzero while indicated speed is zero when creeping.
     uint8_t d[] = {0x02, 0x6B, 0x01, 0xD7, 0x00, 0x00, 0xDA, 0xA5};
-    CanFrame f = makeFrame(0x284, d, 8);
+    CanFrame f = makeFrame(0x280, d, 8);
     proc.processFrame(f);
     TEST_ASSERT_EQUAL_UINT8(0, vehicleSpeed);
 }
@@ -220,7 +215,7 @@ void test_speed_100kmh() {
     // 100 km/h → raw = 100*100 = 10000 = 0x2710
     // Wheel words deliberately differ from indicated speed.
     uint8_t d[] = {0x13, 0x88, 0x00, 0x00, 0x27, 0x10, 0x00, 0x00};
-    CanFrame f = makeFrame(0x284, d, 8);
+    CanFrame f = makeFrame(0x280, d, 8);
     proc.processFrame(f);
     TEST_ASSERT_EQUAL_UINT8(100, vehicleSpeed);
 }
@@ -359,7 +354,10 @@ void test_580_does_not_report_physical_consumption() {
     uint8_t data[] = {0x00, 0xBE, 0x80, 0x00, 0x6D, 0x00, 0x00, 0x54};
     for (uint8_t counter : {uint8_t(0), uint8_t(2), uint8_t(4), uint8_t(6)}) {
         data[3] = counter;
-        TEST_ASSERT_FALSE(proc.processFrame(makeFrame(0x580, data, 8)));
+        TEST_ASSERT_TRUE(proc.processFrame(makeFrame(0x580, data, 8)));
+        TEST_ASSERT_TRUE(canAuxData.oilValid);
+        TEST_ASSERT_TRUE(canAuxData.oilEstimated);
+        TEST_ASSERT_EQUAL_INT16(69, canAuxData.oilTemperatureC);
         TEST_ASSERT_EQUAL_UINT16(0, fuelConsumptionInst);
         TEST_ASSERT_EQUAL_UINT16(0, fuelConsumptionAvg);
         TEST_ASSERT_FALSE(canAuxData.fuelConsumptionInstValid);
@@ -419,14 +417,14 @@ void test_indicator_left_fires() {
 
 void test_speed_short_frame_preserves_previous_value() {
     uint8_t valid[] = {0x27, 0x10, 0x27, 0x10, 0x1F, 0x40};
-    CanFrame validFrame = makeFrame(0x284, valid, 6);
+    CanFrame validFrame = makeFrame(0x280, valid, 6);
     TEST_ASSERT_TRUE(proc.processFrame(validFrame));
     TEST_ASSERT_EQUAL_UINT8(80, vehicleSpeed);
     const uint32_t processedBefore = proc.getFramesProcessed();
     const uint32_t unknownBefore = proc.getUnknownFrames();
 
     uint8_t truncated[] = {0x27, 0x10, 0x27, 0x10, 0x27};
-    CanFrame truncatedFrame = makeFrame(0x284, truncated, 5);
+    CanFrame truncatedFrame = makeFrame(0x280, truncated, 5);
     TEST_ASSERT_FALSE(proc.processFrame(truncatedFrame));
     TEST_ASSERT_EQUAL_UINT8(80, vehicleSpeed);
     TEST_ASSERT_EQUAL_UINT32(processedBefore, proc.getFramesProcessed());
@@ -435,7 +433,7 @@ void test_speed_short_frame_preserves_previous_value() {
 
 void test_speed_six_byte_frame_accepted() {
     uint8_t d[] = {0x13, 0x88, 0x00, 0x00, 0x27, 0x10};
-    CanFrame f = makeFrame(0x284, d, 6);
+    CanFrame f = makeFrame(0x280, d, 6);
     const uint32_t processedBefore = proc.getFramesProcessed();
     const uint32_t unknownBefore = proc.getUnknownFrames();
     TEST_ASSERT_TRUE(proc.processFrame(f));
@@ -446,15 +444,15 @@ void test_speed_six_byte_frame_accepted() {
 
 void test_dte_short_frame_preserves_previous_value() {
     uint8_t valid[] = {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x04, 0x08};
-    CanFrame validFrame = makeFrame(0x54C, valid, 8);
+    CanFrame validFrame = makeFrame(0x2DE, valid, 8);
     TEST_ASSERT_TRUE(proc.processFrame(validFrame));
-    TEST_ASSERT_EQUAL_INT16(305, dteValue);
+    TEST_ASSERT_EQUAL_INT16(103, dteValue);
     const uint32_t processedBefore = proc.getFramesProcessed();
     const uint32_t unknownBefore = proc.getUnknownFrames();
 
-    CanFrame truncatedFrame = makeFrame(0x54C, valid, 6);
+    CanFrame truncatedFrame = makeFrame(0x2DE, valid, 6);
     TEST_ASSERT_FALSE(proc.processFrame(truncatedFrame));
-    TEST_ASSERT_EQUAL_INT16(305, dteValue);
+    TEST_ASSERT_EQUAL_INT16(103, dteValue);
     TEST_ASSERT_EQUAL_UINT32(processedBefore, proc.getFramesProcessed());
     TEST_ASSERT_EQUAL_UINT32(unknownBefore, proc.getUnknownFrames());
 }
@@ -562,14 +560,15 @@ static void feedFuelReference(uint32_t start, unsigned steps = 100) {
     uint8_t fuel[] = {0x67, 250, 0, 0x80, 0xFF, 2, 0x80, 0xFF};
     for (unsigned i = 0; i <= steps; ++i) {
         fuel[1] = static_cast<uint8_t>(250 + i);
-        TEST_ASSERT_TRUE(proc.processFrame(makeFrame(0x284, speed, 8), start + i * 100));
+        TEST_ASSERT_TRUE(proc.processFrame(makeFrame(0x280, speed, 8), start + i * 100));
         const CanFrame raw = makeFrame(0x551, fuel, 8);
         TEST_ASSERT_TRUE(proc.processFrame(raw, start + i * 100));
         TEST_ASSERT_EQUAL_HEX8_ARRAY(fuel, raw.data, 8);
     }
 }
 
-static bool loadChangedFuelProfile(const std::function<void(JsonDocument&)>& change) {
+static bool loadChangedFuelProfile(const std::function<void(JsonDocument&)>& change,
+                                   const char* filename = "vehicle.json") {
     LittleFS.basePath = "data";
     File file = LittleFS.open("/NissanJukeF15.json", "r");
     JsonDocument doc;
@@ -578,12 +577,13 @@ static bool loadChangedFuelProfile(const std::function<void(JsonDocument&)>& cha
     change(doc);
     char directory[] = "/tmp/juke-fuel-config-XXXXXX";
     TEST_ASSERT_NOT_NULL(mkdtemp(directory));
-    const std::string path = std::string(directory) + "/vehicle.json";
+    const std::string relativePath = std::string("/") + filename;
+    const std::string path = std::string(directory) + relativePath;
     std::string text;
     serializeJson(doc, text);
     { std::ofstream output(path); output << text; }
     LittleFS.basePath = directory;
-    const bool loaded = proc.loadFromJson("/vehicle.json");
+    const bool loaded = proc.loadFromJson(relativePath.c_str());
     unlink(path.c_str());
     rmdir(directory);
     LittleFS.basePath = "data";
@@ -648,8 +648,8 @@ void test_invalid_fuel_config_preserves_active_profile_and_estimate() {
         [](JsonDocument& d) { d["fuelConsumption"]["windowMs"] = 1000.5; },
         [](JsonDocument& d) { d["fuelConsumption"]["maxGapMs"] = -1; },
         [](JsonDocument& d) { d["fuelConsumption"]["maxTicksPerSecond"] = 600; },
-        [](JsonDocument& d) { d["frames"][6]["fields"][1]["target"] = "FUEL_CONS_INST"; },
-        [](JsonDocument& d) { d["frames"][6]["fields"][1]["formula"] = "SCALE"; },
+        [](JsonDocument& d) { d["frames"][5]["fields"][1]["target"] = "FUEL_CONS_INST"; },
+        [](JsonDocument& d) { d["frames"][5]["fields"][1]["formula"] = "SCALE"; },
         [](JsonDocument& d) { d["frames"][2]["fields"][0]["params"][1] = 0; }
     };
     for (const auto& change : invalid) {
@@ -687,7 +687,7 @@ void test_invalid_field_lengths_rejected() {
     TEST_ASSERT_EQUAL_UINT16(903, engineRPM);
 
     // startByte=255 plus byteCount=2 must not wrap around to a valid offset.
-    CanFrame overflowingFieldFrame = makeFrame(0x284, d, 8);
+    CanFrame overflowingFieldFrame = makeFrame(0x280, d, 8);
     TEST_ASSERT_FALSE(proc.processFrame(overflowingFieldFrame));
     TEST_ASSERT_EQUAL_UINT8(80, vehicleSpeed);
     TEST_ASSERT_EQUAL_UINT32(processedBefore, proc.getFramesProcessed());
@@ -785,8 +785,173 @@ void test_unknown_frame_ignored() {
 // MAIN
 // =============================================================================
 
+void test_f15_fault_raw_values_invalidate_without_overwriting_other_fields() {
+    uint8_t coolant[] = {125, 7};
+    TEST_ASSERT_TRUE(proc.processFrame(makeFrame(0x551, coolant, 2), 1000));
+    coolant[0] = 255; coolant[1] = 8;
+    TEST_ASSERT_TRUE(proc.processFrame(makeFrame(0x551, coolant, 2), 1100));
+    TEST_ASSERT_FALSE(canAuxData.coolantValid);
+    TEST_ASSERT_EQUAL_INT16(85, coolantTemp);
+    TEST_ASSERT_TRUE(canAuxData.fuelCounterValid);
+    TEST_ASSERT_EQUAL_UINT8(8, canAuxData.fuelCounterRaw);
+    uint8_t rpm[] = {255, 255, 0, 0, 0, 0, 0, 1};
+    TEST_ASSERT_TRUE(proc.processFrame(makeFrame(0x180, rpm, 8), 1100));
+    TEST_ASSERT_FALSE(canAuxData.rpmValid);
+    TEST_ASSERT_TRUE(canAuxData.brakePedal);
+    uint8_t dte[] = {0, 0, 0, 0, 0, 0, 255, 255};
+    TEST_ASSERT_TRUE(proc.processFrame(makeFrame(0x2DE, dte, 8), 1100));
+    TEST_ASSERT_FALSE(canAuxData.dteValid);
+}
+
+void test_identical_reload_and_external_reset_preserve_one_boot_trip() {
+    feedFuelReference(1000);
+    const uint32_t distance = canAuxData.bootTripDistanceDeciKm;
+    const uint16_t mean = averageSpeed;
+    TEST_ASSERT_TRUE(canAuxData.bootTripValid);
+    TEST_ASSERT_TRUE(proc.loadFromJson("/NissanJukeF15.json"));
+    canAuxData = {}; fuelConsumptionAvg = 0; elapsedTime = 0; averageSpeed = 0;
+    proc.updateFuelConsumption(11000);
+    TEST_ASSERT_TRUE(canAuxData.duduReceiver);
+    TEST_ASSERT_TRUE(canAuxData.bootTripValid);
+    TEST_ASSERT_EQUAL_UINT32(distance, canAuxData.bootTripDistanceDeciKm);
+    TEST_ASSERT_EQUAL_UINT16(mean, averageSpeed);
+    TEST_ASSERT_EQUAL_UINT32(11, elapsedTime);
+    TEST_ASSERT_TRUE(canAuxData.fuelConsumptionAvgValid);
+    TEST_ASSERT_EQUAL_UINT16(79, fuelConsumptionAvg);
+    uint8_t speed[] = {0, 0, 0, 0, 0x0E, 0x42, 0, 0};
+    uint8_t fuel[] = {125, 0};
+    for (unsigned i = 1; i <= 100; ++i) {
+        fuel[1] = static_cast<uint8_t>(94 + i * 2);
+        TEST_ASSERT_TRUE(proc.processFrame(makeFrame(0x280, speed, 8), 11000+i*100));
+        TEST_ASSERT_TRUE(proc.processFrame(makeFrame(0x551, fuel, 2), 11000+i*100));
+    }
+    TEST_ASSERT_EQUAL_UINT16(118, fuelConsumptionAvg); // Entire boot, not new159.
+    TEST_ASSERT_EQUAL_UINT32(2, canAuxData.bootTripDistanceDeciKm);
+}
+
+void test_speed_fault_and_recovery_cannot_restart_a_shorter_boot_average() {
+    feedFuelReference(1000);
+    uint8_t speed[] = {0, 0, 0, 0, 255, 255};
+    TEST_ASSERT_TRUE(proc.processFrame(makeFrame(0x280, speed, 6), 11100));
+    TEST_ASSERT_FALSE(canAuxData.speedValid);
+    TEST_ASSERT_FALSE(canAuxData.bootTripValid);
+    TEST_ASSERT_FALSE(canAuxData.fuelConsumptionAvgValid);
+    TEST_ASSERT_FALSE(canAuxData.fuelBootTripComplete);
+    feedFuelReference(11200);
+    TEST_ASSERT_TRUE(canAuxData.speedValid);
+    TEST_ASSERT_TRUE(canAuxData.fuelConsumptionInstValid);
+    TEST_ASSERT_FALSE(canAuxData.bootTripValid);
+    TEST_ASSERT_FALSE(canAuxData.fuelConsumptionAvgValid);
+    TEST_ASSERT_TRUE(proc.loadFromJson("/NissanJukeF15.json"));
+    proc.updateFuelConsumption(21200);
+    TEST_ASSERT_FALSE(canAuxData.bootTripValid);
+    TEST_ASSERT_FALSE(canAuxData.fuelBootTripComplete);
+}
+
+void test_changed_physical_source_invalidates_history_without_resetting_uptime() {
+    feedFuelReference(1000);
+    TEST_ASSERT_TRUE(loadChangedFuelProfile([](JsonDocument& doc) {
+        doc["frames"][2]["canId"] = "0x284";
+    }, "NissanJukeF15.json"));
+    proc.updateFuelConsumption(11000);
+    TEST_ASSERT_FALSE(canAuxData.bootTripValid);
+    TEST_ASSERT_FALSE(canAuxData.fuelBootTripComplete);
+    TEST_ASSERT_EQUAL_UINT32(11, elapsedTime);
+    TEST_ASSERT_EQUAL_UINT32(1, canAuxData.bootTripDistanceDeciKm);
+}
+
+void test_changed_speed_formula_in_same_profile_invalidates_both_boot_integrators() {
+    feedFuelReference(1000);
+    TEST_ASSERT_TRUE(loadChangedFuelProfile([](JsonDocument& doc) {
+        doc["frames"][2]["fields"][0]["params"][1] = 200;
+    }, "NissanJukeF15.json"));
+    proc.updateFuelConsumption(11000);
+    TEST_ASSERT_EQUAL_STRING("NissanJukeF15.json", g_mock.vehicleFile);
+    TEST_ASSERT_FALSE(canAuxData.bootTripValid);
+    TEST_ASSERT_FALSE(canAuxData.fuelBootTripComplete);
+    TEST_ASSERT_FALSE(canAuxData.fuelConsumptionAvgValid);
+    TEST_ASSERT_EQUAL_UINT32(11, elapsedTime);
+    TEST_ASSERT_EQUAL_UINT32(1, canAuxData.bootTripDistanceDeciKm);
+}
+
+void test_changed_counter_in_same_profile_keeps_distance_trip_but_not_fuel_average() {
+    feedFuelReference(1000);
+    TEST_ASSERT_TRUE(loadChangedFuelProfile([](JsonDocument& doc) {
+        doc["frames"][5]["fields"][1]["startByte"] = 2;
+    }, "NissanJukeF15.json"));
+    proc.updateFuelConsumption(11000);
+    TEST_ASSERT_EQUAL_STRING("NissanJukeF15.json", g_mock.vehicleFile);
+    TEST_ASSERT_TRUE(canAuxData.bootTripValid);
+    TEST_ASSERT_FALSE(canAuxData.fuelBootTripComplete);
+    TEST_ASSERT_FALSE(canAuxData.fuelConsumptionAvgValid);
+    TEST_ASSERT_EQUAL_UINT32(11, elapsedTime);
+    TEST_ASSERT_EQUAL_UINT32(1, canAuxData.bootTripDistanceDeciKm);
+}
+
+void test_changed_steering_in_same_profile_preserves_both_boot_integrators() {
+    feedFuelReference(1000);
+    const uint16_t oldAverageSpeed = averageSpeed;
+    TEST_ASSERT_TRUE(loadChangedFuelProfile([](JsonDocument& doc) {
+        doc["vehicleParams"]["steerScale"] = 400;
+        doc["frames"][0]["fields"][0]["formula"] = "SCALE";
+        JsonArray params = doc["frames"][0]["fields"][0]["params"].to<JsonArray>();
+        params.add(1); params.add(1); params.add(10);
+    }, "NissanJukeF15.json"));
+    proc.updateFuelConsumption(11000);
+    TEST_ASSERT_EQUAL_STRING("NissanJukeF15.json", g_mock.vehicleFile);
+    TEST_ASSERT_EQUAL_UINT16(400, g_mock.steerScale);
+    TEST_ASSERT_TRUE(canAuxData.bootTripValid);
+    TEST_ASSERT_TRUE(canAuxData.fuelBootTripComplete);
+    TEST_ASSERT_TRUE(canAuxData.fuelConsumptionAvgValid);
+    TEST_ASSERT_EQUAL_UINT16(79, fuelConsumptionAvg);
+    TEST_ASSERT_EQUAL_UINT16(oldAverageSpeed, averageSpeed);
+    TEST_ASSERT_EQUAL_UINT32(11, elapsedTime);
+    TEST_ASSERT_EQUAL_UINT32(1, canAuxData.bootTripDistanceDeciKm);
+}
+
+void test_out_of_range_speed_does_not_wrap_over_last_valid_dashboard_value() {
+    feedFuelReference(1000);
+    TEST_ASSERT_EQUAL_UINT8(36, vehicleSpeed);
+    TEST_ASSERT_EQUAL_UINT16(3650, canAuxData.speedCentiKmh);
+    uint8_t speed[] = {0, 0, 0, 0, 0x75, 0x30}; // 300.00 km/h, not a sentinel.
+    TEST_ASSERT_TRUE(proc.processFrame(makeFrame(0x280, speed, 6), 11100));
+    TEST_ASSERT_EQUAL_UINT8(36, vehicleSpeed);
+    TEST_ASSERT_EQUAL_UINT16(3650, canAuxData.speedCentiKmh);
+    TEST_ASSERT_FALSE(canAuxData.speedValid);
+    TEST_ASSERT_FALSE(canAuxData.bootTripValid);
+    TEST_ASSERT_FALSE(canAuxData.fuelBootTripComplete);
+    TEST_ASSERT_FALSE(canAuxData.fuelConsumptionAvgValid);
+}
+
+void test_new_metadata_rejects_wrong_types_without_touching_active_state() {
+    feedFuelReference(1000);
+    const std::function<void(JsonDocument&)> invalid[] = {
+        [](JsonDocument& d) { d["radioReceiver"] = "typo"; },
+        [](JsonDocument& d) { d["radioReceiver"] = 1; },
+        [](JsonDocument& d) { d["frames"][0]["fields"][0]["estimated"] = "true"; },
+        [](JsonDocument& d) { d["frames"][0]["fields"][0]["invalidRawValues"] = 255; },
+        [](JsonDocument& d) { d["frames"][0]["fields"][0]["invalidRawValues"][0] = 3.5; },
+        [](JsonDocument& d) { d["frames"][0]["fields"][0]["invalidRawValues"][0] = "255"; }
+    };
+    for (const auto& change : invalid) {
+        TEST_ASSERT_FALSE(loadChangedFuelProfile(change));
+        TEST_ASSERT_TRUE(canAuxData.bootTripValid);
+        TEST_ASSERT_TRUE(canAuxData.fuelConsumptionAvgValid);
+        TEST_ASSERT_EQUAL_UINT16(79, fuelConsumptionAvg);
+    }
+}
+
 int main(int argc, char** argv) {
     UNITY_BEGIN();
+    RUN_TEST(test_f15_fault_raw_values_invalidate_without_overwriting_other_fields);
+    RUN_TEST(test_identical_reload_and_external_reset_preserve_one_boot_trip);
+    RUN_TEST(test_speed_fault_and_recovery_cannot_restart_a_shorter_boot_average);
+    RUN_TEST(test_changed_physical_source_invalidates_history_without_resetting_uptime);
+    RUN_TEST(test_changed_speed_formula_in_same_profile_invalidates_both_boot_integrators);
+    RUN_TEST(test_changed_counter_in_same_profile_keeps_distance_trip_but_not_fuel_average);
+    RUN_TEST(test_changed_steering_in_same_profile_preserves_both_boot_integrators);
+    RUN_TEST(test_out_of_range_speed_does_not_wrap_over_last_valid_dashboard_value);
+    RUN_TEST(test_new_metadata_rejects_wrong_types_without_touching_active_state);
 
     // External temperature
     RUN_TEST(test_temp_ext_28c);
@@ -800,9 +965,9 @@ int main(int argc, char** argv) {
     RUN_TEST(test_coolant_profile_reload_clears_availability);
 
     // Distance to empty
-    RUN_TEST(test_dte_305km);
+    RUN_TEST(test_dte_103km);
     RUN_TEST(test_dte_zero);
-    RUN_TEST(test_dte_100km);
+    RUN_TEST(test_dte_33km);
     RUN_TEST(test_dte_unconfigured_source_does_not_overwrite);
 
     // Engine RPM

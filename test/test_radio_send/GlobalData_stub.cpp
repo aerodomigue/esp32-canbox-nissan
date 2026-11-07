@@ -28,6 +28,6 @@ unsigned long lastRightIndicatorTime = 0;
 uint16_t fuelConsumptionInst = 0;
 uint16_t fuelConsumptionAvg  = 0;
 uint16_t averageSpeed        = 0;
-uint16_t elapsedTime         = 0;
+uint32_t elapsedTime         = 0;
 
 SerialClass Serial;

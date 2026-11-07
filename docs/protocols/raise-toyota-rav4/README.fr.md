@@ -40,12 +40,38 @@ test de l'encodeur**, dont les 4 096 valeurs signées sur 12 bits. Ce sont
 des vérifications logicielles avec des frontières Android contrôlées,
 pas des essais physiques sur le poste ni une calibration du véhicule.
 
-Le contrat décrit les consommateurs analysés ; il n'affirme pas que toutes
-les commandes documentées sont implémentées dans le firmware ESP32 actuel.
-En particulier, la trame moteur `7D/09` existante correspond à FYT mais peut
-faire lire son checksum comme température d'huile par DUDU. Le format commun
-et la valeur d'huile qu'il exige sont expliqués dans les PDF ; aucune source
-d'huile F15 ni aucun marqueur universel d'indisponibilité n'a été validé.
+Les PDF constituent une analyse datée des consommateurs, et non une liste des
+commandes implémentées par l'ESP32. Leur avertissement sur l'ancien paquet
+`7D/09` LEN3 décrit le firmware avant la modification des trajets depuis le
+démarrage : DUDU pouvait lire son checksum comme température d'huile. Le nouvel
+émetteur F15 utilise LEN4 `09 eau+40 eau+40 huile+40`, uniquement lorsque les deux
+sources sont disponibles et fraîches. FYT reçoit l'eau en D2 ; DUDU reçoit
+l'eau en D1 et l'huile en D3.
+
+La source d'huile F15 `0x580 B4 - 40` reste explicitement **provisoire**,
+acceptée pour comparaison après des rejeux cohérents, sans calibration
+indépendante. Aucun octet d'indisponibilité d'huile n'est supporté par ce
+décodeur DUDU : zéro et 255 signifient -40 °C et 215 °C. Sans huile disponible,
+le paquet complet de températures DUDU est donc suspendu. L'ancien paquet LEN3
+avec l'eau seule est conservé exclusivement pour les profils non DUDU.
+
+Le mapping F15 actuel transmet aussi vitesse et vitesse moyenne depuis le
+démarrage via `7D/03` avec **LEN6 et une unité métrique explicite** ; le temps
+de `0x21` est exprimé en **minutes**. Les consommations instantanée et moyenne
+depuis le démarrage sont des U16BE en `0,1 L/100 km` dans `0x22` et `0x23` ; les
+cinq historiques restent indisponibles. Les deux trajets de `7D/04` sont des
+miroirs explicites du trajet logiciel depuis le démarrage du boîtier, et non
+les compteurs indépendants Trip A/B Nissan.
+
+Le parseur de températures DUDU démarre en Celsius. Après remplacement d'un
+boîtier qui envoyait des Fahrenheit sans redémarrer le récepteur, redémarrer
+DUDU/le profil RAV4 avant de vérifier les températures : `7D/09` ne réinitialise
+pas un ancien état Fahrenheit. Aucun paquet climatique `0x28` artificiel n'est
+émis pour imposer cette unité. La source extérieure F15 non validée est omise ;
+un capteur absent n'est pas présenté comme une mesure nulle. Voir le
+[guide du mapping F15 depuis le démarrage](../../F15_DUDU_BOOT_TRIP_MAPPING.fr.md)
+pour la disponibilité, les valeurs ignorées propres à DUDU, les interruptions
+et les limites restantes.
 
 Voir les [notes d'implémentation RadioSend](../../technical/RADIO_SEND.md)
 pour le comportement actuel du firmware et les [preuves du mapping F15](../../JUKE_F15_CAN_MAPPING.fr.md)

@@ -156,6 +156,23 @@ class ObdCanComparisonTests(unittest.TestCase):
             field={"dataType": "UINT8", "formula": "SCALE", "params": [1, 8, 0]}, target="ENGINE_RPM")
         self.assertEqual(candidate.value(parse_line("RX 0x180 [2]: 01 28", 1)), 37)
 
+    def test_current_f15_sources_and_unavailable_values_match_firmware(self):
+        candidates = {c.target: c for c in active_candidates(Path("data/NissanJukeF15.json"))}
+        self.assertEqual(candidates["VEHICLE_SPEED"].can_id, 0x280)
+        self.assertNotIn("TEMPERATURE", candidates)
+        self.assertNotIn("FUEL_LEVEL", candidates)
+        self.assertEqual(candidates["OIL_TEMP"].pid, 0x5C)
+        self.assertTrue(candidates["OIL_TEMP"].field["estimated"])
+        self.assertEqual(candidates["OIL_TEMP"].value(parse_line("RX 0x580 [5]: 00 00 00 00 87", 1)),95)
+        self.assertEqual(candidates["COOLANT_TEMP"].value(parse_line("RX 0x551 [2]: F0 00", 1)),200)
+        for target, line in [
+            ("COOLANT_TEMP", "RX 0x551 [2]: FF 00"),
+            ("ENGINE_RPM", "RX 0x180 [8]: FF FF 00 00 00 00 00 00"),
+            ("VEHICLE_SPEED", "RX 0x280 [6]: 00 00 00 00 FF FF"),
+            ("VEHICLE_SPEED", "RX 0x280 [6]: 00 00 00 00 75 30")]:
+            with self.assertRaises(ValueError):
+                candidates[target].value(parse_line(line, 1))
+
     def test_state_boundaries_prevent_cross_session_matches_and_merged_errors(self):
         frames = [parse_line("RX 0x180 [2]: 14 18 | t_ms=100 ext=0 rtr=0", 1),
                   parse_line("RX 0x180 [2]: 1F 40 | t_ms=100 ext=0 rtr=0", 6)]

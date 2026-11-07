@@ -30,7 +30,9 @@ const MockFieldBounds MockDataGenerator::_defaultBounds[] = {
     { OutputField::ENGINE_RPM,      800,     6000,    2500,     50   },  // RPM
     { OutputField::VEHICLE_SPEED,   0,       120,     60,       2    },  // km/h
     { OutputField::VOLTAGE,         125,     145,     140,      1    },  // 0.1V (12.5-14.5V)
-    { OutputField::TEMPERATURE,     70,      95,      85,       1    },  // °C (coolant)
+    { OutputField::TEMPERATURE,     18,      25,      20,       1    },  // Ambient °C
+    { OutputField::COOLANT_TEMP,    80,      95,      85,       1    },
+    { OutputField::OIL_TEMP,        85,      110,     95,       1    },
     { OutputField::FUEL_CONS_INST,  30,      120,     65,       3    },  // 0.1 L/100km
     { OutputField::ODOMETER,        85000,   85100,   85050,    1    },  // km (slow increment)
 
@@ -176,6 +178,15 @@ void MockDataGenerator::writeToGlobalData() {
     dteValue = (int16_t)_currentValues[static_cast<int>(OutputField::DTE)];
     fuelConsumptionInst = (uint16_t)_currentValues[static_cast<int>(OutputField::FUEL_CONS_INST)];
     fuelConsumptionAvg = (uint16_t)_currentValues[static_cast<int>(OutputField::FUEL_CONS_AVG)];
+    coolantTemp = static_cast<int16_t>(_currentValues[static_cast<int>(OutputField::COOLANT_TEMP)]);
+    canAuxData.oilTemperatureC = static_cast<int16_t>(_currentValues[static_cast<int>(OutputField::OIL_TEMP)]);
+    canAuxData.rpmValid = canAuxData.speedValid = canAuxData.odometerValid = true;
+    canAuxData.outsideValid = canAuxData.dteValid = canAuxData.coolantValid = canAuxData.oilValid = true;
+    canAuxData.rpmReceivedAt = canAuxData.speedReceivedAt = canAuxData.odometerReceivedAt = millis();
+    canAuxData.outsideReceivedAt = canAuxData.dteReceivedAt = millis();
+    canAuxData.coolantReceivedAt = canAuxData.oilReceivedAt = millis();
+    canAuxData.speedCentiKmh = static_cast<uint16_t>(vehicleSpeed) * 100;
+    canAuxData.oilEstimated = false;
     canAuxData.fuelLevelValid = true;
     canAuxData.fuelConsumptionInstValid = true;
     canAuxData.fuelConsumptionAvgValid = true;

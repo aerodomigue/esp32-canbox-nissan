@@ -38,14 +38,14 @@ The project started as a custom solution for the **Nissan Juke F15**, but has si
 
 ### Feature Status
 
-Status as of **15 October 2026**, based on the owner's checks and feedback
-on their **2011 Juke F15 1.6 DIG-T manual**. The ten confirmed functions
-below work on this vehicle. Other data remains approximate, unvalidated
-or unavailable, requiring further captures, calibration or decoding work.
+Status as of **7 November 2026**, based on the owner's checks and feedback
+on their **2011 Juke F15 1.6 DIG-T manual**. The confirmed functions below work on this vehicle. The boot-trip additions
+are documented separately; oil identity and the fuel-volume coefficient remain
+provisional, while exterior temperature and fuel quantity are unavailable.
 
 | Feature | Status | Notes |
 | --- | --- | --- |
-| Vehicle Speed | ✅ Operation confirmed | `0x284` bytes 4–5 BE `/100`; also corroborated by OBD at low speed |
+| Vehicle Speed | ✅ Operation confirmed | `0x280` bytes 4–5 BE `/100`; long-trip integrated distance agrees with odometer increments |
 | Odometer (km) | ✅ Operation confirmed | `0x5C5` bytes 1–3 BE; owner confirmation of the odometer |
 | Engine RPM | ✅ Operation confirmed | `0x180` bytes 0–1 BE `/8`; also corroborated by OBD |
 | Steering / Dynamic Guidelines | ✅ Operation confirmed | `0x002` signed LE B0–B1, 0.1°; owner's settings: `steerScale=500`, `steerOffset=0`, inversion enabled |
@@ -55,17 +55,19 @@ or unavailable, requiring further captures, calibration or decoding work.
 | Lights | ✅ Operation confirmed on the CANBox side | Parking lights, low beam and high beam; the Manager parking-light display check is [documented](docs/protocols/USB_SERIAL_PROTOCOL.md#lights-dashboard-field) |
 | Battery Voltage | ✅ Operation confirmed | Also consistent with OBD: mean absolute difference 0.139 V, potentially different measurement points |
 | Engine Coolant Temperature | ✅ Operation confirmed | Owner confirmation and `0x551[0]−40` extraction corroborated by OBD; distinct from outside temperature |
-| Engine Oil Temperature | Not available | Candidate `0x580[4]−40` still unvalidated on F15; no oil output established in the audited Toyota APK |
+| Engine Oil Temperature | Provisional source enabled | `0x580[4]−40`; explicitly accepted for comparison, not independently identified; four-byte coolant/oil UART packet |
 | Fuel Tank Level | Unavailable in the Juke preset | False `0x5C5[0]` gauge removed; `FuelValid: 0` distinguishes the compatibility value `0 L` from a measurement |
 | Brake pedal | Unvalidated | `0x180[7] & 0x01`; action and polarity still need a separate vehicle check |
-| External Temperature | Unvalidated, incorrect value reported | `0x540[0]−40` gives 28 °C in captures; the owner reports approximately 20 °C |
-| Instant Fuel Consumption | Approximate, calibration pending | `0x551[1]` counter and `0x284` speed; provisional 80 mm³/increment; 1 s window |
-| Average Fuel Consumption | Approximate, calibration pending | Session estimate available after 100 m; same provisional coefficient; resets on reload, restart or source discontinuity |
-| Distance to Empty | Unvalidated | CAN `0x54C` mapping; unit and cluster reference still to verify |
+| External Temperature | Unavailable in the F15 preset | Incorrect `0x540[0]−40` mapping removed; capture photos show 14 °C versus its 28 °C |
+| Instant Fuel Consumption | Approximate, calibration pending | `0x551[1]` counter and `0x280` speed; provisional 80 mm³/increment; 1 s window; L/100 km on UART |
+| Average Fuel Consumption | Approximate boot-trip estimate | RAM only, idle included, available after 100 m; identical reload preserves it; a gap makes the full-boot average unavailable |
+| Distance to Empty | Strongly corroborated | `0x2DE` bytes 6–7 BE `/10` km; controlled capture agrees with photographed range |
 
 > **Note:** Documentation for the Raise/Toyota RAV4 protocol used by Android head units is scarce. Some features are still being reverse-engineered due to lack of official protocol specifications.
 
 See the **[Roadmap](ROADMAP.md)** for upcoming features.
+The [current F15 → DUDU units and boot-trip contract](docs/F15_DUDU_BOOT_TRIP_MAPPING.md)
+describes speed, range, consumption, virtual Trip A/B and bounded Nissan diagnostics.
 The [documented CAN mapping in EN/FR](docs/JUKE_F15_CAN_MAPPING.md) records
 CAN/OBD evidence, sources and limitations. The corrected repository preset
 must be uploaded separately to update the JSON installed on the ESP32.
@@ -347,7 +349,8 @@ saved on reload: local changes to null/absent keys still require `CFG SAVE`
 to survive a reboot. Integral values such as `500.0` remain compatible.
 
 `rpmDiv`, `tankCap` and `dteDiv` are stored legacy settings, currently unused
-by the decoder. `8` and `338` mirror the RPM/DTE formulas in `frames`;
+by the decoder. `rpmDiv: 8` mirrors the RPM formula; the historical
+`dteDiv: 338` does not control the corrected `0x2DE /10` range conversion.
 `tankCap: 45` retains a legacy default, not a validated F15 tank capacity.
 Consumption settings remain in `fuelConsumption`. See the [preset guide](docs/VEHICLE_PRESET_GUIDE.md#vehicle-parameters-vehicleparams).
 
@@ -357,21 +360,25 @@ Consumption settings remain in `fuelConsumption`. See the [preset guide](docs/VE
 
 | Data | CAN ID | Send Rate | Notes |
 | --- | --- | --- | --- |
-| Steering Angle | 0x002 | 200ms | Confirmed with `scale=500`, `offset=0`, inversion; signed LE B0–B1 in 0.1°; UART output bounded to ±500 |
-| Engine RPM | 0x180 | 333ms | Bytes 0–1, big endian, raw / 8; integer RPM |
-| Vehicle Speed | 0x284 | 500ms | Bytes 4–5, big endian, raw / 100; integer km/h |
-| Handbrake | 0x5C5 | On `SYS DATA` request | Byte 0 bit 2; `unknown` before the first configured frame |
-| Brake pedal | 0x180 | On `SYS DATA` request | Byte 7 bit 0; raw switch state, physical polarity pending |
-| Fuel raw counter | 0x551 | On `SYS DATA` request | Byte 1 remains raw 0–255; `FuelConsEstimated: 1` identifies the separate provisional conversion |
+| Steering Angle | 0x002 | 200 ms | Confirmed with `scale=500`, `offset=0`, inversion; signed LE B0–B1 in 0.1°; UART bounded to ±500 |
+| Engine RPM | 0x180 | 333 ms | B0–B1 BE /8; raw `FFFF` unavailable; UART `7D/0A` encodes rpm ×4 LE |
+| Vehicle Speed | 0x280 | 500 ms | B4–B5 BE /100 km/h; raw `FFFF` unavailable; `7D/03` includes speed and boot average in 0.01 km/h |
+| Handbrake | 0x5C5 | On `SYS DATA` request | B0 bit2; no UART `7D/06` because its companion seat-belt field is unknown |
+| Brake pedal | 0x180 | On `SYS DATA` request | B7 bit0; raw switch state, physical polarity pending |
+| Fuel raw counter | 0x551 | On `SYS DATA` request | B1 remains raw 0–255; `FuelConsEstimated: 1` marks the separate provisional conversion |
 | Fuel Level | — | — | No Juke source; compatibility `Fuel: 0 L` with `FuelValid: 0` |
-| Battery Voltage | 0x6F6 | — | Alternator output |
-| External Temperature | 0x540 | 5000ms | Legacy byte 0 − 40; physical reference pending |
-| Coolant Temperature | 0x551 | 5000ms | `0x551[0]−40` → UART `0x7D/0x09`, `09 00 (°C+40)`; fresh source required; [APK verification and display setting](docs/technical/RADIO_SEND.md#4b-engine-coolant-temperature-command-0x7d-sub-command-0x09) |
-| Door Status | 0x60D | 250ms | All doors + trunk (or on change) |
-| Indicators / Lights | 0x60D | 200ms or on change | Operation confirmed; UART `0x7D/01` and the `SYS DATA` `Lights:` line |
-| Distance to Empty | 0x54C | 5000ms | Initial bytes 6–7, big endian, raw * 100 / 338; calibration pending |
-| Instant / Average Fuel Consumption | 0x551 + 0x284 | 1000ms / 5000ms | Provisional 0.1 L/100 km; unavailable instant omitted, unavailable average `0xFFFF`; [settings and limits](docs/VEHICLE_PRESET_GUIDE.md#counter-based-fuel-consumption-fuelconsumption) |
-| Odometer | 0x5C5 | 10000ms | Bytes 1–3 BE (24-bit); operation confirmed by the owner |
+| Battery Voltage | 0x6F6 | On `SYS DATA` request | Nissan voltage available; audited DUDU voltage card uses an internal MCU source |
+| External Temperature | — | No UART output | Incorrect `0x540` mapping removed; no validated replacement |
+| Coolant Temperature | 0x551 | 5000 ms | B0−40 °C; `7D/09` LEN4 `[09,c+40,c+40,oil+40]`, both sources fresh; FYT reads D2, DUDU D1 |
+| Oil Temperature | 0x580 | 5000 ms | B4−40 °C, provisional source; same joint LEN4 packet, DUDU oil at D3; both sources fresh |
+| Door Status | 0x60D | 250 ms | All doors and boot, or on change; working mapping retained |
+| Indicators / Lights | 0x60D | 200 ms or on change | UART `7D/01` and `SYS DATA` `Lights:` line |
+| Distance to Empty | 0x2DE | 5000 ms | B6–B7 BE /10 km; `21` carries DTE in whole km and boot average/time in 0.1 km/h/minutes |
+| Instant / Average Fuel Consumption | 0x551 + 0x280 | 1000 ms / 5000 ms | Provisional 0.1 L/100 km; RAM boot average includes idle after 100 m; invalid current values omitted, never sent as `FFFF` |
+| Odometer / virtual Trip A and B | 0x5C5 + 0x280 | 10000 ms | ODO B1–B3 BE in km; `7D/04` carries ODO plus two mirrors of integrated boot distance in 0.1 km, not Nissan A/B; complete trip required |
+
+See the [current mapping and availability contract](docs/F15_DUDU_BOOT_TRIP_MAPPING.md)
+for source freshness, receiver differences and provisional calibration.
 
 ---
 
@@ -392,6 +399,7 @@ Features:
 
 ### Nissan CAN Documentation
 
+- **[Current F15 → DUDU mapping, units and boot-trip lifetime](docs/F15_DUDU_BOOT_TRIP_MAPPING.md)** — [French version](docs/F15_DUDU_BOOT_TRIP_MAPPING.fr.md)
 - [Juke F15 mapping and capture evidence](docs/JUKE_F15_CAN_MAPPING.md)
 - [Nissan PDF catalog and model-year limitations](docs/vehicle/nissan-juke-f15/README.md)
 - [Racelogic / VBOX: CAN documents and definitions](https://vboxautomotive.co.uk/en/can-database-documents)

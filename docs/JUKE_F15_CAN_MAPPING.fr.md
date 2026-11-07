@@ -2,6 +2,8 @@
 
 > **Langues :** **Français** | [English](JUKE_F15_CAN_MAPPING.md)
 
+> **Implémentation actuelle, 7 novembre 2026 :** voir le [contrat F15 → DUDU, unités et trajet depuis démarrage](F15_DUDU_BOOT_TRIP_MAPPING.fr.md). Il remplace les anciennes descriptions du preset actif ci-dessous : vitesse sur `0x280`, autonomie sur `0x2DE`, extérieur incorrect retiré, huile explicitement provisoire et moyenne sur un démarrage. Les statistiques et comparaisons historiques restent liées aux révisions indiquées.
+
 État des connaissances au **15 octobre 2026**. Véhicule du propriétaire :
 Juke F15 phase 1, moteur MR16DDT, boîte manuelle. Le marché, la référence
 exacte des calculateurs et le JSON effectivement chargé dans LittleFS ne

@@ -129,6 +129,8 @@ enum class OutputField : uint8_t {
     BRAKE_PEDAL,       // Service brake switch state
     FUEL_COUNTER_RAW,  // Raw 8-bit counter; not L/h or L/100km
 
+    OIL_TEMP,          // Engine oil temperature (°C), estimated metadata allowed
+
     // End marker for array sizing
     FIELD_COUNT
 };
@@ -150,6 +152,8 @@ struct FieldConfig {
     ByteOrder   byteOrder;    // Byte ordering for multi-byte values
     DataType    dataType;     // How to interpret the extracted bytes
     FormulaType formula;      // Conversion formula to apply
+    bool estimated = false;
+    std::vector<int32_t> invalidRawValues; // Checked before any conversion.
     int32_t     params[4];    // Formula parameters:
                               //   SCALE: [multiplier, divisor, offset, unused]
                               //   MAP_RANGE: [inMin, inMax, outMin, outMax]
@@ -179,6 +183,7 @@ struct VehicleProfile {
     std::vector<FrameConfig> frames;   // All CAN frames to process
     FuelConsumptionConfig fuelConsumption;
     bool fuelConsumptionCalibrated = false;
+    bool duduReceiver = false;
 };
 
 // =============================================================================
@@ -259,6 +264,7 @@ inline OutputField parseOutputField(const char* str) {
     if (strcmp(str, "HEADLIGHTS") == 0) return OutputField::HEADLIGHTS;
     if (strcmp(str, "HIGH_BEAM") == 0) return OutputField::HIGH_BEAM;
     if (strcmp(str, "PARKING_LIGHTS") == 0) return OutputField::PARKING_LIGHTS;
+    if (strcmp(str, "OIL_TEMP") == 0) return OutputField::OIL_TEMP;
     if (strcmp(str, "COOLANT_TEMP") == 0) return OutputField::COOLANT_TEMP;
     if (strcmp(str, "HANDBRAKE") == 0) return OutputField::HANDBRAKE;
     if (strcmp(str, "BRAKE_PEDAL") == 0) return OutputField::BRAKE_PEDAL;

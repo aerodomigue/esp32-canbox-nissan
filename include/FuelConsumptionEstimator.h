@@ -28,10 +28,13 @@ struct FuelConsumptionConfig {
 /**
  * Convert an unsigned modulo-256 fuel counter into 0.1 L/100km radio units.
  *
- * Both speed and counter must remain fresh. A discontinuity drops the entire
- * session: partial fuel must never be divided by uninterrupted trip distance.
- * Sessions start on a counter sample with a fresh speed, so the initial raw
- * count is a baseline, never an already-consumed volume.
+ * The trip lasts for this object's lifetime (one device boot), without NVS.
+ * Both speed and counter must remain fresh. A discontinuity retains already
+ * matched fuel/distance but permanently invalidates the boot average: unknown
+ * consumption must not silently become a new, shorter trip. The instantaneous
+ * window can recover after fresh samples. Tracking starts on a counter sample
+ * with a fresh speed, so the initial raw count is a baseline, never an already
+ * consumed volume.
  *
  * Speed is held between observations; pending distance is committed only on
  * accepted counter samples. Thus fuel and distance always cover the same
@@ -45,21 +48,35 @@ struct FuelConsumptionConfig {
 class FuelConsumptionEstimator {
 public:
     bool configure(const FuelConsumptionConfig& config) {
-        _config = config;
         const bool valid = config.isValid();
+        if (_configured && sameConfiguration(config)) return valid;
+        // Reloading the same JSON must not reset either the window or trip.
+        // Changed calibration cannot describe a complete boot retrospectively.
+        markDiscontinuity();
+        _config = config;
         if (!valid) _config.enabled = false;
-        clearState();
+        _configured = true;
         return valid;
     }
+
+    // Use for a changed source/profile or an interruption such as mock mode.
+    // Only constructing a new object (a new boot) restores trip completeness.
+    void markDiscontinuity() {
+        if (_hasStarted) _tripComplete = false;
+        clearTracking();
+    }
+
+    bool hasStarted() const { return _hasStarted; }
+    bool tripComplete() const { return _tripComplete; }
 
     void onSpeed(double kmh, uint32_t now) {
         if (!_config.enabled) return;
         tick(now);
         if (!std::isfinite(kmh) || kmh < 0.0) {
-            clearState();
+            markDiscontinuity();
             return;
         }
-        if (_running && !advanceDistance(now)) clearState();
+        if (_running && !advanceDistance(now)) markDiscontinuity();
         _speedKmh = kmh;
         _speedAt = now;
         _speedSeen = true;
@@ -110,7 +127,7 @@ public:
         _pendingDistanceM = 0.0;
         seedCounter(counter, now);
 
-        if (_totalDistanceM >= _config.minAverageDistanceM) {
+        if (_tripComplete && _totalDistanceM >= _config.minAverageDistanceM) {
             _average = radioUnits(_totalFuelMm3, _totalDistanceM);
             _averageValid = true;
         }
@@ -136,7 +153,7 @@ public:
         if (!_config.enabled) return;
         if ((_speedSeen && uint32_t(now - _speedAt) > _config.maxGapMs) ||
             (_counterSeen && uint32_t(now - _counterAt) > _config.maxGapMs)) {
-            clearState();
+            markDiscontinuity();
         }
     }
 
@@ -149,6 +166,9 @@ public:
 
 private:
     FuelConsumptionConfig _config;
+    bool _configured = false;
+    bool _hasStarted = false;
+    bool _tripComplete = true;
     bool _speedSeen = false;
     bool _counterSeen = false;
     bool _running = false;
@@ -170,14 +190,23 @@ private:
     double _windowFuelMm3 = 0.0;
     double _windowDistanceM = 0.0;
 
-    void clearState() {
+    bool sameConfiguration(const FuelConsumptionConfig& config) const {
+        return _config.enabled == config.enabled &&
+               _config.mm3PerTick == config.mm3PerTick &&
+               _config.windowMs == config.windowMs &&
+               _config.maxGapMs == config.maxGapMs &&
+               _config.minSpeedKmh == config.minSpeedKmh &&
+               _config.minAverageDistanceM == config.minAverageDistanceM &&
+               _config.maxTicksPerSecond == config.maxTicksPerSecond;
+    }
+
+    void clearTracking() {
         _speedSeen = _counterSeen = _running = false;
         _instantaneousValid = _averageValid = false;
         _counter = 0;
         _instantaneous = _average = 0;
         _speedAt = _counterAt = _integratedAt = _windowAt = _budgetAt = 0;
         _speedKmh = _pendingDistanceM = 0.0;
-        _totalFuelMm3 = _totalDistanceM = 0.0;
         _windowFuelMm3 = _windowDistanceM = 0.0;
         _tickBudget = 1.0;
     }
@@ -189,11 +218,12 @@ private:
     }
 
     void rebaseCounter(uint8_t counter, uint32_t now) {
-        clearState();
+        markDiscontinuity();
         seedCounter(counter, now);
     }
 
     void startSession(uint32_t now) {
+        _hasStarted = true;
         _running = true;
         _integratedAt = _windowAt = _budgetAt = now;
         if (belowDisplaySpeed()) {

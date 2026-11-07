@@ -135,8 +135,8 @@ void test_historical_excerpt_does_not_reintroduce_false_fuel_values() {
     const ReplayStats stats = replayFile(EXCERPT);
     TEST_ASSERT_EQUAL_UINT32(14, stats.parsed);
     TEST_ASSERT_EQUAL_UINT32(1, stats.rejected);  // Original invalid ID 0x3FC91000.
-    TEST_ASSERT_EQUAL_UINT32(2, stats.handled);
-    TEST_ASSERT_EQUAL_UINT32(12, stats.unknown);  // 0x182, 0x2DE and ten 0x580 frames.
+    TEST_ASSERT_EQUAL_UINT32(13, stats.handled);
+    TEST_ASSERT_EQUAL_UINT32(1, stats.unknown);  // Only 0x182 remains unconfigured.
     TEST_ASSERT_EQUAL_UINT32(0, stats.decoderRejected);
     TEST_ASSERT_EQUAL_UINT32(stats.handled, proc.getFramesProcessed());
     TEST_ASSERT_EQUAL_UINT32(stats.unknown, proc.getUnknownFrames());
@@ -148,12 +148,25 @@ void test_historical_excerpt_does_not_reintroduce_false_fuel_values() {
     TEST_ASSERT_TRUE(canAuxData.handbrakeValid);
     TEST_ASSERT_FALSE(canAuxData.handbrake);
     TEST_ASSERT_EQUAL_UINT32(239944, currentOdo);  // 0x03A948, independent of fuel.
-    TEST_ASSERT_EQUAL_INT16(0, dteValue);  // Active 0x54C absent, not a DTE reading.
+    TEST_ASSERT_EQUAL_INT16(375, dteValue);  // 0x0EAC /10 =375.6km, integer display.
+    TEST_ASSERT_TRUE(canAuxData.dteValid);
+    TEST_ASSERT_EQUAL_UINT32(0, canAuxData.dteReceivedAt); // legacy records lack time
+    TEST_ASSERT_TRUE(canAuxData.odometerValid);
+    TEST_ASSERT_TRUE(canAuxData.rpmValid);
+    TEST_ASSERT_TRUE(canAuxData.oilValid);
+    TEST_ASSERT_TRUE(canAuxData.oilEstimated);
+    TEST_ASSERT_EQUAL_INT16(71, canAuxData.oilTemperatureC); // candidate B4=0x6F−40
+    TEST_ASSERT_FALSE(canAuxData.outsideValid); // known wrong 0x540 removed
+    TEST_ASSERT_FALSE(canAuxData.coolantValid);
     TEST_ASSERT_EQUAL_UINT16(0, fuelConsumptionInst);
     TEST_ASSERT_EQUAL_UINT16(0, fuelConsumptionAvg);
     TEST_ASSERT_FALSE(canAuxData.fuelConsumptionInstValid);
     TEST_ASSERT_FALSE(canAuxData.fuelConsumptionAvgValid);
-    TEST_ASSERT_EQUAL_UINT8(0, vehicleSpeed);  // 0x284 is absent, not a speed reading.
+    TEST_ASSERT_EQUAL_UINT8(0, vehicleSpeed);  // Corrected 0x280 source is absent.
+    TEST_ASSERT_FALSE(canAuxData.speedValid);
+    TEST_ASSERT_FALSE(canAuxData.bootTripValid);
+    TEST_ASSERT_TRUE(canAuxData.duduReceiver);
+    TEST_ASSERT_EQUAL_UINT32(0, stats.ids.count(0x280));
     TEST_ASSERT_EQUAL_UINT32(0, stats.ids.count(0x284));
     TEST_ASSERT_EQUAL_UINT32(0, stats.ids.count(0x54C));
 }
@@ -170,7 +183,11 @@ void test_historical_580_counter_does_not_become_consumption() {
             frame.identifier != 0x580) continue;
         TEST_ASSERT_LESS_THAN_UINT32(10, index);
         TEST_ASSERT_EQUAL_UINT8(counters[index], frame.data[3]);
-        TEST_ASSERT_FALSE(proc.processFrame(frame));
+        TEST_ASSERT_TRUE(proc.processFrame(frame)); // oil candidate, not fuel
+        TEST_ASSERT_TRUE(canAuxData.oilValid);
+        TEST_ASSERT_TRUE(canAuxData.oilEstimated);
+        TEST_ASSERT_EQUAL_INT16(71, canAuxData.oilTemperatureC);
+        TEST_ASSERT_FALSE(canAuxData.fuelCounterValid);
         TEST_ASSERT_EQUAL_UINT16(0, fuelConsumptionInst);
         TEST_ASSERT_EQUAL_UINT16(0, fuelConsumptionAvg);
         TEST_ASSERT_FALSE(canAuxData.fuelConsumptionInstValid);
@@ -185,15 +202,31 @@ void test_current_can_obd_excerpt_decodes_verified_fields() {
     TEST_ASSERT_EQUAL_UINT32(12, stats.parsed);
     TEST_ASSERT_EQUAL_UINT32(0, stats.rejected);
     TEST_ASSERT_EQUAL_UINT32(10, stats.handled);
-    TEST_ASSERT_EQUAL_UINT32(2, stats.unknown);  // 0x182 and the removed 0x580 mapping.
+    TEST_ASSERT_EQUAL_UINT32(2, stats.unknown);  // 0x182 and superseded speed 0x284.
     TEST_ASSERT_EQUAL_UINT32(0, stats.decoderRejected);
 
     // Reference RPM 900 was received at t=44484; CAN t=44485 gives 903 after
-    // integer /8. Speed reference 16 at t=50984 matches CAN t=50976 exactly.
+    // integer /8. The speed reference16 follows0x284, but the authentic excerpt
+    // does not contain the corrected0x280 source. Do not fabricate a reading.
     TEST_ASSERT_EQUAL_UINT16(903, engineRPM);
-    TEST_ASSERT_EQUAL_UINT8(16, vehicleSpeed);
+    TEST_ASSERT_EQUAL_UINT8(0, vehicleSpeed);
+    TEST_ASSERT_FALSE(canAuxData.speedValid);
+    TEST_ASSERT_FALSE(canAuxData.bootTripValid);
+    TEST_ASSERT_EQUAL_UINT32(0, stats.ids.count(0x280));
+    TEST_ASSERT_TRUE(canAuxData.rpmValid);
+    TEST_ASSERT_EQUAL_UINT32(44485, canAuxData.rpmReceivedAt);
     TEST_ASSERT_EQUAL_INT16(63, coolantTemp);
+    TEST_ASSERT_TRUE(canAuxData.coolantValid);
+    TEST_ASSERT_EQUAL_UINT32(64297, canAuxData.coolantReceivedAt);
+    TEST_ASSERT_TRUE(canAuxData.oilValid);
+    TEST_ASSERT_TRUE(canAuxData.oilEstimated);
+    TEST_ASSERT_EQUAL_INT16(69, canAuxData.oilTemperatureC);
+    TEST_ASSERT_EQUAL_UINT32(31008, canAuxData.oilReceivedAt);
+    TEST_ASSERT_FALSE(canAuxData.outsideValid);
+    TEST_ASSERT_FALSE(canAuxData.dteValid);
     TEST_ASSERT_EQUAL_UINT32(246945, currentOdo);
+    TEST_ASSERT_TRUE(canAuxData.odometerValid);
+    TEST_ASSERT_EQUAL_UINT32(100294, canAuxData.odometerReceivedAt);
     TEST_ASSERT_TRUE(canAuxData.handbrakeValid);
     TEST_ASSERT_TRUE(canAuxData.handbrake);
     TEST_ASSERT_TRUE(canAuxData.brakePedalValid);
@@ -250,7 +283,7 @@ void test_short_known_frame_is_distinct_from_unknown_frame() {
     vehicleSpeed = 88;
     // A self-consistent export can still omit bytes required by the preset.
     TEST_ASSERT_TRUE(parseCaptureLine(
-        "RX ID: 0x284 | DLC: 1 | Data: 00", frame) == ParseResult::FRAME);
+        "RX ID: 0x280 | DLC: 1 | Data: 00", frame) == ParseResult::FRAME);
     processParsedFrame(stats, frame);
     TEST_ASSERT_EQUAL_UINT32(1, stats.parsed);
     TEST_ASSERT_EQUAL_UINT32(1, stats.decoderRejected);
@@ -288,10 +321,10 @@ void test_optional_external_log_replay() {
            "decoder_rejected=%u\n",
            stats.parsed, stats.rejected, stats.handled, stats.unknown,
            stats.decoderRejected);
-    printf("Capture ID counts: RPM[0x180]=%u speed[0x284]=%u fuel[0x5C5]=%u "
-           "DTE[0x54C]=%u unconfigured[0x2DE]=%u consumption[0x580]=%u\n",
-           stats.ids[0x180], stats.ids[0x284], stats.ids[0x5C5],
-           stats.ids[0x54C], stats.ids[0x2DE], stats.ids[0x580]);
+    printf("Capture ID counts: RPM[0x180]=%u speed[0x280]=%u odo[0x5C5]=%u "
+           "DTE[0x2DE]=%u old_speed[0x284]=%u oil_candidate[0x580]=%u\n",
+           stats.ids[0x180], stats.ids[0x280], stats.ids[0x5C5],
+           stats.ids[0x2DE], stats.ids[0x284], stats.ids[0x580]);
     printf("Last decoded values: RPM=%u speed=%u fuel=%uL odo=%u "
            "DTE=%dkm instant_raw=%u average_raw=%u\n",
            engineRPM, vehicleSpeed, fuelLevel, currentOdo, dteValue,

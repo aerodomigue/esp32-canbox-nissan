@@ -22,7 +22,7 @@
  * - 0x21: Remaining range / Distance to empty
  * - 0x24: Door status (1 byte bitmask)
  * - 0x28: Outside temperature (12 bytes, temp at [5])
- * - 0x29: Steering wheel angle (2 bytes LE, 0.1° units)
+ * - 0x29: Calibrated steering guideline units (signed 12-bit LE)
  * - 0x7D: Multi-function (sub-commands: 0x03=speed, 0x04=odo, 0x0A=rpm)
  */
 
@@ -162,6 +162,8 @@ void sendSteeringAngleMessage(int32_t angle) {
  * Encoding: RPM × 4, Little Endian
  */
 void sendRpmMessage(uint16_t rpm) {
+    // DUDU ignores >=15000 rpm. Reject before multiplication can wrap.
+    if (rpm >= 15000) return;
     uint16_t encoded = rpm * 4;
     uint8_t payload[3] = {
         SUBCMD_RPM,
@@ -173,20 +175,24 @@ void sendRpmMessage(uint16_t rpm) {
 
 /**
  * @brief Send vehicle speed via multi-function command
- * @param speed Speed in km/h
+ * @param speedCentiKmh Speed in 0.01 km/h units
+ * @param averageCentiKmh Boot average speed in 0.01 km/h units; 0xFFFF is
+ *                        permitted only when the caller selected DUDU
  *
  * Encoding: Speed × 100, Little Endian (0.01 km/h resolution)
  */
-void sendSpeedMessage(uint16_t speed) {
-    uint16_t encoded = speed * 100;
-    uint8_t payload[5] = {
+void sendSpeedMessage(uint16_t speedCentiKmh, uint16_t averageCentiKmh) {
+    if (speedCentiKmh >= 30000 ||
+        (averageCentiKmh >= 30000 && averageCentiKmh != 0xFFFF)) return;
+    uint8_t payload[6] = {
         SUBCMD_SPEED,
-        (uint8_t)(encoded & 0xFF),        // Speed LSB
-        (uint8_t)((encoded >> 8) & 0xFF), // Speed MSB
-        0x00,  // Average speed LSB (not available)
-        0x00   // Average speed MSB (not available)
+        (uint8_t)(speedCentiKmh & 0xFF),
+        (uint8_t)((speedCentiKmh >> 8) & 0xFF),
+        (uint8_t)(averageCentiKmh & 0xFF),
+        (uint8_t)((averageCentiKmh >> 8) & 0xFF),
+        0x00  // Explicit DUDU metric unit; LEN5 would expose checksum as D5.
     };
-    sendCanboxMessage(CMD_MULTI_FUNCTION, payload, 5);
+    sendCanboxMessage(CMD_MULTI_FUNCTION, payload, sizeof(payload));
 }
 
 /**
@@ -194,17 +200,24 @@ void sendSpeedMessage(uint16_t speed) {
  * @param odo Odometer in km (24-bit)
  *
  * Encoding: Little Endian 24-bit value
- * Per PDF: includes Trip 1/2 but we only have odometer
+ * The two trip slots explicitly mirror this device's boot trip. They are not
+ * the independent Nissan Trip A/B counters. Wire trip resolution is 0.1 km;
+ * DUDU truncates its text display to whole kilometres.
  */
-void sendOdometerMessage(uint32_t odo) {
+void sendOdometerMessage(uint32_t odo, uint32_t tripDeciKm) {
+    if (odo > 0xFFFFFF || tripDeciKm > 0xFFFFFF) return;
     uint8_t payload[12] = {
         SUBCMD_ODOMETER,
         (uint8_t)(odo & 0xFF),          // Odo LSB
         (uint8_t)((odo >> 8) & 0xFF),   // Odo Mid
         (uint8_t)((odo >> 16) & 0xFF),  // Odo MSB
         0xF2, 0x08,                     // Unknown/reserved (per PDF)
-        0x00, 0x00, 0x00,               // Trip 1 (not available)
-        0x00, 0x00, 0x00                // Trip 2 (not available)
+        (uint8_t)(tripDeciKm & 0xFF),
+        (uint8_t)((tripDeciKm >> 8) & 0xFF),
+        (uint8_t)((tripDeciKm >> 16) & 0xFF),
+        (uint8_t)(tripDeciKm & 0xFF),
+        (uint8_t)((tripDeciKm >> 8) & 0xFF),
+        (uint8_t)((tripDeciKm >> 16) & 0xFF)
     };
     sendCanboxMessage(CMD_MULTI_FUNCTION, payload, 12);
 }
@@ -218,21 +231,33 @@ void sendOdometerMessage(uint32_t odo) {
  * not an engine temperature; leave the unimplemented climate fields zero.
  */
 void sendOutsideTempMessage(int8_t tempExternal) {
+    // 0 and 255 are unavailable; higher values would wrap the U8 encoding.
+    if (tempExternal <= -40 || tempExternal > 87) return;
     uint8_t payload[12] = {0};
     payload[5] = (uint8_t)((tempExternal + 40) * 2);
     sendCanboxMessage(CMD_OUTSIDE_TEMP, payload, 12);
 }
 
 /**
- * @brief Send engine coolant in the FYT Toyota 0x7D/0x09 message.
+ * @brief Send coolant and oil in the shared FYT/DUDU Toyota temperature packet.
  *
- * com.syu.ms 26.0507 j0/c3 reads payload D2 unsigned, subtracts 40,
- * and emits callback 1049 [2, degrees C]. D1 is unused by that decoder.
- * No oil-temperature byte or unavailable sentinel is verified in this build.
+ * FYT c3 consumes D2; DUDU m3 consumes D1 for coolant and D3 for oil.
+ * Both sources are required: no oil unavailable sentinel is supported by m3.
+ * LEN3 incorrectly exposes checksum as oil. Celsius mode is required on DUDU.
  */
-void sendCoolantTempMessage(int16_t temperature) {
-    if (temperature < -40 || temperature > 215) return;
-    const uint8_t payload[3] = {0x09, 0x00, static_cast<uint8_t>(temperature + 40)};
+void sendTemperatureMessage(int16_t coolant, int16_t oil) {
+    if (coolant < -40 || coolant > 215 || oil < -40 || oil > 215) return;
+    const uint8_t payload[4] = {0x09, static_cast<uint8_t>(coolant + 40),
+                              static_cast<uint8_t>(coolant + 40),
+                              static_cast<uint8_t>(oil + 40)};
+    sendCanboxMessage(CMD_MULTI_FUNCTION, payload, sizeof(payload));
+}
+
+// Classic FYT consumes only D2. This legacy coolant-only packet must never be
+// sent to DUDU, whose parser would interpret its checksum as an oil reading.
+static void sendFytCoolantTempMessage(int16_t coolant) {
+    if (coolant < -40 || coolant > 215) return;
+    const uint8_t payload[3] = {0x09, 0x00, static_cast<uint8_t>(coolant + 40)};
     sendCanboxMessage(CMD_MULTI_FUNCTION, payload, sizeof(payload));
 }
 
@@ -240,21 +265,25 @@ void sendCoolantTempMessage(int16_t temperature) {
  * @brief Send trip info with remaining range, average speed, and elapsed time
  * @param range_km Remaining range in km
  * @param avg_speed_01 Average speed in 0.1 km/h units (e.g., 450 = 45.0 km/h)
- * @param elapsed_sec Elapsed driving time in seconds
+ * @param elapsed_minutes Elapsed boot trip time in minutes
  *
  * Per Chinese protocol document (Toyota RAV4):
  * - Cmd = 0x21, Len = 0x07
  * - Data0-1: Average Speed (Big Endian, 0.1 km/h units)
- * - Data2-3: Elapsed Time (Big Endian, seconds)
+ * - Data2-3: Elapsed Time (Big Endian, MINUTES; DUDU m3 ignores this field)
  * - Data4-5: Cruising Range (Big Endian, km)
  * - Data6: Unit (0x02 = km)
  */
-void sendTripInfoMessage(uint16_t range_km, uint16_t avg_speed_01, uint16_t elapsed_sec) {
+void sendTripInfoMessage(uint16_t range_km, uint16_t avg_speed_01, uint16_t elapsed_minutes) {
+    // FFFF is an ignore marker only for DUDU, not the classic FYT consumer.
+    // processRadioUpdates() restricts these partial packets to explicit DUDU.
+    if ((range_km >= 3000 && range_km != 0xFFFF) ||
+        (avg_speed_01 >= 3000 && avg_speed_01 != 0xFFFF)) return;
     uint8_t payload[7] = {
         (uint8_t)((avg_speed_01 >> 8) & 0xFF),  // Average Speed MSB
         (uint8_t)(avg_speed_01 & 0xFF),          // Average Speed LSB
-        (uint8_t)((elapsed_sec >> 8) & 0xFF),    // Elapsed Time MSB
-        (uint8_t)(elapsed_sec & 0xFF),           // Elapsed Time LSB
+        (uint8_t)((elapsed_minutes >> 8) & 0xFF),
+        (uint8_t)(elapsed_minutes & 0xFF),
         (uint8_t)((range_km >> 8) & 0xFF),       // Range MSB
         (uint8_t)(range_km & 0xFF),              // Range LSB
         0x02                                      // Unit: km
@@ -272,6 +301,8 @@ void sendTripInfoMessage(uint16_t range_km, uint16_t avg_speed_01, uint16_t elap
  * - Data1-2: Value (Big Endian), divide by 10 to get L/100km
  */
 void sendFuelConsumptionMessage(uint16_t consumption_01) {
+    // DUDU displays FFFF as 6553.5; it is not an unavailable instant value.
+    if (consumption_01 == 0xFFFF) return;
     uint8_t payload[3] = {
         FUEL_UNIT_L100KM,                        // Unit: L/100km
         (uint8_t)((consumption_01 >> 8) & 0xFF), // Value MSB
@@ -283,7 +314,7 @@ void sendFuelConsumptionMessage(uint16_t consumption_01) {
 /**
  * @brief Send average/history fuel consumption
  * @param consumption_01 Current-trip consumption in 0.1 L/100km units,
- *                       or 0xFFFF when unavailable
+ *                       excluding 0xFFFF (not a shared unavailable marker)
  *
  * Per Raise V2.21, page 5 (Toyota RAV4):
  * - Cmd = 0x23, Len = 0x0D
@@ -292,6 +323,8 @@ void sendFuelConsumptionMessage(uint16_t consumption_01) {
  * - Data3-12: Five historical trips, 0xFFFF each when unavailable
  */
 void sendFuelConsumptionAvgMessage(uint16_t consumption_01) {
+    // FYT maps FFFF to zero, DUDU ignores it and preserves an old reading.
+    if (consumption_01 == 0xFFFF) return;
     uint8_t payload[13] = {
         FUEL_UNIT_L100KM,                        // Unit: L/100km
         (uint8_t)((consumption_01 >> 8) & 0xFF), // Value MSB
@@ -331,6 +364,11 @@ void handshake() {
     while (RadioSerial.available() > 0) {
         RadioSerial.read(); // Discard incoming data
     }
+}
+
+static bool sourceFresh(bool valid, uint32_t receivedAt, uint32_t now,
+                        uint32_t timeout = CanAuxData::SOURCE_TIMEOUT_MS) {
+    return valid && uint32_t(now - receivedAt) < timeout;
 }
 
 /**
@@ -423,7 +461,9 @@ void processRadioUpdates() {
     // 4. ENGINE RPM (CMD 0x7D, SUB 0x0A) - 333ms interval
     // =========================================================================
     if (now - lastRpmTime >= RPM_INTERVAL_MS) {
-        sendRpmMessage(engineRPM);
+        if (sourceFresh(canAuxData.rpmValid, canAuxData.rpmReceivedAt, now)) {
+            sendRpmMessage(engineRPM);
+        }
         lastRpmTime = now;
     }
 
@@ -431,7 +471,12 @@ void processRadioUpdates() {
     // 5. VEHICLE SPEED (CMD 0x7D, SUB 0x03) - 500ms interval
     // =========================================================================
     if (now - lastSpeedTime >= SPEED_INTERVAL_MS) {
-        sendSpeedMessage(vehicleSpeed);
+        const bool averageValid = canAuxData.bootTripValid && averageSpeed < 3000;
+        if (sourceFresh(canAuxData.speedValid, canAuxData.speedReceivedAt, now) &&
+            (averageValid || canAuxData.duduReceiver)) {
+            sendSpeedMessage(canAuxData.speedCentiKmh, averageValid
+                                ? static_cast<uint16_t>(averageSpeed * 10) : 0xFFFF);
+        }
         lastSpeedTime = now;
     }
 
@@ -449,26 +494,32 @@ void processRadioUpdates() {
     // =========================================================================
     // 6b. AVERAGE FUEL CONSUMPTION (CMD 0x23) - 5s interval
     // =========================================================================
-    // Derived profiles explicitly clear unavailable trip data using the
-    // protocol's invalid marker; other profiles retain source availability.
+    // The current-value FFFF marker disagrees between FYT and DUDU. Publish
+    // only a complete measured/estimated boot average, never an invented zero.
     if (now - lastFuelConsAvgTime >= FUEL_CONS_AVG_INTERVAL_MS) {
-        if (canAuxData.fuelConsumptionAvgValid || canAuxData.fuelConsumptionDerived) {
-            sendFuelConsumptionAvgMessage(canAuxData.fuelConsumptionAvgValid
-                                              ? fuelConsumptionAvg
-                                              : 0xFFFF);
+        if (canAuxData.fuelConsumptionAvgValid) {
+            sendFuelConsumptionAvgMessage(fuelConsumptionAvg);
         }
         lastFuelConsAvgTime = now;
     }
 
     // =========================================================================
-    // 7. TEMPERATURES (CMD 0x28 and 0x7D/0x09) - 5s interval
+    // 7. TEMPERATURES (CMD 0x28 and shared 0x7D/0x09) - 5s interval
     // =========================================================================
-    // Outside temperature remains in 0x28 D5; coolant uses 0x7D/0x09 D2.
+    // Outside is sent only from a configured valid source. Oil remains an
+    // explicit provisional F15 estimate; never fabricate an oil companion.
     if (now - lastTempTime >= TEMP_INTERVAL_MS) {
-        sendOutsideTempMessage(tempExt);
-        if (canAuxData.coolantValid &&
-            uint32_t(now - canAuxData.coolantReceivedAt) < CanAuxData::COOLANT_TIMEOUT_MS) {
-            sendCoolantTempMessage(coolantTemp);
+        if (sourceFresh(canAuxData.outsideValid, canAuxData.outsideReceivedAt, now)) {
+            sendOutsideTempMessage(tempExt);
+        }
+        if (sourceFresh(canAuxData.coolantValid, canAuxData.coolantReceivedAt, now,
+                        CanAuxData::COOLANT_TIMEOUT_MS)) {
+            if (sourceFresh(canAuxData.oilValid, canAuxData.oilReceivedAt, now,
+                            CanAuxData::OIL_TIMEOUT_MS)) {
+                sendTemperatureMessage(coolantTemp, canAuxData.oilTemperatureC);
+            } else if (!canAuxData.duduReceiver) {
+                sendFytCoolantTempMessage(coolantTemp);
+            }
         }
         lastTempTime = now;
     }
@@ -477,10 +528,20 @@ void processRadioUpdates() {
     // 8. TRIP INFO / REMAINING RANGE (CMD 0x21) - 5s interval
     // =========================================================================
     // Contains: Average Speed, Elapsed Time, Distance to Empty
-    // Average speed/elapsed time from trip computer (if available on CAN)
-    // Distance to Empty from active Nissan preset CAN 0x54C (not yet calibrated).
+    // Boot software trip, plus a separately received distance-to-empty source.
+    // Global elapsedTime is seconds; the UART field is MINUTES.
     if (now - lastRangeTime >= RANGE_INTERVAL_MS) {
-        sendTripInfoMessage(dteValue, averageSpeed, elapsedTime);
+        const bool rangeValid = sourceFresh(canAuxData.dteValid, canAuxData.dteReceivedAt,
+                                            now, CanAuxData::DTE_TIMEOUT_MS) &&
+                                dteValue >= 0 && dteValue < 3000;
+        const bool averageValid = canAuxData.bootTripValid && averageSpeed < 3000;
+        if ((rangeValid && averageValid) ||
+            (canAuxData.duduReceiver && (rangeValid || averageValid))) {
+            const uint32_t minutes = elapsedTime / 60;
+            sendTripInfoMessage(rangeValid ? static_cast<uint16_t>(dteValue) : 0xFFFF,
+                                averageValid ? averageSpeed : 0xFFFF,
+                                static_cast<uint16_t>(minutes > 65534 ? 65534 : minutes));
+        }
         lastRangeTime = now;
     }
 
@@ -488,7 +549,10 @@ void processRadioUpdates() {
     // 9. ODOMETER (CMD 0x7D, SUB 0x04) - 10s interval
     // =========================================================================
     if (now - lastOdometerTime >= ODOMETER_INTERVAL_MS) {
-        sendOdometerMessage(currentOdo);
+        if (sourceFresh(canAuxData.odometerValid, canAuxData.odometerReceivedAt, now) &&
+            canAuxData.bootTripValid) {
+            sendOdometerMessage(currentOdo, canAuxData.bootTripDistanceDeciKm);
+        }
         lastOdometerTime = now;
     }
 }

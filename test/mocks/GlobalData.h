@@ -28,6 +28,6 @@ extern unsigned long lastRightIndicatorTime;
 extern uint16_t fuelConsumptionInst;
 extern uint16_t fuelConsumptionAvg;
 extern uint16_t averageSpeed;
-extern uint16_t elapsedTime;
+extern uint32_t elapsedTime;
 
 inline void resetVehicleData() {}

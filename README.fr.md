@@ -38,15 +38,15 @@ Le projet a démarré comme une solution dédiée à la **Nissan Juke F15**, mai
 
 ### État des Fonctionnalités
 
-État au **15 octobre 2026**, d'après les essais et confirmations du propriétaire
-sur son **Juke F15 2011 1.6 DIG-T manuel**. Les dix fonctions confirmées
-ci-dessous sont opérationnelles sur ce véhicule. Les autres données restent
-approximatives, non validées ou indisponibles : elles demandent davantage de
-captures, une calibration ou du travail de décodage.
+État au **7 novembre 2026**, d'après les essais et confirmations du propriétaire
+sur son **Juke F15 2011 1.6 DIG-T manuel**. Les fonctions confirmées sont opérationnelles sur ce véhicule. Les ajouts de
+trajet depuis démarrage sont documentés séparément ; huile et coefficient de
+volume carburant restent provisoires. Extérieur et quantité de carburant sont
+indisponibles.
 
 | Fonctionnalité | Statut | Notes |
 | --- | --- | --- |
-| Vitesse Véhicule | ✅ Fonctionnement confirmé | `0x284` octets 4–5 BE `/100` ; également corroboré par OBD à faible vitesse |
+| Vitesse Véhicule | ✅ Fonctionnement confirmé | `0x280` octets 4–5 BE `/100` ; distance intégrée du long trajet cohérente avec le compteur total |
 | Kilométrage Total (km) | ✅ Fonctionnement confirmé | `0x5C5` octets 1–3 BE ; retour utilisateur sur le compteur kilométrique |
 | Régime Moteur (tr/min) | ✅ Fonctionnement confirmé | `0x180` octets 0–1 BE `/8` ; également corroboré par OBD |
 | Direction / Lignes Dynamiques | ✅ Fonctionnement confirmé | `0x002` B0–B1 LE signés, 0,1° ; réglage utilisateur `steerScale=500`, `steerOffset=0`, inversion activée |
@@ -56,17 +56,19 @@ captures, une calibration ou du travail de décodage.
 | Feux | ✅ Fonctionnement confirmé côté boîtier | Position, croisement et pleins phares ; le contrôle de l'affichage des positions dans Manager est [documenté](docs/protocols/USB_SERIAL_PROTOCOL.md#lights-dashboard-field) |
 | Tension Batterie | ✅ Fonctionnement confirmé | Également cohérente avec l'OBD : écart moyen 0,139 V, points de mesure potentiellement différents |
 | Température Eau Moteur | ✅ Fonctionnement confirmé | Confirmation utilisateur et décodage `0x551[0]−40` corroboré par OBD ; distincte de la température extérieure |
-| Température Huile Moteur | Indisponible | Piste `0x580[4]−40` non validée sur F15 ; aucun champ d'huile établi dans l'APK Toyota examinée |
+| Température Huile Moteur | Source provisoire activée | `0x580[4]−40` ; acceptée explicitement pour comparaison, identité non confirmée indépendamment ; paquet UART eau/huile de quatre octets |
 | Niveau Essence | Indisponible dans le preset Juke | Fausse jauge `0x5C5[0]` retirée ; `FuelValid: 0` distingue la valeur de compatibilité `0 L` d'une mesure |
 | Pédale de frein | Non validée | `0x180[7] & 0x01` ; geste et polarité à vérifier séparément sur le véhicule |
-| Température Extérieure | Non validée, valeur incorrecte signalée | Le mapping `0x540[0]−40` donne 28 °C dans les captures ; le propriétaire indique environ 20 °C |
-| Conso. Instantanée | Approximative, à calibrer | Compteur `0x551[1]` et vitesse `0x284` ; 80 mm³/incrément provisoires ; fenêtre de 1 s |
-| Conso. Moyenne | Approximative, à calibrer | Estimation de session disponible après 100 m ; même coefficient provisoire ; réinitialisée au rechargement, redémarrage ou interruption des sources |
-| Autonomie Restante | Non validée | Mapping CAN `0x54C` ; unité et référence du combiné à vérifier |
+| Température Extérieure | Indisponible dans le preset F15 | Mapping incorrect `0x540[0]−40` retiré ; photos à 14 °C contre ses 28 °C |
+| Conso. Instantanée | Approximative, à calibrer | Compteur `0x551[1]` et vitesse `0x280` ; 80 mm³/incrément provisoires ; fenêtre de 1 s ; L/100 km sur UART |
+| Conso. Moyenne | Estimation provisoire depuis démarrage | RAM, ralenti inclus, disponible après 100 m ; rechargement identique préservé ; une interruption invalide la moyenne de tout le trajet |
+| Autonomie Restante | Fortement corroborée | `0x2DE` octets 6–7 BE `/10` km ; capture contrôlée cohérente avec les photos |
 
 > **Note :** La documentation du protocole Raise/Toyota RAV4 utilisé par les autoradios Android est rare. Certaines fonctionnalités sont encore en cours de reverse-engineering par manque de spécifications officielles du protocole.
 
 Voir la **[Roadmap](ROADMAP.md)** pour les fonctionnalités à venir.
+Le [contrat actuel F15 → DUDU, unités et trajet depuis démarrage](docs/F15_DUDU_BOOT_TRIP_MAPPING.fr.md)
+décrit vitesse, autonomie, consommation, trajets virtuels A/B et diagnostic Nissan borné.
 Le [mapping CAN documenté FR/EN](docs/JUKE_F15_CAN_MAPPING.fr.md) contient les
 preuves CAN/OBD, les sources et les limites. Le preset corrigé du dépôt doit
 être transféré séparément pour remplacer le JSON installé sur l'ESP32.
@@ -350,9 +352,9 @@ réglage local sur une clé nulle/absente nécessite toujours `CFG SAVE` pour
 survivre au redémarrage. Les valeurs entières comme `500.0` restent compatibles.
 
 `rpmDiv`, `tankCap` et `dteDiv` sont des réglages historiques mémorisés mais
-actuellement inutilisés par le décodeur. `8` et `338` reprennent les diviseurs
-des formules RPM/autonomie de `frames` ; `tankCap: 45` conserve une valeur
-historique, pas une capacité de réservoir F15 validée. Les paramètres de
+actuellement inutilisés par le décodeur. `rpmDiv: 8` reprend la formule du régime ;
+l'ancien `dteDiv: 338` ne contrôle pas la conversion corrigée `0x2DE /10`.
+`tankCap: 45` conserve une valeur historique, pas une capacité de réservoir F15 validée. Les paramètres de
 consommation restent dans `fuelConsumption`. Voir le [guide des presets](docs/VEHICLE_PRESET_GUIDE.md#vehicle-parameters-vehicleparams).
 
 ---
@@ -361,21 +363,25 @@ consommation restent dans `fuelConsumption`. Voir le [guide des presets](docs/VE
 
 | Donnée | ID CAN | Fréq. envoi | Notes |
 | --- | --- | --- | --- |
-| Angle Volant | 0x002 | 200ms | Confirmé avec `scale=500`, `offset=0`, inversion ; B0–B1 LE signés en 0,1° ; sortie UART limitée à ±500 |
-| Régime Moteur | 0x180 | 333ms | Octets 0–1, big endian, brut / 8 ; tr/min entiers |
-| Vitesse Véhicule | 0x284 | 500ms | Octets 4–5, big endian, brut / 100 ; km/h entiers |
-| Frein à Main | 0x5C5 | Sur requête `SYS DATA` | Octet 0 bit 2 ; `unknown` avant la première trame configurée |
-| Pédale de frein | 0x180 | Sur requête `SYS DATA` | Octet 7 bit 0 ; état brut de contact, polarité physique à vérifier |
-| Compteur carburant brut | 0x551 | Sur requête `SYS DATA` | Octet 1 conservé brut 0–255 ; `FuelConsEstimated: 1` identifie la conversion provisoire séparée |
+| Angle Volant | 0x002 | 200 ms | Confirmé avec `scale=500`, `offset=0`, inversion ; B0–B1 LE signés en 0,1° ; UART limité à ±500 |
+| Régime Moteur | 0x180 | 333 ms | B0–B1 BE /8 ; brut `FFFF` indisponible ; UART `7D/0A` en régime ×4 LE |
+| Vitesse Véhicule | 0x280 | 500 ms | B4–B5 BE /100 km/h ; brut `FFFF` indisponible ; `7D/03` inclut vitesse et moyenne du démarrage en 0,01 km/h |
+| Frein à Main | 0x5C5 | Sur requête `SYS DATA` | B0 bit2 ; pas d'UART `7D/06`, car le champ associé de ceinture reste inconnu |
+| Pédale de frein | 0x180 | Sur requête `SYS DATA` | B7 bit0 ; état brut de contact, polarité physique à vérifier |
+| Compteur carburant brut | 0x551 | Sur requête `SYS DATA` | B1 conservé brut 0–255 ; `FuelConsEstimated: 1` indique la conversion provisoire séparée |
 | Niveau Essence | — | — | Aucune source Juke ; compatibilité `Fuel: 0 L` avec `FuelValid: 0` |
-| Tension Batterie | 0x6F6 | — | Sortie alternateur |
-| Température Extérieure | 0x540 | 5000ms | Octet historique 0 − 40 ; référence physique à vérifier |
-| Température Eau Moteur | 0x551 | 5000ms | `0x551[0]−40` → UART `0x7D/0x09`, `09 00 (°C+40)` ; source fraîche obligatoire ; [preuve APK et réglage d'affichage](docs/technical/RADIO_SEND.md#4b-engine-coolant-temperature-command-0x7d-sub-command-0x09) |
-| État Portes | 0x60D | 250ms | Toutes portes + coffre (ou sur changement) |
-| Clignotants / Feux | 0x60D | 200ms ou sur changement | Fonctionnement confirmé ; UART `0x7D/01` et ligne `Lights:` de `SYS DATA` |
-| Autonomie | 0x54C | 5000ms | Octets initiaux 6–7, big endian, brut × 100 / 338 ; calibration à vérifier |
-| Conso. Instantanée / Moyenne | 0x551 + 0x284 | 1000ms / 5000ms | Estimation en 0,1 L/100 km ; instantanée indisponible non émise, moyenne indisponible `0xFFFF` ; [réglages et limites](docs/VEHICLE_PRESET_GUIDE.md#counter-based-fuel-consumption-fuelconsumption) |
-| Compteur km | 0x5C5 | 10000ms | Octets 1–3 BE (24 bits) ; fonctionnement confirmé par l’utilisateur |
+| Tension Batterie | 0x6F6 | Sur requête `SYS DATA` | Mesure Nissan disponible ; la carte tension DUDU examinée utilise une source MCU interne |
+| Température Extérieure | — | Aucun envoi UART | Ancien mapping incorrect `0x540` retiré ; aucun remplacement validé |
+| Température Eau Moteur | 0x551 | 5000 ms | B0−40 °C ; `7D/09` LEN4 `[09,c+40,c+40,oil+40]`, deux sources fraîches ; FYT lit D2, DUDU D1 |
+| Température Huile Moteur | 0x580 | 5000 ms | B4−40 °C, source provisoire ; même paquet commun LEN4, huile DUDU en D3 ; deux sources fraîches |
+| État Portes | 0x60D | 250 ms | Toutes portes et coffre, ou sur changement ; mapping fonctionnel conservé |
+| Clignotants / Feux | 0x60D | 200 ms ou sur changement | UART `7D/01` et ligne `Lights:` de `SYS DATA` |
+| Autonomie | 0x2DE | 5000 ms | B6–B7 BE /10 km ; `21` contient autonomie en km entiers, moyenne du démarrage et temps en 0,1 km/h/minutes |
+| Conso. Instantanée / Moyenne | 0x551 + 0x280 | 1000 ms / 5000 ms | Estimation en 0,1 L/100 km ; moyenne RAM du démarrage, ralenti inclus, après 100 m ; valeurs courantes invalides non émises, jamais envoyées en `FFFF` |
+| Compteur km / trajets virtuels A et B | 0x5C5 + 0x280 | 10000 ms | ODO B1–B3 BE en km ; `7D/04` porte ODO et deux copies du trajet intégré depuis démarrage en 0,1 km, pas les A/B Nissan ; trajet complet requis |
+
+Voir le [contrat actuel de mapping et disponibilité](docs/F15_DUDU_BOOT_TRIP_MAPPING.fr.md)
+pour la fraîcheur, les différences de décodeurs et les calibrations provisoires.
 
 ---
 
@@ -396,6 +402,7 @@ Fonctionnalités :
 
 ### Documentation CAN Nissan
 
+- **[Mapping actuel F15 → DUDU, unités et trajet depuis démarrage](docs/F15_DUDU_BOOT_TRIP_MAPPING.fr.md)** — [version anglaise](docs/F15_DUDU_BOOT_TRIP_MAPPING.md)
 - [Mapping Juke F15 et preuves de capture](docs/JUKE_F15_CAN_MAPPING.fr.md)
 - [Catalogue des PDF Nissan et limites de millésime](docs/vehicle/nissan-juke-f15/README.fr.md)
 - [Racelogic / VBOX : documents et définitions CAN](https://vboxautomotive.co.uk/en/can-database-documents)

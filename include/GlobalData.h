@@ -41,10 +41,10 @@ extern float voltBat;
 /** Distance to empty in km (estimated remaining range) */
 extern int16_t dteValue;
 
-/** Average fuel consumption (L/100km) - reserved for future use */
+/** Legacy average fuel consumption (L/100km); radio uses fuelConsumptionAvg */
 extern float fuelConsoMoy;
 
-/** External/ambient temperature in °C (legacy Juke candidate: 0x540). */
+/** External temperature in °C; consult canAuxData validity/freshness. */
 extern int8_t tempExt;
 
 /** Engine coolant °C; check canAuxData validity/freshness before transmission. */
@@ -95,8 +95,8 @@ extern uint16_t fuelConsumptionAvg;
 /** Average speed in 0.1 km/h units (e.g., 450 = 45.0 km/h) - for trip display */
 extern uint16_t averageSpeed;
 
-/** Elapsed driving time in seconds - for trip display */
-extern uint16_t elapsedTime;
+/** Elapsed time since device boot in seconds - for trip display */
+extern uint32_t elapsedTime;
 
 // =============================================================================
 // UTILITY FUNCTIONS

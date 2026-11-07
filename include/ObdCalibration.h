@@ -4,7 +4,7 @@
 #include <stdint.h>
 
 // Read-only service 01 measurements and optional, bounded Nissan service22 probes.
-// They never update vehicle data or open a manufacturer diagnostic session.
+// They never update vehicle data. F15-only probes use short, bounded sessions.
 // Wire transmission and log output are injected for native tests.
 class ObdCalibration {
 public:
@@ -17,6 +17,7 @@ public:
     ObdCalibration(Send send, Emit emit, void* context = nullptr);
     void setEnabled(bool enabled, uint32_t now);
     void setNissanProbesEnabled(bool enabled);
+    void setNissanProbesEnabled(bool enabled, uint32_t now);
     void tick(uint32_t now);
     void receive(const CanFrame& frame, uint32_t now);
     bool enabled() const { return _enabled; }
@@ -24,6 +25,7 @@ public:
 
 private:
     enum class Stage { Page00, Page20, Page40, Poll, Retry };
+    enum class NissanStep { Idle, Open, First, Second, Close };
     struct Ecu {
         uint32_t support[3] = {};
         bool valid[3] = {};
@@ -36,7 +38,10 @@ private:
     bool _pending = false;
     bool _nissanProbesEnabled = false;
     bool _isProbe = false;
-    bool _probeAttempted = false;
+    bool _isSession = false;
+    bool _sessionMayBeOpen = false;
+    bool _nissanBlocked = false;
+    NissanStep _nissanStep = NissanStep::Idle;
     bool _probeTerminalNegative = false;
     uint8_t _probeLastNrc = 0;
     Stage _stage = Stage::Page00;
@@ -48,15 +53,19 @@ private:
     uint8_t _pollIndex = 0;
     uint8_t _fastIndex = 0;
     uint8_t _scheduleSlot = 0;
-    uint8_t _probeIndex = 0;
+    uint8_t _nissanGroup = 0;
+    uint8_t _completedGroups = 0;
+    uint8_t _sessionCommand = 0;
     uint8_t _activeProbe = 0;
-    uint8_t _disabledProbes = 0;
     uint16_t _requestId = 0x7DF;
     uint32_t _sequence = 0;
     uint32_t _sentAt = 0;
+    bool _hasAttempt = false;
     uint32_t _lastAttempt = 0;
     uint32_t _retryAt = 0;
-    uint32_t _lastProbeAttempt = 0;
+    uint32_t _lastGroupAttempt = 0;
+    uint32_t _groupStarted = 0;
+    uint32_t _lastNow = 0;
 
     void log(const char* format, ...);
     bool supports(uint8_t ecu, uint8_t pid) const;
@@ -65,4 +74,9 @@ private:
     void request(uint8_t pid, uint16_t id, uint32_t now);
     bool poll(bool fast, bool skipFast, uint32_t now);
     bool pollProbe(uint32_t now);
+    void requestProbe(uint8_t index, uint32_t now);
+    void requestSession(uint8_t command, uint32_t now);
+    void finishNissan(uint32_t now);
+    void cancelNissan(uint32_t now, const char* reason);
+    void runNissan(uint32_t now);
 };

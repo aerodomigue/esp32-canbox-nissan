@@ -16,7 +16,7 @@
       ]
     },
     {
-      "canId": "0x284",
+      "canId": "0x280",
       "fields": [
         {
           "target": "VEHICLE_SPEED",

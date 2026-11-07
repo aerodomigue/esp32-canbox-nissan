@@ -2,33 +2,30 @@
 
 > **Langues :** **Français** | [English](OBD_CALIBRATION.md)
 
-`LOG ON` active en mode véhicule réel deux fonctions : l'enregistrement de
-toutes les trames lues, avec leurs octets bruts inchangés, et les lectures
-OBD-II **service 01** pour disposer de références indépendantes. Avec le profil
-nommé exactement `Nissan Juke F15`, quatre lectures candidates Nissan
-**service 22** sont aussi tentées. Chaque ligne
-de diagnostic commence par **`ODB`**, selon le préfixe demandé. OBD-II est
-le nom du protocole ; `ODB` est le libellé exact des lignes du journal. `LOG OFF`
-arrête les nouvelles requêtes et la capture ; une transmission déjà mise en
-file dans le contrôleur ne peut pas être annulée par cette commande.
+En véhicule réel, `LOG ON` enregistre toutes les trames CAN reçues avec leurs
+octets inchangés et interroge les références OBD-II **service 01** annoncées.
+Avec le profil exact `Nissan Juke F15`, il tente aussi **cinq lectures candidates
+service 22 dans trois groupes diagnostiques bornés `10C0`/`1081`**. Toutes les
+lignes diagnostiques commencent par **`ODB`** : OBD-II est le nom du protocole,
+`ODB` le préfixe exact du log. `LOG OFF` arrête capture et mesures, avec une
+éventuelle unique tentative de fermeture de session au mieux. Les transmissions
+déjà mises en file dans le contrôleur ne peuvent pas être rappelées.
 
-Les lectures OBD ne changent ni le preset, ni les valeurs décodées envoyées à
-l'autoradio. La [capture CAN/OBD du 14 octobre et le mapping documenté](JUKE_F15_CAN_MAPPING.fr.md)
-ont conduit à des corrections explicites dans le preset du dépôt : régime
-`0x180 B0–B1 /8`, vitesse `0x284 B4–B5 /100`, frein à main `0x5C5 B0 bit2`,
-contact de frein `0x180 B7 bit0` et compteur brut lié au carburant `0x551 B1`.
-Il s'agit de champs CAN périodiques, pas de nouvelles commandes OBD. La
-polarité du contact de frein et l'interprétation physique du compteur brut
-restent à vérifier.
+Le diagnostic ne change ni le preset ni les valeurs envoyées au poste.
+Les [preuves du 14 octobre](JUKE_F15_CAN_MAPPING.fr.md) restent liées à leur ancien
+preset et à leur capture à basse vitesse ; ne pas les présenter comme une
+validation de la configuration actuelle. Le [mapping F15/DUDU actuel](F15_DUDU_BOOT_TRIP_MAPPING.fr.md)
+utilise vitesse `0x280 B4..B5 /100`, autonomie `0x2DE B6..B7 /10`, régime
+`0x180 B0..B1 /8`, eau validée `0x551 B0−40` et huile explicitement provisoire
+`0x580 B4−40`. Ces sources CAN périodiques diffèrent des PIDs/DIDs diagnostiques.
+La consommation utilise un coefficient carburant provisoire et une moyenne RAM
+depuis démarrage.
 
-La jauge fondée sur l'octet entier `0x5C5` et les deux consommations `0x580`
-ont été retirées. Dans le profil Juke, `FuelValid: 0` signale que la valeur
-de compatibilité `Fuel: 0 L` est indisponible ; `FuelConsValid: INST=0 AVG=0`
-empêche les trames UART de consommation. `FuelRaw` n'est ni des L/h ni des
-L/100 km. Direction, température extérieure, kilométrage et autonomie
-`0x54C` gardent leurs formules historiques à valider physiquement. Le profil
-expérimental retiré de la PR reste historique ; les nouveaux changements
-s'appuient sur les preuves véhicule citées.
+La fausse jauge `0x5C5` entière et les anciennes consommations `0x580` restent
+retirées. `FuelValid: 0` distingue `Fuel: 0 L` de compatibilité d'une quantité
+mesurée. `FuelRaw` n'est ni des L/h ni des L/100 km. La source extérieure incorrecte
+est retirée sans remplacement inventé. Le guide actuel ci-dessus détaille les
+validités, marqueurs provisoires et restrictions UART.
 
 La [recherche des commandes Nissan et le tableau de couverture](NISSAN_DIAGNOSTIC_RESEARCH.fr.md)
 précisent les valeurs réellement vérifiables. Aucune lecture constructeur
@@ -39,12 +36,12 @@ autonomie n'ont actuellement pas de référence OBD interrogée.
 ## Utilisation
 
 1. Installer la **nouvelle OTA applicative** contenant le client OBD étendu.
-   Cette mise à jour de capture ne nécessite pas de nouveau JSON : conserver
-   le preset F15 existant et sélectionner le profil nommé exactement
-   `Nissan Juke F15` pour activer les lectures candidates Nissan. Une OTA
-   applicative ne remplace pas LittleFS.
+   Sélectionner le profil nommé exactement `Nissan Juke F15` pour les groupes
+   diagnostiques. Transférer aussi le JSON actuel séparément pour installer le
+   mapping véhicule F15/DUDU corrigé : une OTA ne remplace pas les presets LittleFS.
 2. Ouvrir la sortie série USB et enregistrer **toutes les lignes**, notamment
-   `RX 0x`, `ODB RAW_RX`, `ODB RX`, `ODB PROBE_RX` et les erreurs diagnostiques,
+   `RX 0x`, `ODB RAW_RX`, `ODB RX`, `ODB PROBE_RX`, `ODB SESSION_RX`,
+   `ODB SESSION_STATE` et les erreurs diagnostiques,
    sans préfixe d'heure ou de couleur ajouté. Pour le moniteur PlatformIO :
    `.venv/bin/pio device monitor --filter direct`.
 3. Envoyer `LOG ON`. Attendre les lignes `ODB SUPPORTED`, puis les `ODB RX`
@@ -130,54 +127,84 @@ identifiants de requête/calculateur pour les comparer.
 
 ### Lectures candidates Nissan : profil F15 exact uniquement
 
-Ces sondes sont des **lectures service `22`**, distinctes de la découverte
-des PIDs standard. Elles sont activées seulement si le nom du profil actif
-est exactement `Nissan Juke F15` et si le calculateur `0x7E8` a répondu à la
-découverte des capacités Mode 01. Les requêtes ciblent alors l'adresse
-physique `0x7E0` ; les autres calculateurs répondants ne sont pas utilisés
-pour ces sondes. Ces lectures utilisent le cycle de polling standard et
-nécessitent donc aussi qu'au moins un des 20 PIDs standard soit annoncé
-par un calculateur répondant.
+Les cinq **candidates service `22`** sont distinctes des pages de support des
+PIDs standard. Elles ne fonctionnent qu'en capture réelle avec le nom exact
+`Nissan Juke F15`, après réponse du calculateur moteur `0x7E8` à la découverte
+standard. L'adresse de requête physique est `0x7E0` ; les autres calculateurs
+répondants ne lui sont pas substitués. La découverte doit aussi annoncer au
+moins un des 20 PIDs définis pour passer à l'étape de polling.
 
 | DID | Fonction candidate | Donnée enregistrée | Unité |
 | --- | --- | --- | --- |
-| `111F` | Température d'huile candidate | premier octet de données `A` non signé, avec conversion candidate `A−50` | degC |
-| `1114` | Jauge de carburant candidate | premier octet `A` non signé, sans conversion en pourcentage | raw |
+| `1101` | Contrôle eau candidat | premier octet `A` non signé, conversion candidate `A−50` | degC |
+| `111F` | Température d'huile candidate | premier octet `A` non signé, conversion candidate `A−50` | degC |
+| `1114` | Jauge de carburant candidate | premier octet `A` non signé, sans pourcentage ni volume | raw |
 | `1183` | Rapport engagé candidat | premier octet `A` non signé, sans énumération des rapports | raw |
 | `1304` | Embrayage candidat | premier octet `A` non signé, sans interprétation booléenne/par bit | raw |
 
-La première sonde utilise un créneau normal après découverte. Ensuite, au
-maximum une sonde utilise un créneau normal toutes les **10 secondes**.
-Les candidates tournent ; une réponse positive permet de nouvelles lectures.
-Un timeout ou une réponse négative terminale désactive ce DID pour la session
-`LOG ON` en cours ; une réponse positive ultérieure ne lève pas un refus
-terminal. Le NRC `0x78` (réponse en attente) peut être suivi d'une réponse
-positive dans la fenêtre initiale de 250 ms, sans la prolonger. Sans réponse
-positive, la tentative expire et le DID est désactivé pour cette capture.
-Un échec local de mise en file TX ne désactive pas le DID : il reste éligible
-à la rotation espacée de 10 secondes. Relancer la capture permet un nouvel
-essai. Les lectures standard continuent indépendamment.
+Le firmware exécute trois petits groupes de session constructeur. Chaque groupe
+est tenté une fois par session de capture activée, avec au moins **10 secondes
+entre débuts de groupe**. Une reprise de capture réelle après OTA recommence la
+découverte et le budget d'essais. Le premier groupe commence dans un créneau
+normal de l'ordonnanceur :
 
-Aucune ouverture de session `10 C0`, fermeture de session `10 81`, commande
-d'actionneur, adaptation ou effacement de défaut n'est envoyée. Certaines
-définitions Nissan publiées utilisent une autre session diagnostique : un
-refus ou un silence ici ne prouve pas l'absence de la sonde dans la voiture.
-Même une réponse positive ne valide pas physiquement le libellé ou la formule
-de température d'huile sur ce MR16DDT manuel ; conserver les octets exacts
-pour la vérification ultérieure. La jauge reste brute car les conversions
-publiées divergent.
+```text
+10 C0 → 22 11 01 → 22 11 1F → 10 81
+10 C0 → 22 11 14 → 22 11 83 → 10 81
+10 C0 → 22 13 04             → 10 81
+```
 
-Des PIDs standard peuvent être absents du bitmap ; les sondes candidates
-peuvent être refusées ou expirer. Ces absences sont possibles et ne sont
-pas des mesures à zéro. Les lectures ne modifient ni le preset, ni le
-dashboard, ni les données envoyées au poste et ne calibrent aucun mapping
-CAN automatiquement.
+Chaque ouverture envoie `02 10 C0 00 00 00 00 00` à `0x7E0`. Seul un positif
+`50 C0` correspondant depuis `0x7E8` autorise les lectures ; `50 40` n'est pas
+assimilé silencieusement. Le dernier `02 10 81 00 00 00 00 00` demande la fermeture
+et enregistre `50 81`, un refus ou un timeout. Ce sont des **changements bornés
+d'état diagnostique**, pas seulement des lectures service 22 isolées. Le code
+Nissan CAN11 original de Car Scanner déclare cette paire ouverture/fermeture.
 
-Le client accepte uniquement les réponses standard 11 bits, non RTR, de
-DLC 8, sur une trame ISO-TP simple dont la longueur, le service et le PID
-ou DID correspondent à la requête en cours. Les réponses négatives sont
-distinctes. Les messages multi-trames, autres identifiants constructeur et
-commandes de contrôle ne sont pas interprétés par ce client.
+Il reste **une requête en attente**, au moins **500 ms** entre tentatives et
+une fenêtre de **250 ms**. Un groupe suspend le polling OBD normal, tandis que
+réception CAN, streaming USB et traitement radio continuent sans blocage.
+Deux lectures donnent normalement quatre tentatives espacées de 500 ms. Quand
+la phase de lecture atteint **2 secondes**, un traitement retardé ferme la session
+plutôt qu'ajouter d'autres lectures. Aucun maintien, accès de sécurité, actuateur,
+adaptation, effacement de DTC, reset, programmation ou balayage illimité n'est ajouté.
+
+Refus/silence d'ouverture : aucune lecture et arrêt des groupes restants après
+nettoyage. Une fermeture non confirmée arrête également les autres groupes et
+consigne `state=unknown` ; le polling standard reprend. Un refus/timeout de mesure
+est journalisé sans valeur inventée et ne démontre pas l'absence des autres DID.
+Ainsi le refus du contrôle eau n'empêche pas l'essai d'huile dans une session
+acceptée. Un positif tardif ne lève pas un refus terminal pour cette transaction.
+Le NRC `0x78` peut précéder un positif dans les 250 ms initiales sans prolonger
+la fenêtre. Un échec TX local ne fabrique ni session ouverte ni mesure reçue.
+
+`LOG OFF`, profil, mode simulé ou OTA entraînent au mieux une tentative de fermeture
+lorsqu'une ouverture a pu partir et que les 500 ms le permettent. Il n'y a pas
+d'attente synchrone. Une fermeture mise en file reste **non confirmée** ; si délai
+ou erreur TX empêche le nettoyage, `ODB SESSION_STATE` indique l'état inconnu.
+Les trames déjà mises en file ne peuvent pas être rappelées. Changer de profil
+pendant une capture ne réactive pas les groupes déjà tentés.
+
+La capture contrôlée précédente contient quatre refus `7F 22 80` **sans ouverture
+`10C0`**. Ils ne prouvent ni absence de sonde ni acceptation de session. Même une
+future réponse positive ne validera pas seule le libellé ou la formule sur cet
+ECU exact. Les conversions génériques de jauge divergent ; le moniteur ECM
+MY2011 expose une tension et le combiné des litres. `1114` reste donc brut.
+La sonde d'huile et un moniteur CONSULT en °C sont documentés dans cette famille
+MR16DDT MY2011, mais le support de `111F` et l'identité de `0x580 B4` ne sont pas
+indépendamment confirmés ici.
+
+Seules les réponses standard 11 bits, non RTR, DLC 8, en trame ISO-TP simple sont
+décodées. Longueur, ECU physique, service et PID/DID/écho de session doivent
+correspondre. Une mesure candidate est exactement `62 DID-haut DID-bas A`
+(longueur 4) ; un positif de session peut contenir deux à sept octets, avec ses
+octets supplémentaires conservés en `ODB RAW_RX`. L'ISO-TP multi-trames n'est pas
+réassemblé : les trames brutes restent enregistrées, sans application d'un offset
+fixe. PIDs absents et candidates refusées sont indisponibles, jamais des zéros.
+Aucun résultat diagnostique ne remplace le preset, le dashboard ou les mesures radio.
+
+Voir le [contrat F15/DUDU et ses sources](F15_DUDU_BOOT_TRIP_MAPPING.fr.md#essai-diagnostique-nissan-borné)
+pour la provenance des sessions et les mappings physiques provisoires distincts.
 
 ## Format du log
 
@@ -191,15 +218,25 @@ ODB RAW_RX 0x7E8 [8]: 04 41 0C 0A 0C 00 00 00 | t_ms=508 ext=0 rtr=0
 ODB RX t_ms=508 seq=2 request_id=0x7E0 ecu=0x7E8 pid=0x0C name=rpm value=643.000 unit=rpm latency_ms=8
 ```
 
-Autre exemple **synthétique**, montrant la lecture candidate distincte :
+Groupe de session complet **synthétique**, pas un échange ECU observé :
 
 ```text
-ODB TX t_ms=2000 seq=5 can_id=0x7E0 service=0x22 did=0x111F status=queued data=03 22 11 1F 00 00 00 00
-ODB RAW_RX 0x7E8 [8]: 04 62 11 1F 56 00 00 00 | t_ms=2010 ext=0 rtr=0
-ODB PROBE_RX t_ms=2010 seq=5 request_id=0x7E0 ecu=0x7E8 service=0x22 did=0x111F name=nissan_oil_temperature_candidate raw=0x56 value=36.000 unit=degC latency_ms=10
+ODB TX t_ms=2000 seq=5 can_id=0x7E0 service=0x10 subfunction=0xC0 status=queued data=02 10 C0 00 00 00 00 00
+ODB RAW_RX 0x7E8 [8]: 02 50 C0 00 00 00 00 00 | t_ms=2010 ext=0 rtr=0
+ODB SESSION_RX t_ms=2010 seq=5 request_id=0x7E0 ecu=0x7E8 service=0x10 subfunction=0xC0 status=opened length=2 latency_ms=10
+ODB TX t_ms=2500 seq=6 can_id=0x7E0 service=0x22 did=0x1101 status=queued data=03 22 11 01 00 00 00 00
+ODB RAW_RX 0x7E8 [8]: 04 62 11 01 6E 00 00 00 | t_ms=2510 ext=0 rtr=0
+ODB PROBE_RX t_ms=2510 seq=6 request_id=0x7E0 ecu=0x7E8 service=0x22 did=0x1101 name=nissan_coolant_temperature_candidate raw=0x6E value=60.000 unit=degC latency_ms=10
+ODB TX t_ms=3000 seq=7 can_id=0x7E0 service=0x22 did=0x111F status=queued data=03 22 11 1F 00 00 00 00
+ODB RAW_RX 0x7E8 [8]: 04 62 11 1F 6F 00 00 00 | t_ms=3010 ext=0 rtr=0
+ODB PROBE_RX t_ms=3010 seq=7 request_id=0x7E0 ecu=0x7E8 service=0x22 did=0x111F name=nissan_oil_temperature_candidate raw=0x6F value=61.000 unit=degC latency_ms=10
+ODB TX t_ms=3500 seq=8 can_id=0x7E0 service=0x10 subfunction=0x81 status=queued data=02 10 81 00 00 00 00 00
+ODB RAW_RX 0x7E8 [8]: 02 50 81 00 00 00 00 00 | t_ms=3510 ext=0 rtr=0
+ODB SESSION_RX t_ms=3510 seq=8 request_id=0x7E0 ecu=0x7E8 service=0x10 subfunction=0x81 status=closed length=2 latency_ms=10
 ```
 
-Les autres noms candidats sont `nissan_fuel_level_raw` (`1114`),
+Noms candidats : `nissan_coolant_temperature_candidate` (`1101`),
+`nissan_oil_temperature_candidate` (`111F`), `nissan_fuel_level_raw` (`1114`),
 `nissan_gear_position_raw` (`1183`) et `nissan_clutch_switch_raw` (`1304`).
 
 - `RX` : trame CAN brute, ID/DLC/octets et flags inchangés.
@@ -213,8 +250,13 @@ Les autres noms candidats sont `nissan_fuel_level_raw` (`1114`),
   brut reste visible même lorsqu'une conversion candidate est affichée.
 - `ODB NEGATIVE`, `ODB TIMEOUT` : réponses négatives ou absence de réponse.
   Les lignes service 22 portent `service=0x22 did=0x....`, de même que leurs
-  `ODB TX`, qui conservent les octets envoyés exacts. Les formats service 01
+  `ODB TX`, qui conservent les octets envoyés exacts. Les sessions portent
+  `service=0x10 subfunction=0xC0` ou `subfunction=0x81`. Les formats service 01
   et les préfixes `RX 0x` / `ODB RAW_RX` restent inchangés.
+- `ODB SESSION_RX` : écho positif de session constructeur correspondant,
+  `service=0x10`, `subfunction=0xC0`/`0x81`, statut opened/closed, longueur et latence.
+- `ODB SESSION_STATE` : limite de lecture, annulation ou fermeture non confirmée ;
+  `state=unknown` ne signifie pas fermeture réussie.
 - `ODB STATE` : début/fin ou état de découverte.
 - `ODB DRIVER` : pertes RX, échecs TX, occupation de la file, erreurs et état
   du contrôleur, au maximum une ligne par seconde.

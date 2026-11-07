@@ -112,6 +112,42 @@ bool parseFuelConsumption(JsonVariantConst value, VehicleProfile& profile) {
     }
     return counters == 1 && speeds == 1;
 }
+// Compare the physical sources, not unrelated steering/UI calibration. Reloads
+// of an identical profile must retain this boot's integrators.
+bool sameSource(const VehicleProfile& a, const VehicleProfile& b, OutputField target) {
+    const FieldConfig* previous = nullptr;
+    uint16_t previousId = 0;
+    unsigned oldCount = 0, newCount = 0;
+    for (const auto& frame : a.frames) for (const auto& field : frame.fields)
+        if (field.target == target) { previous = &field; previousId = frame.canId; ++oldCount; }
+    for (const auto& frame : b.frames) for (const auto& field : frame.fields) {
+        if (field.target != target) continue;
+        ++newCount;
+        if (!previous || previousId != frame.canId ||
+            previous->startByte != field.startByte || previous->byteCount != field.byteCount ||
+            previous->byteOrder != field.byteOrder || previous->dataType != field.dataType ||
+            previous->formula != field.formula || previous->invalidRawValues != field.invalidRawValues ||
+            memcmp(previous->params, field.params, sizeof(field.params)) != 0) return false;
+    }
+    return oldCount == newCount && oldCount <= 1;
+}
+
+void invalidateSource(OutputField target) {
+    switch (target) {
+        case OutputField::ENGINE_RPM: canAuxData.rpmValid = false; break;
+        case OutputField::VEHICLE_SPEED: canAuxData.speedValid = false; break;
+        case OutputField::ODOMETER: canAuxData.odometerValid = false; break;
+        case OutputField::TEMPERATURE: canAuxData.outsideValid = false; break;
+        case OutputField::COOLANT_TEMP: canAuxData.coolantValid = false; break;
+        case OutputField::OIL_TEMP: canAuxData.oilValid = false; break;
+        case OutputField::DTE: canAuxData.dteValid = false; break;
+        case OutputField::FUEL_LEVEL: canAuxData.fuelLevelValid = false; break;
+        case OutputField::FUEL_COUNTER_RAW: canAuxData.fuelCounterValid = false; break;
+        case OutputField::FUEL_CONS_INST: canAuxData.fuelConsumptionInstValid = false; break;
+        case OutputField::FUEL_CONS_AVG: canAuxData.fuelConsumptionAvgValid = false; break;
+        default: break;
+    }
+}
 }  // namespace
 
 // =============================================================================
@@ -200,6 +236,12 @@ bool CanConfigProcessor::loadFromJson(const char* path) {
     VehicleProfile nextProfile;
     nextProfile.name = doc["name"] | "Unknown";
     nextProfile.isMock = doc["isMock"] | false;
+    if (!doc["radioReceiver"].isNull()) {
+        if (!doc["radioReceiver"].is<const char*>()) return false;
+        const char* receiver = doc["radioReceiver"];
+        if (strcmp(receiver, "DUDU") != 0 && strcmp(receiver, "FYT") != 0) return false;
+        nextProfile.duduReceiver = strcmp(receiver, "DUDU") == 0;
+    }
 
     // Parse frames array
     JsonArray framesArray = doc["frames"];
@@ -249,6 +291,17 @@ bool CanConfigProcessor::loadFromJson(const char* path) {
                 }
             }
 
+            if (!fieldObj["estimated"].isNull()) {
+                if (!fieldObj["estimated"].is<bool>()) return false;
+                field.estimated = fieldObj["estimated"].as<bool>();
+            }
+            if (!fieldObj["invalidRawValues"].isNull()) {
+                if (!fieldObj["invalidRawValues"].is<JsonArray>()) return false;
+                for (JsonVariant value : fieldObj["invalidRawValues"].as<JsonArray>()) {
+                    if (!value.is<int32_t>()) return false;
+                    field.invalidRawValues.push_back(value.as<int32_t>());
+                }
+            }
             frame.fields.push_back(field);
         }
 
@@ -269,11 +322,22 @@ bool CanConfigProcessor::loadFromJson(const char* path) {
     bool isValid = nextProfile.isMock || !nextProfile.frames.empty();
 
     if (isValid) {
+        const char* filename = (path[0] == '/') ? path + 1 : path;
+        const char* currentFile = configGetVehicleFile();
+        const bool changedProfile = _hasProfile && (_profile.name != nextProfile.name ||
+            _profile.isMock != nextProfile.isMock || strcmp(currentFile, filename) != 0);
+        const bool changedSpeed = _hasProfile &&
+            !sameSource(_profile, nextProfile, OutputField::VEHICLE_SPEED);
+        const bool changedCounter = _hasProfile &&
+            !sameSource(_profile, nextProfile, OutputField::FUEL_COUNTER_RAW);
+        if (changedProfile || changedSpeed) _bootTrip.markDiscontinuity();
+        if (changedProfile || changedSpeed || changedCounter) _fuelEstimator.markDiscontinuity();
         _profile = std::move(nextProfile);
         _mockMode = _profile.isMock;
         _hasProfile = true;
         // Never retain a previous profile's fuel/temperature availability.
         canAuxData = {};
+        canAuxData.duduReceiver = _profile.duduReceiver;
         coolantTemp = 0;
         _fuelEstimator.configure(_profile.fuelConsumption);
         canAuxData.fuelConsumptionDerived = _profile.fuelConsumption.enabled;
@@ -282,8 +346,6 @@ bool CanConfigProcessor::loadFromJson(const char* path) {
         fuelLevel = 0;
         fuelConsumptionInst = 0;
         fuelConsumptionAvg = 0;
-        const char* filename = (path[0] == '/') ? path + 1 : path;
-        const char* currentFile = configGetVehicleFile();
         bool isVehicleSwitch = (currentFile[0] == '\0') || (strcmp(currentFile, filename) != 0);
 
         if (isVehicleSwitch) {
@@ -384,35 +446,63 @@ bool CanConfigProcessor::processFrame(const CanFrame& frame, uint32_t receivedAt
         // Step 1: Extract raw value from CAN data bytes
         int32_t rawValue = extractRawValue(frame.data, field);
 
-        // Step 2: Apply conversion formula (SCALE, MAP_RANGE, etc.)
-        int32_t convertedValue = applyFormula(rawValue, field);
-
-        // Step 3: Write to appropriate GlobalData variable
-        writeToGlobalData(field.target, convertedValue);
-        if (field.target == OutputField::COOLANT_TEMP) {
-            canAuxData.coolantReceivedAt = receivedAt;
+        bool unavailable = false;
+        for (const auto invalid : field.invalidRawValues) unavailable |= rawValue == invalid;
+        if (unavailable) {
+            invalidateSource(field.target);
+            if (field.target == OutputField::VEHICLE_SPEED) {
+                _bootTrip.markDiscontinuity();
+                _fuelEstimator.markDiscontinuity();
+            } else if (field.target == OutputField::FUEL_COUNTER_RAW) {
+                _fuelEstimator.markDiscontinuity();
+            }
+            continue;
         }
 
-        if (_profile.fuelConsumption.enabled) {
-            if (field.target == OutputField::VEHICLE_SPEED) {
-                // Keep fractional km/h for distance, while preserving the legacy
-                // integer dashboard/radio speed field. No raw frame is modified.
-                double speedKmh = convertedValue;
-                if (field.formula == FormulaType::SCALE) {
-                    const double multiplier = field.params[0] == 0 ? 1 : field.params[0];
-                    speedKmh = static_cast<double>(rawValue) * multiplier /
-                               field.params[1] + field.params[2];
-                } else if (field.formula == FormulaType::MAP_RANGE &&
-                           field.params[1] != field.params[0]) {
-                    speedKmh = (static_cast<double>(rawValue) - field.params[0]) *
-                               (static_cast<double>(field.params[3]) - field.params[2]) /
-                               (static_cast<double>(field.params[1]) - field.params[0]) +
-                               field.params[2];
-                }
-                _fuelEstimator.onSpeed(speedKmh, receivedAt);
-            } else if (field.target == OutputField::FUEL_COUNTER_RAW) {
-                _fuelEstimator.onCounter(static_cast<uint8_t>(rawValue), receivedAt);
+        const int32_t convertedValue = applyFormula(rawValue, field);
+        // Speed is written below only after validating its precise value.
+        // An out-of-range speed must not wrap into a plausible uint8 value.
+        if (field.target != OutputField::VEHICLE_SPEED) {
+            writeToGlobalData(field.target, convertedValue);
+        }
+        switch (field.target) {
+            case OutputField::ENGINE_RPM: canAuxData.rpmReceivedAt = receivedAt; break;
+            case OutputField::ODOMETER: canAuxData.odometerReceivedAt = receivedAt; break;
+            case OutputField::TEMPERATURE: canAuxData.outsideReceivedAt = receivedAt; break;
+            case OutputField::DTE: canAuxData.dteReceivedAt = receivedAt; break;
+            case OutputField::COOLANT_TEMP: canAuxData.coolantReceivedAt = receivedAt; break;
+            case OutputField::OIL_TEMP:
+                canAuxData.oilReceivedAt = receivedAt;
+                canAuxData.oilEstimated = field.estimated;
+                break;
+            default: break;
+        }
+
+        if (field.target == OutputField::VEHICLE_SPEED) {
+            // Retain fractional speed for both distance integrators and UART.
+            double speedKmh = convertedValue;
+            if (field.formula == FormulaType::SCALE) {
+                const double mult = field.params[0] == 0 ? 1 : field.params[0];
+                const double div = field.params[1] == 0 ? 1 : field.params[1];
+                speedKmh = static_cast<double>(rawValue) * mult / div + field.params[2];
+            } else if (field.formula == FormulaType::MAP_RANGE && field.params[1] != field.params[0]) {
+                speedKmh = (static_cast<double>(rawValue) - field.params[0]) *
+                    (static_cast<double>(field.params[3]) - field.params[2]) /
+                    (static_cast<double>(field.params[1]) - field.params[0]) + field.params[2];
             }
+            canAuxData.speedValid = std::isfinite(speedKmh) && speedKmh >= 0 && speedKmh < 300;
+            canAuxData.speedReceivedAt = receivedAt;
+            if (canAuxData.speedValid) {
+                vehicleSpeed = static_cast<uint8_t>(speedKmh > 255 ? 255 : speedKmh);
+                canAuxData.speedCentiKmh = static_cast<uint16_t>(speedKmh * 100.0 + 0.5);
+                _bootTrip.onSpeed(speedKmh, receivedAt);
+                _fuelEstimator.onSpeed(speedKmh, receivedAt);
+            } else {
+                _bootTrip.markDiscontinuity();
+                _fuelEstimator.markDiscontinuity();
+            }
+        } else if (_profile.fuelConsumption.enabled && field.target == OutputField::FUEL_COUNTER_RAW) {
+            _fuelEstimator.onCounter(static_cast<uint8_t>(rawValue), receivedAt);
         }
     }
 
@@ -421,6 +511,14 @@ bool CanConfigProcessor::processFrame(const CanFrame& frame, uint32_t receivedAt
 }
 
 void CanConfigProcessor::updateFuelConsumption(uint32_t now) {
+    canAuxData.duduReceiver = _profile.duduReceiver;
+    if (_mockMode && canAuxData.speedValid) _bootTrip.onSpeed(vehicleSpeed, now);
+    _bootTrip.tick(now);
+    elapsedTime = _bootTrip.elapsedSeconds();
+    averageSpeed = _bootTrip.averageSpeedDeciKmh();
+    canAuxData.bootTripValid = _bootTrip.valid();
+    canAuxData.bootTripDistanceDeciKm = _bootTrip.distanceDeciKm();
+    canAuxData.fuelBootTripComplete = _fuelEstimator.tripComplete();
     if (_mockMode || !_profile.fuelConsumption.enabled) {
         canAuxData.fuelConsumptionDerived = false;
         canAuxData.fuelConsumptionEstimated = false;
@@ -431,6 +529,7 @@ void CanConfigProcessor::updateFuelConsumption(uint32_t now) {
     canAuxData.fuelConsumptionDerived = true;
     canAuxData.fuelConsumptionEstimated = !_profile.fuelConsumptionCalibrated;
     _fuelEstimator.tick(now);
+    canAuxData.fuelBootTripComplete = _fuelEstimator.tripComplete();
     canAuxData.fuelConsumptionInstValid = _fuelEstimator.instantaneousValid();
     canAuxData.fuelConsumptionAvgValid = _fuelEstimator.averageValid();
     fuelConsumptionInst = canAuxData.fuelConsumptionInstValid ? _fuelEstimator.instantaneous() : 0;
@@ -542,7 +641,8 @@ void CanConfigProcessor::writeToGlobalData(OutputField target, int32_t value) {
             currentSteer = (int16_t)value;
             break;
         case OutputField::ENGINE_RPM:
-            engineRPM = (uint16_t)value;
+            canAuxData.rpmValid = value >= 0 && value < 15000;
+            if (canAuxData.rpmValid) engineRPM = static_cast<uint16_t>(value);
             break;
         case OutputField::VEHICLE_SPEED:
             vehicleSpeed = (uint8_t)value;
@@ -552,17 +652,20 @@ void CanConfigProcessor::writeToGlobalData(OutputField target, int32_t value) {
             canAuxData.fuelLevelValid = true;
             break;
         case OutputField::ODOMETER:
-            currentOdo = (uint32_t)value;
+            canAuxData.odometerValid = value >= 0 && value < 0x1000000;
+            if (canAuxData.odometerValid) currentOdo = static_cast<uint32_t>(value);
             break;
         case OutputField::VOLTAGE:
             // Value is in decivolts (e.g., 141 = 14.1V), convert to float
             voltBat = value * 0.1f;
             break;
         case OutputField::TEMPERATURE:
-            tempExt = (int8_t)value;
+            canAuxData.outsideValid = value >= -40 && value <= 87;
+            if (canAuxData.outsideValid) tempExt = static_cast<int8_t>(value);
             break;
         case OutputField::DTE:
-            dteValue = (int16_t)value;
+            canAuxData.dteValid = value >= 0 && value < 3000;
+            if (canAuxData.dteValid) dteValue = static_cast<int16_t>(value);
             break;
         case OutputField::FUEL_CONS_INST:
             fuelConsumptionInst = (uint16_t)value;
@@ -621,6 +724,10 @@ void CanConfigProcessor::writeToGlobalData(OutputField target, int32_t value) {
             break;
         case OutputField::PARKING_LIGHTS:
             parkingLightsOn = (value != 0);
+            break;
+        case OutputField::OIL_TEMP:
+            canAuxData.oilValid = value >= -40 && value <= 215;
+            if (canAuxData.oilValid) canAuxData.oilTemperatureC = static_cast<int16_t>(value);
             break;
         case OutputField::COOLANT_TEMP:
             // Keep the complete unsigned-byte-minus-40 range without int8 wrap.

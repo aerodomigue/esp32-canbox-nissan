@@ -36,12 +36,34 @@ original decoder instructions**, and **six encoder test methods**, including
 all 4,096 signed 12-bit values. These are software checks with controlled
 Android boundaries, not physical head-unit tests or vehicle calibration.
 
-The contract describes the analysed consumers; it is not a claim that every
-documented command is implemented by the current ESP32 firmware. In particular,
-the existing `7D/09` coolant frame matches FYT but can make DUDU interpret its
-checksum as oil temperature. The shared format and its required oil value
-are explained in the PDFs; no F15 oil source or universal unavailable marker
-has been validated.
+The PDFs are a dated analysis of the consumers, rather than a list of commands
+implemented by the ESP32. Their warning about the former `7D/09` LEN3 packet
+describes the firmware before the boot-trip update: DUDU could read its checksum
+as an oil temperature. The updated F15 sender uses LEN4
+`09 coolant+40 coolant+40 oil+40`, only while both sources are available and
+fresh. This feeds FYT coolant at D2 and DUDU coolant/oil at D1/D3.
+
+The F15 oil source `0x580 B4 - 40` is explicitly **provisional**, accepted for
+comparison after coherent capture replays, not independently calibrated.
+No oil unavailable byte is supported by the analysed DUDU decoder: zero and
+255 mean -40 °C and 215 °C. Missing oil therefore suppresses the whole DUDU
+temperature packet. The legacy coolant-only LEN3 packet is retained solely
+for explicitly non-DUDU profiles.
+
+The current F15 mapping also sends speed and boot average speed through
+`7D/03` with **LEN6 and an explicit metric unit**, and sends the `0x21` elapsed
+field in **minutes**. Instantaneous and boot-average consumption are `0.1
+L/100 km` U16BE values in `0x22` and `0x23`; historical consumption slots remain
+unavailable. Both `7D/04` trip slots explicitly mirror the software trip since
+device boot; they are not the independent Nissan Trip A/B counters.
+
+The DUDU temperature parser starts in Celsius. After replacing a box that sent
+Fahrenheit without restarting the receiver, restart DUDU/the RAV4 profile
+before checking temperatures: `7D/09` does not reset a retained Fahrenheit flag.
+No artificial `0x28` climate packet is sent to force this flag. The unvalidated
+F15 outside-temperature source is omitted; an absent sensor is not reported
+as zero. See the [F15 boot-trip mapping guide](../../F15_DUDU_BOOT_TRIP_MAPPING.md)
+for source availability, DUDU-specific ignore values, gaps and remaining limits.
 
 See [RadioSend implementation notes](../../technical/RADIO_SEND.md) for the
 current firmware behaviour and [F15 mapping evidence](../../JUKE_F15_CAN_MAPPING.md)

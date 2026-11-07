@@ -66,7 +66,12 @@ before accumulating dashboard fields. `SYS DATA` is requested by the client;
 the firmware does not periodically publish that block itself. Its fields
 start with `Config:`, `Mode:`, `RPM:`, `Speed:`, `Steering:`, `Fuel:`,
 `Battery:`, `DTE:`, `Temp:`, `Doors:`, `Lights:`, `FuelValid:`, `FuelConsValid:`, `FuelConsEstimated:`,
-`Handbrake:`, `Brake:` and `FuelRaw:`. Other commands have their
+`TempValid:`, `Coolant:`, `CoolantValid:`, `Oil:`, `OilValid:`, `OilEstimated:`,
+`DTEValid:`, `BootTripValid:`, `BootTripDistance:`, `BootTripElapsed:`,
+`BootTripAverageSpeed:`, `FuelBootTripComplete:`, `Handbrake:`, `Brake:` and `FuelRaw:`.
+Temperature values use degrees C; boot distance uses 0.1 km, average speed
+0.1 km/h, and elapsed uptime seconds. Consult availability flags rather than
+interpreting a compatibility zero or stale last value as a fresh measurement. Other commands have their
 own headers and footers; a line of `=` is not a universal response terminator.
 
 `ODB TX` covers OBD request attempts only. It is not a capture of every CAN
@@ -491,7 +496,8 @@ ODB RX t_ms=1508 seq=2 request_id=0x7E0 ecu=0x7E8 pid=0x0C name=rpm value=643.00
 
 All OBD diagnostic records start with the exact prefix **`ODB`**, including
 `ODB TX`, `ODB RAW_RX`, `ODB SUPPORTED`, `ODB RX`, `ODB PROBE_RX`, `ODB NEGATIVE`,
-`ODB TIMEOUT`, `ODB STATE`, `ODB DRIVER` and `ODB BUFFER`. Standard raw frames outside
+`ODB TIMEOUT`, `ODB STATE`, `ODB SESSION_RX`, `ODB SESSION_STATE`,
+`ODB DRIVER` and `ODB BUFFER`. Standard raw frames outside
 IDs `0x7DF`–`0x7EF` start with `RX`;
 extended frames also keep that prefix. Command acknowledgments retain their
 existing formats. Client applications must route these record families
@@ -529,15 +535,28 @@ accepted a request for transmission, not that the ECU acknowledged it.
 
 After discovery, two fast slots (cycle10/03/10/24/10/44, skipping unsupported
 PIDs) alternate with one normal slot for the remaining advertised PIDs.
-The F15 profile can use a normal slot for a Nissan probe at most once per10s
-if ECU7E8 replied to capability discovery and standard polling is available.
-The whitelist is `22111F`, `221114`, `221183`, `221304`, addressed to7E0.
-No session change, clearing or actuator service is sent. `ODB PROBE_RX`
-keeps the raw byte; only111F also prints the candidate conversionA−50°C.
+The F15 profile can use a normal slot to start a bounded Nissan diagnostic
+session, with TX7E0/RX7E8. Each group is attempted once per LOG ON, at least
+10 seconds between group starts:
+
+```text
+10C0 -> 221101 -> 22111F -> 1081
+10C0 -> 221114 -> 221183 -> 1081
+10C0 -> 221304          -> 1081
+```
+
+Only a matched positive `50 C0` permits the service22 reads. The 500 ms attempt
+spacing and 250 ms response window also apply inside each group. `1101` and
+`111F` log a candidate unsigned-byte-minus-50 temperature; `1114`, `1183` and
+`1304` remain raw. `ODB SESSION_RX` records accepted session responses;
+`ODB SESSION_STATE` records cancellation, read deadline or unconfirmed closure.
+An opening refusal/timeout or an unconfirmed close stops further groups.
+There is no keepalive, actuator, scan, adaptation or fault-clearing command.
 These results do not change dashboard/radio data. Probe TX/errors/timeouts
-use `service=0x22 did=0x....` instead of a service01 PID. Missing or terminally
-rejected DIDs stop until the next `LOG ON`. See the bilingual
-[calibration guide](../OBD_CALIBRATION.md) for exact formats and limitations.
+use `service=0x22 did=0x....`; session records use
+`service=0x10 subfunction=0xC0|0x81`. See the bilingual
+[calibration guide](../OBD_CALIBRATION.md) and the
+[current F15/DUDU mapping](../F15_DUDU_BOOT_TRIP_MAPPING.md) for limitations.
 
 #### LOG OFF
 ```
@@ -546,7 +565,10 @@ OK
 CAN logging disabled
 ```
 
-`LOG OFF` stops capture and new OBD requests, clears the pending request and
+`LOG OFF` stops capture and measurement requests. An active Nissan group gets
+one best-effort `1081` close only when minimum TX spacing permits it; otherwise
+`ODB SESSION_STATE` explicitly records an unknown session state. It clears the
+pending transaction and
 emits `ODB STATE ... enabled=0 status=stopped` when calibration was active.
 A request already queued in the CAN controller cannot be cancelled by this
 command. Repeated `LOG ON` commands do not restart an active discovery.
