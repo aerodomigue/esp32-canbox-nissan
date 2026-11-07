@@ -405,6 +405,9 @@ Fonctionnalités :
 - [balrog-kun / Nissan Qashqai CAN info](https://github.com/balrog-kun/nissan-qashqai-can-info)
 
 ### Protocoles Radio (Toyota/Raise/RZC)
+
+- **[Contrat d'encodage UART DUDU7 Toyota/RAV4 — PDF français](docs/protocols/raise-toyota-rav4/ENCODAGE_UART_DUDU7_RAV4.fr.pdf)** — Commandes dans les deux sens, positions des bits, types, ordre des octets, unités, conversions et exemples de trames ; [PDF anglais](docs/protocols/raise-toyota-rav4/ENCODAGE_UART_DUDU7_RAV4.en.pdf)
+- [Index de la documentation Toyota/RAV4 et limites de validation](docs/protocols/raise-toyota-rav4/README.fr.md) — Distingue les décodeurs FYT et DUDU, les formats établis et la validation matérielle
 - **[Analyse du Protocole Toyota RAV4](docs/protocols/raise-toyota-rav4/RAV4_BODY_ENGINE_2018_2020.pdf)** - Compilé et analysé par [Mikescotland](https://forum.dudu-auto.com/u/Mikescotland) (Source Originale)
 - [Protocole Raise Officiel (Chinois)](docs/protocols/raise-toyota-rav4/) - Documentation supplémentaire
 - [smartgauges / canbox](https://github.com/smartgauges/canbox)
